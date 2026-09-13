@@ -66,11 +66,18 @@ def fetch_rank(
             auth=(settings.dataforseo_login, settings.dataforseo_password),
             timeout=30.0,
         )
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
+    except httpx.TransportError as exc:
         raise RankProviderError(f"DataForSEO request failed: {exc}") from exc
 
-    data = response.json()
+    # DataForSEO returns a JSON body with status_code/status_message on 4xx/5xx
+    # responses too (e.g. unverified account, insufficient balance) - that detail
+    # is far more useful than the bare HTTP status, so parse before checking it.
+    try:
+        data = response.json()
+    except ValueError:
+        response.raise_for_status()
+        raise RankProviderError(f"DataForSEO returned a non-JSON {response.status_code} response.")
+
     if data.get("status_code") != 20000:
         raise RankProviderError(f"DataForSEO error: {data.get('status_message', 'unknown error')}")
 
