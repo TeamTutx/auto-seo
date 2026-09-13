@@ -9,13 +9,15 @@ AI-assisted fixes for their own web pages.
 - Frontend: [`frontend/`](frontend/README.md)
 
 ## Status
-Steps 1-4 and 6 of the [suggested build order](docs/REQUIREMENTS.md#8-suggested-build-order)
+Steps 1-4, 6, and part of 7 of the [suggested build order](docs/REQUIREMENTS.md#8-suggested-build-order)
 are done: DB schema, FastAPI scaffold + auth, the on-page audit engine, a
 Next.js dashboard wired to real data (add a site, add a page, run an audit,
-see the score and checklist), and keyword rank tracking via DataForSEO
-(backend only - no frontend UI for it yet). Step 5 (Stripe) is deliberately
-skipped for now, to be added before going live. Not started: AI
-suggestions, GSC/GA integrations.
+see the score and checklist), keyword rank tracking, and AI-generated meta
+description suggestions — the last two both backend-only so far (no
+frontend UI yet) and both behind swappable vendor interfaces (rank:
+SerpApi/DataForSEO; AI: OpenAI/Anthropic) picked by one env var each. Step 5
+(Stripe) is deliberately skipped for now, to be added before going live.
+Not started: title rewrites/content briefs, GSC/GA integrations.
 
 ## Stack
 - Backend: Python (FastAPI, SQLModel, Celery scaffolded but not wired in —

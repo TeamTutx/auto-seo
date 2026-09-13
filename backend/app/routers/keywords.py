@@ -8,6 +8,7 @@ from app.deps import get_current_user
 from app.models import PLAN_LIMITS, KeywordRank, User
 from app.routers.pages import get_owned_page
 from app.schemas import KeywordRankCreate, KeywordRankRead
+from app.services.credits import deduct_credit, require_credits
 from app.services.keyword_rank_runner import check_keyword_rank
 
 router = APIRouter(tags=["keywords"])
@@ -27,23 +28,6 @@ def _latest_per_keyword(ranks: List[KeywordRank]) -> List[KeywordRank]:
             seen.add(rank.keyword)
             latest.append(rank)
     return latest
-
-
-def _require_credits(user: User, needed: int = 1) -> None:
-    if user.credits_balance < needed:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"Not enough credits ({user.credits_balance} remaining, {needed} needed). "
-                "Credit top-ups aren't available yet (billing isn't live) - check back soon."
-            ),
-        )
-
-
-def _deduct_credit(session: Session, user: User) -> None:
-    user.credits_balance -= 1
-    session.add(user)
-    session.commit()
 
 
 @router.post("/pages/{page_id}/keywords", response_model=KeywordRankRead, status_code=status.HTTP_201_CREATED)
@@ -69,11 +53,11 @@ def add_keyword(
                 ),
             )
 
-    _require_credits(current_user)
+    require_credits(current_user)
     result = check_keyword_rank(
         session, page, payload.keyword, payload.location_code, payload.language_code, payload.device
     )
-    _deduct_credit(session, current_user)
+    deduct_credit(session, current_user)
     return result
 
 
@@ -105,7 +89,7 @@ def recheck_keywords(
     if not existing:
         return []
 
-    _require_credits(current_user, needed=len(existing))
+    require_credits(current_user, needed=len(existing))
 
     results = []
     for rank in existing:
@@ -115,6 +99,6 @@ def recheck_keywords(
             )
         except HTTPException:
             continue
-        _deduct_credit(session, current_user)
+        deduct_credit(session, current_user)
         results.append(result)
     return results

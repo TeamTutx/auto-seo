@@ -1,9 +1,10 @@
 # Signal backend
 
-FastAPI service covering steps 1-4 and 6 of the build order in
+FastAPI service covering steps 1-4, 6, and part of 7 of the build order in
 [`../docs/REQUIREMENTS.md`](../docs/REQUIREMENTS.md#8-suggested-build-order):
-DB schema, API scaffold + auth, the on-page audit engine, and keyword rank
-tracking (currently via SerpApi, swappable - see below). Step 5 (Stripe) is
+DB schema, API scaffold + auth, the on-page audit engine, keyword rank
+tracking, and AI-generated meta description suggestions — the last two both
+behind swappable vendor interfaces (see below). Step 5 (Stripe) is
 deliberately skipped for now — see "Known gaps" below.
 
 ## Setup
@@ -37,22 +38,28 @@ alembic upgrade head
 pytest
 ```
 
-`app/services/audit_engine.py` and both `app/services/rank_providers/*`
-implementations have pure unit tests (no DB/network - HTML or a fixture
-JSON response in, findings out). `tests/test_keywords_api.py` exercises the
-full keywords API through FastAPI's `TestClient` against an in-memory
-SQLite DB, with `get_rank_provider()` monkeypatched to a fake provider so
-it never calls a real rank-data vendor. Everything else (auth, sites,
-pages, audits routers) is still only exercised manually — no fixtures/test
-DB wired up for those yet.
+`app/services/audit_engine.py`, `app/services/ai_suggestions.py`, and both
+`app/services/rank_providers/*` implementations have pure unit tests (no
+DB/network - HTML or a fixture response in, findings/prompt out).
+`tests/test_keywords_api.py` and `tests/test_suggestions_api.py` exercise
+the full APIs through FastAPI's `TestClient` against an in-memory SQLite DB
+(shared fixtures in `tests/conftest.py`), with `get_rank_provider()` /
+`generate_meta_description` monkeypatched so no test ever calls a real
+vendor. Everything else (auth, sites, pages, audits routers) is still only
+exercised manually.
 
 ## What's here
 
 - `app/models.py` — SQLModel schema: `User`, `Site`, `Page`, `Audit`,
   `Check`, `KeywordRank`, plus `PLAN_LIMITS` for free/pro/agency gating.
 - `app/routers/` — `auth` (register/login/me, JWT), `sites`, `pages`,
-  `audits`, `keywords`. Plan limits (§3.1), the free-tier 1x/day rescan
-  throttle, and per-check credit spend are enforced in the routers.
+  `audits`, `keywords`, `suggestions`. Plan limits (§3.1), the free-tier
+  1x/day rescan throttle, and per-check credit spend are enforced in the
+  routers.
+- `app/services/credits.py` — the shared credit-spend gate
+  (`require_credits`/`deduct_credit`) used by both `keywords` and
+  `suggestions` routers, so the two metered features can't drift out of
+  sync with each other.
 - `app/services/audit_engine.py` — the on-page audit checks from §2.2
   (title, meta description, headings, alt text, links, content length,
   keyword density, readability, canonical, robots meta, structured data).
@@ -74,6 +81,18 @@ DB wired up for those yet.
 - `app/services/keyword_rank_runner.py` — persists one rank check
   (`KeywordRank` row) for a page, tagged with whichever provider ran it, so
   historical rows stay accurate even after switching vendors later.
+- `app/services/ai_providers/` — AI-vendor integrations (§2.2, §2.7), same
+  pattern as `rank_providers/`:
+  - `base.py` — the `AIProvider` ABC with one generic method, `complete`,
+    rather than a method per suggestion type (title rewrites, content
+    briefs, etc. can reuse it without touching this package).
+  - `openai.py`, `anthropic.py` — one class per vendor.
+  - `__init__.py` — `get_ai_provider()` reads `AI_PROVIDER` from config.
+    **To switch vendors**: change that env var — nothing else.
+- `app/services/ai_suggestions.py` — `generate_meta_description` builds the
+  actual prompt (page title/keyword/content snippet in, meta description
+  out) and calls `get_ai_provider().complete(...)`; this is where a new
+  suggestion type's prompt-building would go.
 - `app/workers/` — Celery app + a `run_page_audit` task wrapping the audit
   runner, not wired into the API yet (see comment in `tasks.py`).
 - `alembic/` — hand-written migrations (no live Postgres to autogenerate
@@ -101,6 +120,22 @@ scheduled job, not built yet — see `app/workers/tasks.py`). There's no
 so for now every check (self-serve or automatic, once that exists) is
 metered the same way. Revisit this once the scheduled-refresh job exists.
 
+## AI suggestions (step 7, partial)
+
+- `POST /pages/{page_id}/suggestions/meta-description` — fetches the page's
+  live HTML, sends its title/target keyword/a content snippet to the active
+  AI provider, and returns a generated meta description (120-160 chars,
+  matching the audit engine's own thresholds for that check). Spends 1
+  credit on success, same gate as keyword rank checks; nothing is charged
+  if the page fetch or the AI call fails. Not persisted to the DB — it's a
+  one-off suggestion for the frontend to show/copy, not a versioned record.
+- Currently `AI_PROVIDER=openai` (model: `gpt-4o-mini` - cheap/fast, plenty
+  for one paragraph of copy). `anthropic` is implemented too but has no
+  configured key right now.
+- Only meta descriptions are built so far. Title rewrites and content
+  briefs (§2.7, v2) would each be a new function in `ai_suggestions.py` plus
+  a new router endpoint - the provider layer doesn't change.
+
 ## Rank provider: SerpApi vs. DataForSEO
 
 Both are implemented; `RANK_PROVIDER=serpapi` is the current default since
@@ -111,7 +146,7 @@ that monthly quota is used up, until either a paid SerpApi plan or
 DataForSEO (`RANK_PROVIDER=dataforseo`, already verified and working) is
 switched on.
 
-## Known gaps (not part of steps 1-4, 6)
+## Known gaps
 
 - Auth is homegrown JWT, not Clerk/NextAuth as REQUIREMENTS.md's stack
   table suggests — swap later if you want hosted auth.
@@ -122,7 +157,8 @@ switched on.
   registration) with no way to top up or renew monthly. The credit-gating
   logic itself (check balance → decrement → 402 when empty) is already
   built the same way it'll work once Stripe adds a way to refill it.
-- No Claude API integration (AI suggestions, step 7) or GSC/GA
-  integrations (step 8) yet.
+- AI suggestions cover meta descriptions only - no title rewrites or
+  content briefs yet (§2.7, v2).
+- No GSC/GA integrations (step 8) yet.
 - No keyword-suggestion or competitor-comparison features (§2.4) — only
   rank checks for keywords the user explicitly adds.

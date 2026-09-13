@@ -98,3 +98,9 @@ class KeywordRankRead(BaseModel):
     language_code: str
     device: str
     checked_at: datetime
+
+
+# --- AI suggestions ---
+
+class MetaDescriptionSuggestion(BaseModel):
+    suggestion: str
