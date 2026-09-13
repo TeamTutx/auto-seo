@@ -7,6 +7,7 @@ import app.services.keyword_rank_runner as keyword_rank_runner
 from app.database import get_session
 from app.main import app
 from app.models import User
+from app.services.rank_providers.base import RankProvider
 
 
 @pytest.fixture
@@ -39,17 +40,24 @@ def _grant_credits(db, email, amount):
         session.commit()
 
 
+class _FakeProvider(RankProvider):
+    name = "fake"
+
+    def __init__(self, sequence):
+        self.sequence = sequence
+        self.i = 0
+
+    def fetch_rank(self, keyword, target_domain, location_code, language_code, device):
+        value = self.sequence[self.i % len(self.sequence)]
+        self.i += 1
+        return value
+
+
 @pytest.fixture
 def fake_ranks(monkeypatch):
     def _install(sequence):
-        state = {"i": 0}
-
-        def fake_fetch_rank(keyword, target_domain, location_code, language_code, device):
-            value = sequence[state["i"] % len(sequence)]
-            state["i"] += 1
-            return value
-
-        monkeypatch.setattr(keyword_rank_runner, "fetch_rank", fake_fetch_rank)
+        provider = _FakeProvider(sequence)
+        monkeypatch.setattr(keyword_rank_runner, "get_rank_provider", lambda: provider)
 
     return _install
 
@@ -76,7 +84,7 @@ def test_add_keyword_persists_rank_and_spends_a_credit(client, fake_ranks):
     assert resp.status_code == 201
     body = resp.json()
     assert body["rank_position"] == 7
-    assert body["provider"] == "dataforseo"
+    assert body["provider"] == "fake"
 
     me = client.get("/auth/me", headers=headers).json()
     assert me["credits_balance"] == 2  # started at 3, spent 1
