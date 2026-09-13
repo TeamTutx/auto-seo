@@ -1,4 +1,4 @@
-import type { Audit, AuditDetail, Page, Site, User } from "./types";
+import type { Audit, AuditDetail, KeywordRank, MetaDescriptionSuggestion, Page, Site, User } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "signal_token";
@@ -78,4 +78,13 @@ export const api = {
   listAudits: (pageId: number) => request<Audit[]>(`/pages/${pageId}/audits`),
   getAudit: (id: number) => request<AuditDetail>(`/audits/${id}`),
   runAudit: (pageId: number) => request<AuditDetail>(`/pages/${pageId}/audits`, { method: "POST" }),
+
+  listKeywords: (pageId: number) => request<KeywordRank[]>(`/pages/${pageId}/keywords`),
+  addKeyword: (pageId: number, keyword: string) =>
+    request<KeywordRank>(`/pages/${pageId}/keywords`, { method: "POST", body: JSON.stringify({ keyword }) }),
+  recheckKeywords: (pageId: number) =>
+    request<KeywordRank[]>(`/pages/${pageId}/keywords/recheck`, { method: "POST" }),
+
+  suggestMetaDescription: (pageId: number) =>
+    request<MetaDescriptionSuggestion>(`/pages/${pageId}/suggestions/meta-description`, { method: "POST" }),
 };

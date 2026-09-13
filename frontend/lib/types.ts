@@ -46,3 +46,19 @@ export interface Audit {
 export interface AuditDetail extends Audit {
   checks: Check[];
 }
+
+export interface KeywordRank {
+  id: number;
+  page_id: number;
+  keyword: string;
+  rank_position: number | null;
+  provider: string | null;
+  location_code: number;
+  language_code: string;
+  device: string;
+  checked_at: string;
+}
+
+export interface MetaDescriptionSuggestion {
+  suggestion: string;
+}

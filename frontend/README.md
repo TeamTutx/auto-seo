@@ -1,7 +1,8 @@
 # Signal frontend
 
-Next.js (App Router) dashboard wired to the [backend](../backend) API — step 4
-of the build order in [`../docs/REQUIREMENTS.md`](../docs/REQUIREMENTS.md#8-suggested-build-order).
+Next.js (App Router) dashboard wired to the [backend](../backend) API —
+steps 4, 6, and part of 7 of the build order in
+[`../docs/REQUIREMENTS.md`](../docs/REQUIREMENTS.md#8-suggested-build-order).
 The static design reference is still at
 [`seo-dashboard-mockup.html`](seo-dashboard-mockup.html); this app implements
 that design against real data instead of hardcoded fixtures.
@@ -34,7 +35,8 @@ with CORS already configured for `http://localhost:3000` in
 ## What's here
 
 - `lib/api.ts` — typed fetch wrapper for every backend endpoint used so far
-  (auth, sites, pages, audits). Stores the JWT in `localStorage`.
+  (auth, sites, pages, audits, keywords, AI suggestions). Stores the JWT in
+  `localStorage`.
 - `lib/auth-context.tsx` — React context exposing `user`/`login`/`register`/`logout`.
 - `app/login/` — combined login/register form.
 - `app/(dashboard)/layout.tsx` + `components/Sidebar.tsx` — auth-gated shell:
@@ -45,18 +47,31 @@ with CORS already configured for `http://localhost:3000` in
 - `app/(dashboard)/sites/[siteId]/pages/[pageId]/page.tsx` — page detail:
   full checklist from the on-page audit engine, rescan button.
 - `components/ScoreGauge.tsx`, `components/CheckList.tsx` — presentational
-  pieces shared between the two dashboard views.
+  pieces shared between the two dashboard views. `CheckList` also drives the
+  "Generate a suggestion →" action on the `meta_description` check (step 7):
+  calls the AI-suggestion endpoint, shows the result inline with a copy
+  button. Not persisted anywhere — re-navigating away loses it, matching the
+  backend (nothing is stored server-side either).
+- `components/KeywordPanel.tsx` — keyword rank tracking (step 6), shown on
+  the page detail view regardless of whether an audit has run yet: add a
+  keyword (runs its first check), see the latest rank per tracked keyword,
+  "Recheck rankings now" to refresh all of them. Surfaces the backend's
+  plan-limit and credit-exhaustion errors inline the same way the rest of
+  the dashboard does.
 
 Verified manually end-to-end in a real browser: register → add site → add
 page → run a real audit against a live URL → see the checklist and score →
-hit both the free-tier site-limit (402) and rescan-throttle (429) errors and
-confirmed they render as inline messages.
+generate a real AI meta-description suggestion → track a keyword and see
+its live rank → recheck it. Also hit the free-tier site-limit (402) and
+rescan-throttle (429) errors and confirmed they render as inline messages.
 
-## Known gaps (not part of step 4)
+## Known gaps
 
-- No rank-tracking UI yet (keyword panel from the mockup) — that's step 6.
-- No credit-pack / upgrade modal — billing is step 5.
+- No credit-pack / upgrade modal — billing is step 5, intentionally
+  skipped for now.
 - Data fetching is plain client-side `useEffect` + `fetch`, not
   SSR/React Query — fine at this scale, worth revisiting if pages get slow.
 - "Run full scan" re-audits pages sequentially (not parallel, not queued
   through Celery) — fine for a handful of pages, not for hundreds.
+- No rank-history chart (§2.5) yet, even though the backend already has a
+  `history` endpoint for it — only the latest rank per keyword is shown.

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import ScoreGauge from "@/components/ScoreGauge";
 import CheckList from "@/components/CheckList";
+import KeywordPanel from "@/components/KeywordPanel";
 import type { AuditDetail, Page, Site } from "@/lib/types";
 
 export default function PageDetailPage() {
@@ -88,14 +89,16 @@ export default function PageDetailPage() {
 
       {error && <div className="form-error">{error}</div>}
 
-      {!audit ? (
-        <div className="panel empty-state">This page hasn&apos;t been audited yet.</div>
-      ) : (
-        <div className="detail-grid" style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 20 }}>
-          <div>
-            <CheckList checks={audit.checks} />
-          </div>
-          <div>
+      <div className="detail-grid" style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 20 }}>
+        <div>
+          {!audit ? (
+            <div className="panel empty-state">This page hasn&apos;t been audited yet.</div>
+          ) : (
+            <CheckList checks={audit.checks} pageId={pageId} />
+          )}
+        </div>
+        <div>
+          {audit && (
             <div className="panel side-panel">
               <div className="gauge-label" style={{ textAlign: "center" }}>
                 PAGE SCORE
@@ -116,9 +119,10 @@ export default function PageDetailPage() {
                 <span>{new Date(audit.created_at).toLocaleString()}</span>
               </div>
             </div>
-          </div>
+          )}
+          <KeywordPanel pageId={pageId} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
