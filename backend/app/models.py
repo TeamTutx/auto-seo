@@ -96,6 +96,12 @@ class KeywordRank(SQLModel, table=True):
     keyword: str
     rank_position: Optional[int] = Field(default=None)
     provider: Optional[str] = Field(default=None)
+    # Rank varies by search location/language/device, so each measurement
+    # records what it was checked against - without this, comparing two
+    # rows over time is meaningless if the defaults ever change.
+    location_code: int = Field(default=2840)  # DataForSEO location code, 2840 = United States
+    language_code: str = Field(default="en")
+    device: str = Field(default="desktop")
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
     page: Optional[Page] = Relationship(back_populates="keyword_ranks")

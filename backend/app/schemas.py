@@ -83,6 +83,9 @@ class AuditRead(BaseModel):
 
 class KeywordRankCreate(BaseModel):
     keyword: str
+    location_code: int = 2840
+    language_code: str = "en"
+    device: str = "desktop"
 
 
 class KeywordRankRead(BaseModel):
@@ -91,4 +94,7 @@ class KeywordRankRead(BaseModel):
     keyword: str
     rank_position: Optional[int]
     provider: Optional[str]
+    location_code: int
+    language_code: str
+    device: str
     checked_at: datetime
