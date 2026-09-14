@@ -254,118 +254,99 @@ export default function SiteOverviewPage() {
 
       <OpportunitiesPanel siteId={siteId} />
 
-      <div className="panel pages-panel">
-        <div className="pages-header">
-          <h3>Pages</h3>
-          <button className="btn btn-ghost" onClick={() => setAdding((v) => !v)}>
-            {adding ? "Cancel" : "+ Add page"}
-          </button>
-        </div>
-
-        {adding && (
-          <form className="inline-form" onSubmit={handleAddPage}>
-            <input
-              type="url"
-              required
-              placeholder="https://example.com/page"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Target keyword (optional)"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-            <button className="btn" type="submit" disabled={submitting}>
-              Add
-            </button>
-            {addError && <div style={{ color: "var(--bad)", fontSize: 12.5, flexBasis: "100%" }}>{addError}</div>}
-          </form>
-        )}
-
-        {rows.length === 0 ? (
-          <div className="empty-state">No pages yet — add one to run your first audit.</div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Page</th>
-                <th>Score</th>
-                <th>Target keyword</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ page, latestAudit }) => {
-                const bucket = latestAudit ? scoreBucket(latestAudit.score) : null;
-                let path: string;
-                try {
-                  path = new URL(page.url).pathname || "/";
-                } catch {
-                  path = page.url;
-                }
-                return (
-                  <tr
-                    key={page.id}
-                    className="clickable"
-                    onClick={() => router.push(`/sites/${siteId}/pages/${page.id}`)}
-                  >
-                    <td>
-                      <div className="url-cell">
-                        <span className="url-path">{path}</span>
-                        <span className="url-full">{page.url}</span>
-                      </div>
-                    </td>
-                    <td>
-                      {latestAudit && latestAudit.score !== null ? (
-                        <div className="mini-score">
-                          <div className="mini-bar">
-                            <div
-                              className="mini-bar-fill"
-                              style={{
-                                width: `${latestAudit.score}%`,
-                                background:
-                                  bucket === "good" ? "var(--good)" : bucket === "warn" ? "var(--warn)" : "var(--bad)",
-                              }}
-                            />
-                          </div>
-                          {latestAudit.score}
-                        </div>
-                      ) : (
-                        <span style={{ color: "var(--text-muted)" }}>—</span>
-                      )}
-                    </td>
-                    <td>{page.target_keyword || <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                    <td>
-                      {!latestAudit ? (
-                        <span className="status-pill neutral">Not scanned</span>
-                      ) : bucket === "good" ? (
-                        <span className="status-pill good">Healthy</span>
-                      ) : bucket === "warn" ? (
-                        <span className="status-pill warn">Needs work</span>
-                      ) : (
-                        <span className="status-pill bad">Critical</span>
-                      )}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="btn-ghost btn"
-                        style={{ fontSize: 11, padding: "4px 9px", color: "var(--bad)" }}
-                        onClick={() => handleDeletePage(page.id, page.url)}
-                        disabled={deletingPageId === page.id}
-                      >
-                        {deletingPageId === page.id ? "Deleting…" : "Delete"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+      <div className="section-toolbar">
+        <div className="section-title">Pages</div>
+        <button className="btn-ghost btn" style={{ fontSize: 11.5, padding: "5px 10px" }} onClick={() => setAdding((v) => !v)}>
+          {adding ? "Cancel" : "+ Add page"}
+        </button>
       </div>
+
+      {adding && (
+        <form
+          className="inline-form"
+          onSubmit={handleAddPage}
+          style={{ border: "1px solid var(--border)", borderRadius: 8, marginBottom: 10 }}
+        >
+          <input
+            type="url"
+            required
+            placeholder="https://example.com/page"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Target keyword (optional)"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+          <button className="btn" type="submit" disabled={submitting}>
+            Add
+          </button>
+          {addError && <div style={{ color: "var(--bad)", fontSize: 12.5, flexBasis: "100%" }}>{addError}</div>}
+        </form>
+      )}
+
+      {rows.length === 0 ? (
+        <div className="panel empty-state">No pages yet — add one to run your first audit.</div>
+      ) : (
+        <div className="card-grid" style={{ marginBottom: 0 }}>
+          {rows.map(({ page, latestAudit }) => {
+            const bucket = latestAudit ? scoreBucket(latestAudit.score) : null;
+            const barColor =
+              bucket === "good" ? "var(--good)" : bucket === "warn" ? "var(--warn)" : bucket === "bad" ? "var(--bad)" : "var(--border)";
+            let path: string;
+            try {
+              path = new URL(page.url).pathname || "/";
+            } catch {
+              path = page.url;
+            }
+            return (
+              <div className="page-card" key={page.id}>
+                <div className="page-card-top" onClick={() => router.push(`/sites/${siteId}/pages/${page.id}`)}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="page-path">{path}</div>
+                    <div className="page-url">{page.url}</div>
+                  </div>
+                  {!latestAudit ? (
+                    <span className="status-pill neutral">Not scanned</span>
+                  ) : bucket === "good" ? (
+                    <span className="status-pill good">Healthy</span>
+                  ) : bucket === "warn" ? (
+                    <span className="status-pill warn">Needs work</span>
+                  ) : (
+                    <span className="status-pill bad">Critical</span>
+                  )}
+                </div>
+                <div className="mini-score">
+                  <div className="mini-bar">
+                    <div
+                      className="mini-bar-fill"
+                      style={{ width: latestAudit?.score != null ? `${latestAudit.score}%` : "0%", background: barColor }}
+                    />
+                  </div>
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: 12.5 }}>
+                    {latestAudit?.score ?? "—"}
+                  </span>
+                </div>
+                <div className="page-kw-row">
+                  <span>Target keyword</span>
+                  <span>{page.target_keyword || "—"}</span>
+                </div>
+                <div className="page-card-actions">
+                  <button
+                    className="page-delete"
+                    onClick={() => handleDeletePage(page.id, page.url)}
+                    disabled={deletingPageId === page.id}
+                  >
+                    {deletingPageId === page.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

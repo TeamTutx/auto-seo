@@ -494,28 +494,81 @@ tbody tr.clickable:hover {
   font-size: 13px;
   margin-top: 4px;
 }
-.checklist-group {
-  margin-bottom: 22px;
-}
-.checklist-group-title {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 10px;
+/* Section toolbar (used above the audit grid, opportunities grid, pages grid) */
+.section-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.section-title {
+  font-size: 12px;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
-.check-item {
+.toolbar-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.chip-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 13px 16px;
+  gap: 6px;
+}
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 5px 11px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.chip.active {
+  background: var(--surface-raised);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Shared responsive 2-column card grid: audit checks, opportunities, pages */
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 32px;
+}
+@media (min-width: 700px) {
+  .card-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Collapsible check / opportunity card */
+.check-card {
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin-bottom: 8px;
-  background: var(--surface);
+  overflow: hidden;
+  align-self: start;
+}
+.check-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
 }
 .check-icon {
   width: 18px;
@@ -541,13 +594,52 @@ tbody tr.clickable:hover {
   background: var(--bad-dim);
   color: var(--bad);
 }
-.check-body {
+.sev-pill {
+  flex-shrink: 0;
+  margin-top: 1px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sev-pill.high {
+  background: var(--bad-dim);
+  color: var(--bad);
+}
+.sev-pill.medium {
+  background: var(--warn-dim);
+  color: var(--warn);
+}
+.sev-pill.low {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.check-head-body {
   flex: 1;
+  min-width: 0;
 }
 .check-title {
   font-size: 13.5px;
   font-weight: 500;
-  margin-bottom: 3px;
+}
+.check-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  margin-top: 2px;
+  font-size: 11px;
+}
+.check-card.open .chevron {
+  transform: rotate(180deg);
+}
+.check-card-content {
+  padding: 0 14px 14px 14px;
 }
 .check-desc {
   font-size: 12.5px;
@@ -557,6 +649,65 @@ tbody tr.clickable:hover {
   font-size: 12px;
   color: var(--accent);
   margin-top: 6px;
+}
+.check-goto {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+  text-decoration: none;
+}
+.check-goto:hover {
+  color: var(--text);
+}
+
+/* Page card (site overview "Pages" grid) */
+.page-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 15px 16px;
+}
+.page-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.page-path {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.page-url {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.page-kw-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.page-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.page-delete {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--bad);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .side-panel {
@@ -569,6 +720,60 @@ tbody tr.clickable:hover {
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+}
+
+/* Tracked-keyword row (full-width keyword panel) */
+.tracked-kw-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.tracked-kw-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+.kw-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kw-rank {
+  font-family: var(--font-display), "Space Grotesk", sans-serif;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.kw-chevron {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.tracked-kw-row.open .kw-chevron {
+  transform: rotate(180deg);
+}
+.kw-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 5px;
+  border-radius: 6px;
+  display: flex;
+  line-height: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.kw-delete:hover {
+  color: var(--bad);
+  background: var(--bad-dim);
+}
+.kw-detail {
+  padding: 4px 4px 16px 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 /* Auth pages */

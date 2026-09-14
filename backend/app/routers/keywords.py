@@ -91,6 +91,26 @@ def keyword_history(
     return [r for r in _all_ranks(session, page.id) if r.keyword == keyword][::-1]
 
 
+@router.delete("/pages/{page_id}/keywords", status_code=status.HTTP_204_NO_CONTENT)
+def delete_keyword(
+    page_id: int,
+    keyword: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Stop tracking a keyword entirely - removes every historical rank row
+    for it on this page, not just the latest."""
+    page = get_owned_page(session, page_id, current_user)
+    ranks = session.exec(
+        select(KeywordRank).where(KeywordRank.page_id == page.id, KeywordRank.keyword == keyword)
+    ).all()
+    if not ranks:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keyword not tracked")
+    for rank in ranks:
+        session.delete(rank)
+    session.commit()
+
+
 @router.post("/pages/{page_id}/keywords/recheck", response_model=List[KeywordRankRead])
 def recheck_keywords(
     page_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)

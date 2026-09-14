@@ -141,3 +141,59 @@ def test_rank_check_matches_against_page_url_not_site_domain(client, monkeypatch
     client.post(f"/pages/{page['id']}/keywords", json={"keyword": "a"}, headers=headers)
 
     assert calls == ["https://real-domain.com/page"]
+
+
+def test_delete_keyword_removes_it_and_its_history(client, fake_ranks):
+    fake_ranks([5, 4])
+    headers = register_and_login(client, "kw8@test.dev")
+    page_id = make_page(client, headers)
+
+    client.post(f"/pages/{page_id}/keywords", json={"keyword": "vitamin c serum"}, headers=headers)
+    client.post(f"/pages/{page_id}/keywords", json={"keyword": "vitamin c serum"}, headers=headers)  # second check
+
+    resp = client.delete(f"/pages/{page_id}/keywords?keyword=vitamin+c+serum", headers=headers)
+    assert resp.status_code == 204
+
+    remaining = client.get(f"/pages/{page_id}/keywords", headers=headers).json()
+    assert remaining == []
+
+    history = client.get(
+        f"/pages/{page_id}/keywords/history?keyword=vitamin+c+serum", headers=headers
+    ).json()
+    assert history == []
+
+
+def test_delete_keyword_does_not_affect_other_keywords(client, fake_ranks):
+    fake_ranks([5, 9])
+    headers = register_and_login(client, "kw9@test.dev")
+    page_id = make_page(client, headers)
+
+    client.post(f"/pages/{page_id}/keywords", json={"keyword": "a"}, headers=headers)
+    client.post(f"/pages/{page_id}/keywords", json={"keyword": "b"}, headers=headers)
+
+    client.delete(f"/pages/{page_id}/keywords?keyword=a", headers=headers)
+
+    remaining = client.get(f"/pages/{page_id}/keywords", headers=headers).json()
+    assert [r["keyword"] for r in remaining] == ["b"]
+
+
+def test_delete_untracked_keyword_returns_404(client):
+    headers = register_and_login(client, "kw10@test.dev")
+    page_id = make_page(client, headers)
+
+    resp = client.delete(f"/pages/{page_id}/keywords?keyword=never-tracked", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_delete_keyword_requires_ownership(client, fake_ranks):
+    fake_ranks([5])
+    headers1 = register_and_login(client, "kw11a@test.dev")
+    headers2 = register_and_login(client, "kw11b@test.dev")
+    page_id = make_page(client, headers1)
+    client.post(f"/pages/{page_id}/keywords", json={"keyword": "a"}, headers=headers1)
+
+    resp = client.delete(f"/pages/{page_id}/keywords?keyword=a", headers=headers2)
+    assert resp.status_code == 404
+
+    remaining = client.get(f"/pages/{page_id}/keywords", headers=headers1).json()
+    assert len(remaining) == 1

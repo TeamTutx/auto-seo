@@ -116,6 +116,8 @@ export const api = {
     }),
   recheckKeywords: (pageId: number) =>
     request<KeywordRank[]>(`/pages/${pageId}/keywords/recheck`, { method: "POST" }),
+  deleteKeyword: (pageId: number, keyword: string) =>
+    request<void>(`/pages/${pageId}/keywords?keyword=${encodeURIComponent(keyword)}`, { method: "DELETE" }),
   keywordHistory: (pageId: number, keyword: string) =>
     request<KeywordRank[]>(`/pages/${pageId}/keywords/history?keyword=${encodeURIComponent(keyword)}`),
   getCompetitors: (pageId: number, keyword: string, locationCode?: number, device?: string) =>

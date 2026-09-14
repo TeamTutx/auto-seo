@@ -16,9 +16,10 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
   const [device, setDevice] = useState("desktop");
   const [submitting, setSubmitting] = useState(false);
   const [rechecking, setRechecking] = useState(false);
+  const [deletingKeyword, setDeletingKeyword] = useState<string | null>(null);
 
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [tab, setTab] = useState<DetailTab>("history");
+  const [tab, setTab] = useState<DetailTab | null>(null);
   const [historyCache, setHistoryCache] = useState<Record<string, KeywordRank[]>>({});
   const [competitorsCache, setCompetitorsCache] = useState<Record<string, CompetitorResult[]>>({});
   const [opportunitiesCache, setOpportunitiesCache] = useState<Record<string, KeywordOpportunity[]>>({});
@@ -72,6 +73,21 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
     }
   }
 
+  async function handleDelete(kw: KeywordRank) {
+    if (!confirm(`Stop tracking "${kw.keyword}"? This removes its rank history.`)) return;
+    setError(null);
+    setDeletingKeyword(kw.keyword);
+    try {
+      await api.deleteKeyword(pageId, kw.keyword);
+      if (expanded === kw.keyword) setExpanded(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete keyword.");
+    } finally {
+      setDeletingKeyword(null);
+    }
+  }
+
   async function toggleExpand(kw: KeywordRank) {
     if (expanded === kw.keyword) {
       setExpanded(null);
@@ -94,6 +110,10 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
   }
 
   async function showTab(kw: KeywordRank, nextTab: DetailTab) {
+    if (tab === nextTab) {
+      setTab(null); // clicking the active tab again collapses it
+      return;
+    }
     setTab(nextTab);
     setDetailError(null);
     if (nextTab === "competitors" && !competitorsCache[kw.keyword]) {
@@ -134,9 +154,9 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
   }
 
   return (
-    <div className="panel side-panel" style={{ marginTop: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <h4 style={{ marginBottom: 0 }}>Target keywords</h4>
+    <div>
+      <div className="section-toolbar">
+        <div className="section-title">Target keywords</div>
         <button
           className="btn-ghost btn"
           style={{ fontSize: 11.5, padding: "5px 10px" }}
@@ -153,7 +173,7 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
       )}
 
       {adding && (
-        <form onSubmit={handleAdd} style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+        <form onSubmit={handleAdd} style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input
             autoFocus
             value={keyword}
@@ -166,44 +186,43 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
               padding: "7px 9px",
               color: "var(--text)",
               fontSize: 12.5,
+              flex: 1,
+              minWidth: 160,
             }}
           />
-          <div style={{ display: "flex", gap: 6 }}>
-            <select
-              value={locationCode}
-              onChange={(e) => setLocationCode(Number(e.target.value))}
-              style={{
-                flex: 1,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: "7px 9px",
-                color: "var(--text)",
-                fontSize: 12,
-              }}
-            >
-              {LOCATION_OPTIONS.map((opt) => (
-                <option key={opt.code} value={opt.code}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={device}
-              onChange={(e) => setDevice(e.target.value)}
-              style={{
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: "7px 9px",
-                color: "var(--text)",
-                fontSize: 12,
-              }}
-            >
-              <option value="desktop">Desktop</option>
-              <option value="mobile">Mobile</option>
-            </select>
-          </div>
+          <select
+            value={locationCode}
+            onChange={(e) => setLocationCode(Number(e.target.value))}
+            style={{
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              padding: "7px 9px",
+              color: "var(--text)",
+              fontSize: 12,
+            }}
+          >
+            {LOCATION_OPTIONS.map((opt) => (
+              <option key={opt.code} value={opt.code}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={device}
+            onChange={(e) => setDevice(e.target.value)}
+            style={{
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              padding: "7px 9px",
+              color: "var(--text)",
+              fontSize: 12,
+            }}
+          >
+            <option value="desktop">Desktop</option>
+            <option value="mobile">Mobile</option>
+          </select>
           <button className="btn" type="submit" disabled={submitting || !keyword.trim()} style={{ fontSize: 12 }}>
             Track
           </button>
@@ -211,135 +230,159 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
       )}
 
       {keywords === null ? (
-        <div style={{ color: "var(--text-muted)", fontSize: 12.5 }}>Loading…</div>
+        <div className="loading-state">Loading…</div>
       ) : keywords.length === 0 ? (
-        <div style={{ color: "var(--text-muted)", fontSize: 12.5 }}>No keywords tracked yet.</div>
+        <div className="empty-state">No keywords tracked yet.</div>
       ) : (
-        keywords.map((kw) => (
-          <div key={kw.id}>
-            <div className="kw-row" style={{ cursor: "pointer" }} onClick={() => toggleExpand(kw)}>
-              <span>{kw.keyword}</span>
-              <span className="kw-rank">{kw.rank_position !== null ? `#${kw.rank_position}` : "Not found"}</span>
-            </div>
-
-            {expanded === kw.keyword && (
-              <div style={{ padding: "8px 0 14px 0", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                  <button
-                    className={tab === "history" ? "btn" : "btn-ghost btn"}
-                    style={{ fontSize: 11, padding: "4px 10px" }}
-                    onClick={() => showTab(kw, "history")}
-                  >
-                    History
-                  </button>
-                  <button
-                    className={tab === "competitors" ? "btn" : "btn-ghost btn"}
-                    style={{ fontSize: 11, padding: "4px 10px" }}
-                    onClick={() => showTab(kw, "competitors")}
-                  >
-                    Competitors
-                  </button>
-                  <button
-                    className={tab === "opportunities" ? "btn" : "btn-ghost btn"}
-                    style={{ fontSize: 11, padding: "4px 10px" }}
-                    onClick={() => showTab(kw, "opportunities")}
-                  >
-                    Opportunities
-                  </button>
-                </div>
-
-                {detailLoading && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</div>}
-                {detailError && <div style={{ color: "var(--bad)", fontSize: 12 }}>{detailError}</div>}
-
-                {!detailLoading && !detailError && tab === "history" && historyCache[kw.keyword] && (
-                  <RankHistoryChart history={historyCache[kw.keyword]} />
-                )}
-
-                {!detailLoading && !detailError && tab === "competitors" && competitorsCache[kw.keyword] && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {competitorsCache[kw.keyword].length === 0 ? (
-                      <div style={{ color: "var(--text-muted)", fontSize: 12 }}>No competitors found.</div>
-                    ) : (
-                      competitorsCache[kw.keyword].map((c) => (
-                        <a
-                          key={c.position}
-                          href={c.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontSize: 12, color: "var(--text)", textDecoration: "none" }}
-                        >
-                          <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)" }}>
-                            #{c.position}
-                          </span>{" "}
-                          {c.domain}
-                        </a>
-                      ))
-                    )}
-                  </div>
-                )}
-
-                {!detailLoading && !detailError && tab === "opportunities" && opportunitiesCache[kw.keyword] && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {opportunitiesCache[kw.keyword].length === 0 ? (
-                      <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                        No keyword opportunities found.
-                      </div>
-                    ) : (
-                      opportunitiesCache[kw.keyword].map((opp) => {
-                        const alreadyTracked =
-                          addedOpportunities.has(opp.keyword) ||
-                          keywords?.some((k) => k.keyword.toLowerCase() === opp.keyword.toLowerCase());
-                        return (
-                          <div
-                            key={opp.keyword}
-                            style={{
-                              padding: "8px 10px",
-                              borderRadius: 6,
-                              border: "1px solid var(--border)",
-                              background: "var(--surface-raised)",
-                            }}
-                          >
-                            <div style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 500 }}>
-                              {opp.keyword}
-                            </div>
-                            {opp.reason && (
-                              <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
-                                {opp.reason}
-                              </div>
-                            )}
-                            <button
-                              className="btn-ghost btn"
-                              style={{ fontSize: 11, padding: "4px 9px", marginTop: 6 }}
-                              disabled={alreadyTracked || addingOpportunity === opp.keyword}
-                              onClick={() => handleAddOpportunity(opp.keyword)}
-                            >
-                              {alreadyTracked
-                                ? "Tracking"
-                                : addingOpportunity === opp.keyword
-                                ? "Adding…"
-                                : "+ Add to tracking"}
-                            </button>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                )}
+        <div className="panel pages-panel">
+          {keywords.map((kw) => (
+            <div key={kw.id}>
+              <div
+                className={`tracked-kw-row${expanded === kw.keyword ? " open" : ""}`}
+                onClick={() => toggleExpand(kw)}
+              >
+                <div className="kw-name">{kw.keyword}</div>
+                <div className="kw-rank">{kw.rank_position !== null ? `#${kw.rank_position}` : "Not found"}</div>
+                <div className="kw-chevron">▾</div>
+                <button
+                  className="kw-delete"
+                  title="Stop tracking this keyword"
+                  aria-label="Stop tracking this keyword"
+                  disabled={deletingKeyword === kw.keyword}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(kw);
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18"></path>
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
               </div>
-            )}
-          </div>
-        ))
-      )}
 
-      {keywords && keywords.length > 0 && (
-        <button
-          className="btn btn-ghost"
-          style={{ width: "100%", marginTop: 14, fontSize: 12.5 }}
-          onClick={handleRecheck}
-          disabled={rechecking}
-        >
-          {rechecking ? "Rechecking…" : "Recheck rankings now"}
-        </button>
+              {expanded === kw.keyword && (
+                <div className="kw-detail">
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <button
+                      className={tab === "history" ? "btn" : "btn-ghost btn"}
+                      style={{ fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => showTab(kw, "history")}
+                    >
+                      History
+                    </button>
+                    <button
+                      className={tab === "competitors" ? "btn" : "btn-ghost btn"}
+                      style={{ fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => showTab(kw, "competitors")}
+                    >
+                      Competitors
+                    </button>
+                    <button
+                      className={tab === "opportunities" ? "btn" : "btn-ghost btn"}
+                      style={{ fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => showTab(kw, "opportunities")}
+                    >
+                      Opportunities
+                    </button>
+                  </div>
+
+                  {detailLoading && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</div>}
+                  {detailError && <div style={{ color: "var(--bad)", fontSize: 12 }}>{detailError}</div>}
+
+                  {!detailLoading && !detailError && tab === "history" && historyCache[kw.keyword] && (
+                    <RankHistoryChart history={historyCache[kw.keyword]} />
+                  )}
+
+                  {!detailLoading && !detailError && tab === "competitors" && competitorsCache[kw.keyword] && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {competitorsCache[kw.keyword].length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>No competitors found.</div>
+                      ) : (
+                        competitorsCache[kw.keyword].map((c) => (
+                          <a
+                            key={c.position}
+                            href={c.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ fontSize: 12, color: "var(--text)", textDecoration: "none" }}
+                          >
+                            <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)" }}>
+                              #{c.position}
+                            </span>{" "}
+                            {c.domain}
+                          </a>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {!detailLoading && !detailError && tab === "opportunities" && opportunitiesCache[kw.keyword] && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {opportunitiesCache[kw.keyword].length === 0 ? (
+                        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                          No keyword opportunities found.
+                        </div>
+                      ) : (
+                        opportunitiesCache[kw.keyword].map((opp) => {
+                          const alreadyTracked =
+                            addedOpportunities.has(opp.keyword) ||
+                            keywords?.some((k) => k.keyword.toLowerCase() === opp.keyword.toLowerCase());
+                          return (
+                            <div
+                              key={opp.keyword}
+                              style={{
+                                padding: "8px 10px",
+                                borderRadius: 6,
+                                border: "1px solid var(--border)",
+                                background: "var(--surface-raised)",
+                              }}
+                            >
+                              <div style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 500 }}>
+                                {opp.keyword}
+                              </div>
+                              {opp.reason && (
+                                <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
+                                  {opp.reason}
+                                </div>
+                              )}
+                              <button
+                                className="btn-ghost btn"
+                                style={{ fontSize: 11, padding: "4px 9px", marginTop: 6 }}
+                                disabled={alreadyTracked || addingOpportunity === opp.keyword}
+                                onClick={() => handleAddOpportunity(opp.keyword)}
+                              >
+                                {alreadyTracked
+                                  ? "Tracking"
+                                  : addingOpportunity === opp.keyword
+                                  ? "Adding…"
+                                  : "+ Add to tracking"}
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+          <div style={{ padding: "14px 18px" }}>
+            <button
+              className="btn btn-ghost"
+              style={{ width: "100%", fontSize: 12.5 }}
+              onClick={handleRecheck}
+              disabled={rechecking}
+            >
+              {rechecking ? "Rechecking…" : "Recheck rankings now"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

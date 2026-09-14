@@ -184,40 +184,36 @@ export default function PageDetailPage() {
 
       {error && <div className="form-error">{error}</div>}
 
-      <div className="detail-grid" style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 20 }}>
-        <div>
-          {!audit ? (
-            <div className="panel empty-state">This page hasn&apos;t been audited yet.</div>
-          ) : (
-            <CheckList checks={audit.checks} pageId={pageId} />
-          )}
-        </div>
-        <div>
-          {audit && (
-            <div className="panel side-panel">
-              <div className="gauge-label" style={{ textAlign: "center" }}>
-                PAGE SCORE
-              </div>
-              <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
-                <ScoreGauge score={audit.score} />
-              </div>
-              <div className="kw-row" style={{ borderBottom: "1px solid var(--border)" }}>
-                <span>Target keyword</span>
-                <span>{page.target_keyword || "—"}</span>
-              </div>
-              <div className="kw-row" style={{ borderBottom: "1px solid var(--border)" }}>
-                <span>Word count</span>
-                <span>{audit.word_count ?? "—"}</span>
-              </div>
-              <div className="kw-row" style={{ borderBottom: "none" }}>
-                <span>Last scanned</span>
-                <span>{new Date(audit.created_at).toLocaleString()}</span>
-              </div>
+      {audit && (
+        <div className="overview-grid">
+          <div className="panel score-panel">
+            <div className="gauge-label">PAGE SCORE</div>
+            <ScoreGauge score={audit.score} />
+          </div>
+          <div className="stat-row">
+            <div className="stat-cell">
+              <div className="stat-label">Target keyword</div>
+              <div className="stat-value" style={{ fontSize: 16.5 }}>{page.target_keyword || "—"}</div>
             </div>
-          )}
-          <KeywordPanel pageId={pageId} />
+            <div className="stat-cell">
+              <div className="stat-label">Word count</div>
+              <div className="stat-value">{audit.word_count ?? "—"}</div>
+            </div>
+            <div className="stat-cell">
+              <div className="stat-label">Last scanned</div>
+              <div className="stat-value" style={{ fontSize: 14.5 }}>{new Date(audit.created_at).toLocaleString()}</div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {!audit ? (
+        <div className="panel empty-state" style={{ marginBottom: 32 }}>This page hasn&apos;t been audited yet.</div>
+      ) : (
+        <CheckList checks={audit.checks} pageId={pageId} />
+      )}
+
+      <KeywordPanel pageId={pageId} />
     </div>
   );
 }
