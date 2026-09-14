@@ -64,6 +64,13 @@ class Site(SQLModel, table=True):
     verification_method: Optional[VerificationMethod] = Field(default=None)
     verification_token: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Which Search Console / Analytics property (from the user's connected
+    # Google account - see GoogleConnection) this site's real traffic/search
+    # data comes from. Picked by the user in Settings, since one Google
+    # account can have access to several properties and there's no reliable
+    # way to guess which one maps to this site's domain.
+    gsc_property: Optional[str] = Field(default=None)  # e.g. "sc-domain:example.com" or "https://example.com/"
+    ga_property_id: Optional[str] = Field(default=None)  # GA4 numeric property id
 
     user: Optional[User] = Relationship(back_populates="sites")
     pages: List["Page"] = Relationship(back_populates="site")
@@ -152,3 +159,19 @@ class AppliedFix(SQLModel, table=True):
     applied_at: datetime = Field(default_factory=datetime.utcnow)
     resolved: bool = Field(default=False)
     resolved_at: Optional[datetime] = Field(default=None)
+
+
+class GoogleConnection(SQLModel, table=True):
+    """One connected Google account per Signal user (Search Console +
+    Analytics are just scopes on the same OAuth grant - see
+    app/services/google_oauth.py). Tokens are encrypted at rest
+    (app/services/token_crypto.py) since a leaked refresh token grants
+    standing access to the user's real Google data, unlike a session
+    cookie."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True, unique=True)
+    access_token_encrypted: str
+    refresh_token_encrypted: str
+    token_expires_at: datetime
+    scope: str = Field(default="")
+    connected_at: datetime = Field(default_factory=datetime.utcnow)

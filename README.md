@@ -51,8 +51,21 @@ AI-assisted fixes for their own web pages — without hiring an agency.
 - Credit system metering paid actions (rank checks, AI suggestions,
   competitor lookups) — ready for Stripe to plug into later.
 
-**Not yet built:** Stripe billing (deliberately deferred), Google Search
-Console / Analytics integrations (need Google OAuth credentials), keyword
+**Google Search Console / Analytics** (needs a one-time Google Cloud OAuth
+setup — see the API keys table below)
+- Connect a Google account (Settings page) and pick which Search Console
+  property and GA4 property belongs to each site.
+- Real search queries, clicks, impressions, and average position per page —
+  a different, complementary signal to the SerpApi/DataForSEO rank checks
+  above: those tell you where you rank for a keyword you specify, this
+  tells you what people are *actually* searching that leads to clicks,
+  including queries you never thought to track.
+- Indexing status per page (Search Console's URL Inspection) — the real
+  answer to "why does this page have zero rank" when it's simply not been
+  crawled yet, as opposed to a ranking problem.
+- Real traffic per page (sessions, pageviews, bounce rate, engagement).
+
+**Not yet built:** Stripe billing (deliberately deferred), keyword
 search-volume/difficulty data (needs a funded keyword-data API), email
 delivery for alerts (needs a Resend/SendGrid key), AI content briefs, and
 team/agency multi-user seats. Details and reasoning for each are in
@@ -63,7 +76,8 @@ team/agency multi-user seats. Details and reasoning for each are in
 - **Frontend:** Next.js (App Router), TypeScript
 - **DB:** SQLite for local dev, PostgreSQL via `DATABASE_URL` for anything real
 - **External services:** SerpApi/DataForSEO (rank data), OpenAI/Anthropic
-  (AI suggestions) — Stripe planned, not yet integrated
+  (AI suggestions), Google Search Console/Analytics (real search + traffic
+  data, OAuth) — Stripe planned, not yet integrated
 
 ## How to run
 
@@ -130,6 +144,7 @@ feature area. Add them to `backend/.env` as you get them.
 |---|---|---|
 | `SERPAPI_KEY` (default) or `DATAFORSEO_LOGIN`/`DATAFORSEO_PASSWORD` | Keyword rank checks, competitor comparison | [serpapi.com](https://serpapi.com) (100 free searches/mo) or [dataforseo.com](https://dataforseo.com) |
 | `OPENAI_API_KEY` (default) or `ANTHROPIC_API_KEY` | AI meta description/title suggestions | [platform.openai.com](https://platform.openai.com) or [console.anthropic.com](https://console.anthropic.com) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Connect Google Search Console / Analytics | [console.cloud.google.com](https://console.cloud.google.com) — an OAuth client, not a static key; see the "Google Search Console / Analytics integration" section in [`backend/README.md`](backend/README.md) for the exact setup steps |
 
 Switch which vendor is active with `RANK_PROVIDER` (`serpapi` /
 `dataforseo`) and `AI_PROVIDER` (`openai` / `anthropic`) in `.env` — no

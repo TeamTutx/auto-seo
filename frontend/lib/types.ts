@@ -17,6 +17,8 @@ export interface Site {
   verification_method: VerificationMethod | null;
   verification_token: string;
   created_at: string;
+  gsc_property: string | null;
+  ga_property_id: string | null;
 }
 
 export interface Page {
@@ -185,4 +187,42 @@ export interface SiteHealth {
   keyword_wins: KeywordMovement[];
   keyword_losses: KeywordMovement[];
   top_opportunities: Opportunity[];
+}
+
+export interface GoogleAuthorizeResponse {
+  authorize_url: string;
+}
+
+export interface GAPropertyOption {
+  property_id: string;
+  display_name: string;
+}
+
+export interface GoogleConnectionStatus {
+  connected: boolean;
+  connected_at: string | null;
+  gsc_properties: string[];
+  ga_properties: GAPropertyOption[];
+}
+
+export interface GSCQueryRow {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface GSCIndexStatus {
+  indexed: boolean;
+  verdict: string;
+  coverage_state: string;
+  last_crawl_time: string | null;
+}
+
+export interface GAPageMetrics {
+  sessions: number;
+  pageviews: number;
+  bounce_rate: number;
+  avg_session_duration: number;
 }

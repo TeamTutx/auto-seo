@@ -5,6 +5,11 @@ import type {
   Audit,
   AuditDetail,
   CompetitorResult,
+  GAPageMetrics,
+  GoogleAuthorizeResponse,
+  GoogleConnectionStatus,
+  GSCIndexStatus,
+  GSCQueryRow,
   KeywordOpportunity,
   KeywordRank,
   MetaDescriptionSuggestion,
@@ -87,8 +92,8 @@ export const api = {
   listSites: () => request<Site[]>("/sites"),
   createSite: (domain: string) => request<Site>("/sites", { method: "POST", body: JSON.stringify({ domain }) }),
   getSite: (id: number) => request<Site>(`/sites/${id}`),
-  updateSite: (id: number, domain: string) =>
-    request<Site>(`/sites/${id}`, { method: "PATCH", body: JSON.stringify({ domain }) }),
+  updateSite: (id: number, data: { domain?: string; gsc_property?: string | null; ga_property_id?: string | null }) =>
+    request<Site>(`/sites/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteSite: (id: number) => request<void>(`/sites/${id}`, { method: "DELETE" }),
   verifySite: (id: number, method: VerificationMethod) =>
     request<SiteVerificationResult>(`/sites/${id}/verify`, { method: "POST", body: JSON.stringify({ method }) }),
@@ -178,4 +183,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ type, check_type: checkType ?? null, keyword: keyword ?? null }),
     }),
+
+  connectGoogle: () => request<GoogleAuthorizeResponse>("/integrations/google/connect", { method: "POST" }),
+  getGoogleStatus: () => request<GoogleConnectionStatus>("/integrations/google/status"),
+  disconnectGoogle: () => request<void>("/integrations/google", { method: "DELETE" }),
+
+  getPageSearchQueries: (pageId: number, days?: number) =>
+    request<GSCQueryRow[]>(`/pages/${pageId}/gsc/queries${days ? `?days=${days}` : ""}`),
+  getPageIndexStatus: (pageId: number) => request<GSCIndexStatus>(`/pages/${pageId}/gsc/index-status`),
+  getPageGAMetrics: (pageId: number, days?: number) =>
+    request<GAPageMetrics>(`/pages/${pageId}/ga/metrics${days ? `?days=${days}` : ""}`),
 };

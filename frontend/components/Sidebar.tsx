@@ -112,6 +112,14 @@ export default function Sidebar() {
         )}
       </div>
 
+      <Link
+        href="/settings"
+        className="add-site-btn"
+        style={{ textDecoration: "none", justifyContent: "flex-start" }}
+      >
+        Settings
+      </Link>
+
       {user && (
         <div className="plan-widget">
           <div className="plan-widget-top">

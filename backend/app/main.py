@@ -4,7 +4,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_db_and_tables
-from app.routers import alerts, audits, auth, keywords, opportunities, pages, site_health, sites, suggestions
+from app.routers import (
+    alerts,
+    audits,
+    auth,
+    google_data,
+    google_integration,
+    keywords,
+    opportunities,
+    pages,
+    site_health,
+    sites,
+    suggestions,
+)
 
 
 @asynccontextmanager
@@ -33,6 +45,8 @@ app.include_router(suggestions.router)
 app.include_router(alerts.router)
 app.include_router(opportunities.router)
 app.include_router(site_health.router)
+app.include_router(google_integration.router)
+app.include_router(google_data.router)
 
 
 @app.get("/health")

@@ -62,6 +62,10 @@ def update_site(
         # A domain change invalidates whatever was verified before.
         site.verified = False
         site.verification_method = None
+    if payload.gsc_property is not None:
+        site.gsc_property = payload.gsc_property or None
+    if payload.ga_property_id is not None:
+        site.ga_property_id = payload.ga_property_id or None
     session.add(site)
     session.commit()
     session.refresh(site)

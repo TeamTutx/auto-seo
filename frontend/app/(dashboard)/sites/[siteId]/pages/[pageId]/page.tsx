@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import ScoreGauge from "@/components/ScoreGauge";
 import CheckList from "@/components/CheckList";
+import GoogleAnalyticsPanel from "@/components/GoogleAnalyticsPanel";
+import GoogleSearchConsolePanel from "@/components/GoogleSearchConsolePanel";
 import KeywordPanel from "@/components/KeywordPanel";
 import type { AuditDetail, Page, Site } from "@/lib/types";
 
@@ -214,6 +216,9 @@ export default function PageDetailPage() {
       )}
 
       <KeywordPanel pageId={pageId} />
+
+      {site.gsc_property && <GoogleSearchConsolePanel pageId={pageId} />}
+      {site.ga_property_id && <GoogleAnalyticsPanel pageId={pageId} />}
     </div>
   );
 }

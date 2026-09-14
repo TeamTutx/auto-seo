@@ -126,6 +126,17 @@ vendor or costs real money.
   Celery Beat's daily schedule (`celery_app.py`) actually calls.
 - `alembic/` — hand-written migrations (no live Postgres to autogenerate
   against yet); regenerate if they drift from `models.py`.
+- `app/services/google_oauth.py` — pure-HTTP OAuth 2.0 (authorize URL,
+  code exchange, refresh) - no DB access, so it's fully testable without a
+  database. `app/services/google_connection.py` is the DB-backed layer on
+  top (`GoogleConnection` row per user, encrypted tokens via
+  `app/services/token_crypto.py`, transparent refresh-on-expiry).
+- `app/services/gsc.py`, `app/services/ga.py` — Search Console and
+  Analytics (GA4) API clients, same "one class, pure HTTP, parse the
+  vendor's response shape" pattern as `rank_providers/`/`ai_providers/`.
+- `app/routers/google_integration.py` (connect/callback/status/disconnect)
+  and `app/routers/google_data.py` (per-page queries/index-status/metrics)
+  — see "Google Search Console / Analytics integration" below.
 
 ## Site verification (§2.1)
 
@@ -248,6 +259,61 @@ that monthly quota is used up, until either a paid SerpApi plan or
 DataForSEO (`RANK_PROVIDER=dataforseo`, already verified and working) is
 switched on.
 
+## Google Search Console / Analytics integration (step 8)
+
+Unlike the vendor keys above, this is an OAuth client, not a static API
+key: Signal has to be registered as an app with Google, and then **each
+user** connects their own Google account through a real consent screen -
+there's no way to fully exercise this without doing the setup below.
+
+1. Create/select a project at [console.cloud.google.com](https://console.cloud.google.com).
+2. Enable **Search Console API** and **Google Analytics Data API**
+   (APIs & Services → Library).
+3. Configure the **OAuth consent screen** (APIs & Services → OAuth
+   consent screen). While in testing mode, only Google accounts you add
+   as test users can connect - fine for dev.
+4. Create an **OAuth client ID** (APIs & Services → Credentials → Create
+   Credentials → OAuth client ID → type "Web application"). Add
+   `http://localhost:8000/integrations/google/callback` as an authorized
+   redirect URI (must match `GOOGLE_REDIRECT_URI` exactly).
+5. Put the resulting Client ID/Secret in `.env` as `GOOGLE_CLIENT_ID` /
+   `GOOGLE_CLIENT_SECRET`.
+
+Once configured: `POST /integrations/google/connect` (authenticated)
+returns a Google consent URL; the frontend navigates the browser there;
+Google redirects back to `/integrations/google/callback`, which exchanges
+the code for tokens (`app/services/google_oauth.py`), stores them
+encrypted (`app/services/token_crypto.py`, a Fernet key derived from
+`SECRET_KEY`) in a `GoogleConnection` row, and sends the browser back to
+the frontend's `/settings` page. From there the user picks which Search
+Console property and GA4 property maps to each Signal site
+(`Site.gsc_property` / `Site.ga_property_id`, set via the existing
+`PATCH /sites/{id}`).
+
+Data endpoints, all gated on the site having the relevant property linked:
+- `GET /pages/{id}/gsc/queries` - real search queries/clicks/impressions/
+  position for that exact page (`app/services/gsc.py`), a different data
+  source than the SerpApi/DataForSEO rank checks: those tell you where
+  *you specify* you rank, this tells you what people are *actually*
+  searching that leads to clicks - including queries never manually
+  tracked.
+- `GET /pages/{id}/gsc/index-status` - whether Google has indexed the page
+  at all, via the URL Inspection API. This is the real answer to "why does
+  this page have zero rank" for a brand new page, as opposed to a ranking
+  problem.
+- `GET /pages/{id}/ga/metrics` - sessions/pageviews/bounce/engagement for
+  that page (`app/services/ga.py`, GA4 Data API).
+
+None of these cost Signal credits - unlike SerpApi/OpenAI, a Google API
+call here doesn't cost Signal money once the OAuth grant exists, so it
+isn't metered the way rank checks and AI suggestions are.
+
+**Not yet built on top of this:** requesting indexing for an unindexed
+page (a real write action via a separate Indexing API + scope, deliberately
+left out of this first pass to keep the OAuth surface reviewable) and
+feeding GSC query data into the Phase A opportunities list as a new
+opportunity type.
+
 ## Known gaps
 
 - Auth is homegrown JWT, not Clerk/NextAuth as REQUIREMENTS.md's stack
@@ -259,8 +325,9 @@ switched on.
   built the same way it'll work once Stripe adds a way to refill it.
 - AI suggestions cover meta descriptions and title tags only - no content
   briefs yet (§2.7, v2).
-- No GSC/GA integrations (step 8) - needs a Google Cloud OAuth client
-  ID/secret we don't have.
+- GSC/GA integration (step 8) is built but unverified against real Google
+  data - see "Google Search Console / Analytics integration" above for the
+  setup that's still needed before it can be tested live.
 - No keyword-suggestion features (search volume/difficulty, §2.4) - needs a
   funded keyword-data API; DataForSEO is set up but blocked on that $50
   top-up, and SerpApi doesn't offer this data in a compatible way.

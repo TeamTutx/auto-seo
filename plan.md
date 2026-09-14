@@ -126,13 +126,43 @@ reflects a real score change, wins/losses correctly categorize a keyword
 improvement and a score drop with the right direction/delta, and the
 existing Opportunities section stayed accurate alongside it.
 
+## Phase F — Google Search Console / Analytics integration
+
+**Status: code complete, unverified against real Google data**
+
+Unlike every other integration so far, this is OAuth, not a static key:
+Signal is registered as an app with Google, and each user grants access to
+their own Search Console/Analytics data through a real Google consent
+screen - there's no way to fully exercise it without a registered Google
+Cloud OAuth client and a human completing that screen. Full setup steps in
+`backend/README.md`.
+
+Built: the OAuth connect/callback/status/disconnect flow
+(`app/routers/google_integration.py`), encrypted token storage with
+transparent refresh (`app/services/google_connection.py` +
+`token_crypto.py`), GSC and GA4 API clients (`app/services/gsc.py`,
+`ga.py`), a Settings page to connect Google and map each site to a Search
+Console property + GA4 property, and per-page data: real search queries/
+clicks/impressions/position, indexing status (the real answer to "page
+ranks 0 because it's not indexed yet" - the original motivation for this
+phase), and real traffic (sessions/pageviews/bounce/engagement). None of
+it costs Signal credits, unlike SerpApi/OpenAI - a Google API call here is
+free once the OAuth grant exists.
+
+168 backend tests passing (mocked HTTP throughout, same pattern as
+SerpApi/DataForSEO/OpenAI). What's verified live: the full "not connected"
+UI, the clean error before `GOOGLE_CLIENT_ID` is configured, the Settings
+property-picker UI, and the per-page panels' "Connect Google in Settings
+first" error path. What's **not** verified live: an actual OAuth consent
+round-trip and real GSC/GA API responses - that needs the Google Cloud
+Console setup completed first.
+
+**Not yet built on top of this:** requesting indexing for an unindexed
+page (a real write action via a separate Indexing API + scope, deliberately
+left out to keep the OAuth surface reviewable), and feeding GSC query data
+into the Phase A opportunities list as a new opportunity type.
+
 ## Not yet scheduled
 
-- **GSC/GA integration** — real traffic and real search-query data instead
-  of only SERP-checked keywords would make Phase C much stronger, but it's
-  blocked on setting up Google OAuth credentials. This is also the answer to
-  "get a keyword indexed/ranking from zero" beyond content guidance — a page
-  can have zero rank simply because Google hasn't crawled it yet, and GSC's
-  Indexing API is the fix for that. Sequence after the above.
 - **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
 - **Stripe billing** — deliberately deferred per earlier decision.

@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
 
+    # Where the frontend runs - used to build the redirect after the Google
+    # OAuth callback (app/routers/google_integration.py).
+    frontend_url: str = "http://localhost:3000"
+
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
@@ -30,6 +34,14 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+
+    # Google Search Console + Analytics (Signal roadmap "GSC/GA integration",
+    # see plan.md). Unlike the vendor keys above, this is an OAuth client, not
+    # a static key - see backend/README.md for how to create one. Empty by
+    # default: the connect flow returns a clean error instead of crashing.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/integrations/google/callback"
 
 
 settings = Settings()

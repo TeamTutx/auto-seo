@@ -58,6 +58,11 @@ class SiteCreate(BaseModel):
 
 class SiteUpdate(BaseModel):
     domain: Optional[str] = None
+    # Picked from the list GET /integrations/google/status returns for the
+    # user's connected Google account - not re-validated here, same as any
+    # other "pick from a server-supplied list" field in this app.
+    gsc_property: Optional[str] = None
+    ga_property_id: Optional[str] = None
 
     @field_validator("domain")
     @classmethod
@@ -72,6 +77,8 @@ class SiteRead(BaseModel):
     verification_method: Optional[VerificationMethod]
     verification_token: str
     created_at: datetime
+    gsc_property: Optional[str]
+    ga_property_id: Optional[str]
 
 
 class SiteVerifyRequest(BaseModel):
@@ -268,6 +275,46 @@ class SiteHealth(BaseModel):
     keyword_wins: List[KeywordMovement]
     keyword_losses: List[KeywordMovement]
     top_opportunities: List[Opportunity]
+
+
+# --- Google integration (Search Console + Analytics) ---
+
+class GoogleAuthorizeResponse(BaseModel):
+    authorize_url: str
+
+
+class GAPropertyOption(BaseModel):
+    property_id: str
+    display_name: str
+
+
+class GoogleConnectionStatus(BaseModel):
+    connected: bool
+    connected_at: Optional[datetime] = None
+    gsc_properties: List[str] = []
+    ga_properties: List[GAPropertyOption] = []
+
+
+class GSCQueryRow(BaseModel):
+    query: str
+    clicks: int
+    impressions: int
+    ctr: float  # percent
+    position: float
+
+
+class GSCIndexStatus(BaseModel):
+    indexed: bool
+    verdict: str
+    coverage_state: str
+    last_crawl_time: Optional[str] = None
+
+
+class GAPageMetrics(BaseModel):
+    sessions: int
+    pageviews: int
+    bounce_rate: float  # percent
+    avg_session_duration: float  # seconds
 
 
 # --- alerts ---

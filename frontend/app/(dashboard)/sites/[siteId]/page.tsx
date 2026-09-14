@@ -86,7 +86,7 @@ export default function SiteOverviewPage() {
     setDomainError(null);
     setSavingDomain(true);
     try {
-      await api.updateSite(siteId, domainInput.trim());
+      await api.updateSite(siteId, { domain: domainInput.trim() });
       setEditingDomain(false);
       await Promise.all([loadAll(), refreshSites()]);
     } catch (err) {
