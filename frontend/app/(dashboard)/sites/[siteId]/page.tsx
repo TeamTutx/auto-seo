@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { scoreBucket } from "@/lib/score";
 import { useSites } from "@/lib/sites-context";
 import ScoreGauge from "@/components/ScoreGauge";
+import SiteVerification from "@/components/SiteVerification";
 import type { Audit, Page, Site } from "@/lib/types";
 
 interface PageRow {
@@ -223,6 +224,10 @@ export default function SiteOverviewPage() {
           {banner}
         </div>
       )}
+
+      <div style={{ marginBottom: 20 }}>
+        <SiteVerification site={site} onVerified={loadAll} />
+      </div>
 
       <div className="overview-grid">
         <div className="panel score-panel">

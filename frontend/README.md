@@ -56,22 +56,35 @@ with CORS already configured for `http://localhost:3000` in
   url/target-keyword edit, delete-page (confirm dialog, redirects to the
   site overview).
 - `components/ScoreGauge.tsx`, `components/CheckList.tsx` — presentational
-  pieces shared between the two dashboard views. `CheckList` also drives the
-  "Generate a suggestion →" action on the `meta_description` check (step 7):
-  calls the AI-suggestion endpoint, shows the result inline with a copy
-  button. Not persisted anywhere — re-navigating away loses it, matching the
-  backend (nothing is stored server-side either).
+  pieces shared between the two dashboard views. `CheckList` drives the
+  "Generate a [meta description/title] suggestion →" action on the
+  `meta_description` and `title_tag` checks: calls the matching AI-suggestion
+  endpoint, shows the result inline with a copy button. Not persisted
+  anywhere — re-navigating away loses it, matching the backend (nothing is
+  stored server-side either).
+- `components/SiteVerification.tsx` — domain ownership verification (§2.1)
+  on the site overview page: pick a method (DNS TXT / meta tag / file
+  upload), see the exact instructions for that method using the site's real
+  token, "Check now" to verify. Shows a "Verified" badge once it succeeds.
 - `components/KeywordPanel.tsx` — keyword rank tracking (step 6), shown on
   the page detail view regardless of whether an audit has run yet: add a
-  keyword (runs its first check), see the latest rank per tracked keyword,
-  "Recheck rankings now" to refresh all of them. Surfaces the backend's
-  plan-limit and credit-exhaustion errors inline the same way the rest of
-  the dashboard does.
+  keyword (with a location/device picker - defaults to India, see
+  `backend/README.md`), see the latest rank per tracked keyword, "Recheck
+  rankings now" to refresh all of them. Each tracked keyword expands into
+  two tabs: **History** (`components/RankHistoryChart.tsx`, a small inline
+  SVG line chart from the `/keywords/history` endpoint) and **Competitors**
+  (top organic results excluding your own domain, from the new
+  `/keywords/competitors` endpoint). Surfaces the backend's plan-limit and
+  credit-exhaustion errors inline the same way the rest of the dashboard
+  does.
 
-Verified manually end-to-end in a real browser: register → add site → add
-page → run a real audit against a live URL → see the checklist and score →
-generate a real AI meta-description suggestion → track a keyword and see
-its live rank → recheck it → edit a site's domain and a page's url/keyword
+Verified manually end-to-end in a real browser: register → add site (with
+domain validation/normalization) → verify it via a real DNS TXT lookup
+(correctly reports "not verified" against a real domain with no matching
+record) → add a page → run a real audit → generate a real AI meta
+description suggestion → track a keyword with India as the location → see
+its live rank → expand it to see history and a real competitor list (own
+domain correctly excluded) → edit a site's domain and a page's url/keyword
 → delete a page → delete a site and confirm the sidebar updates without a
 reload. Also hit the free-tier site-limit (402) and rescan-throttle (429)
 errors and confirmed they render as inline messages.
@@ -89,5 +102,6 @@ Works normally for a real user in a real browser.
   SSR/React Query — fine at this scale, worth revisiting if pages get slow.
 - "Run full scan" re-audits pages sequentially (not parallel, not queued
   through Celery) — fine for a handful of pages, not for hundreds.
-- No rank-history chart (§2.5) yet, even though the backend already has a
-  `history` endpoint for it — only the latest rank per keyword is shown.
+- No GSC/GA connection UI (step 8) — blocked on Google OAuth credentials,
+  see `backend/README.md`.
+- No scheduled-audit/alerts UI yet.

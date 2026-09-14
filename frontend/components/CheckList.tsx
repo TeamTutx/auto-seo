@@ -10,6 +10,12 @@ const ICON: Record<Check["status"], { cls: string; glyph: string }> = {
   fail: { cls: "bad", glyph: "✕" },
 };
 
+// Check types with an AI suggestion available, and the generator to call.
+const SUGGESTABLE: Record<string, { label: string; generate: (pageId: number) => Promise<{ suggestion: string }> }> = {
+  meta_description: { label: "meta description", generate: api.suggestMetaDescription },
+  title_tag: { label: "title", generate: api.suggestTitleTag },
+};
+
 function humanize(checkType: string): string {
   return checkType
     .split("_")
@@ -29,9 +35,11 @@ export default function CheckList({ checks, pageId }: { checks: Check[]; pageId:
   const [suggestions, setSuggestions] = useState<Record<string, SuggestionState>>({});
 
   async function handleGenerate(checkType: string) {
+    const entry = SUGGESTABLE[checkType];
+    if (!entry) return;
     setSuggestions((prev) => ({ ...prev, [checkType]: { loading: true, error: null, text: null, copied: false } }));
     try {
-      const { suggestion } = await api.suggestMetaDescription(pageId);
+      const { suggestion } = await entry.generate(pageId);
       setSuggestions((prev) => ({
         ...prev,
         [checkType]: { loading: false, error: null, text: suggestion, copied: false },
@@ -58,7 +66,8 @@ export default function CheckList({ checks, pageId }: { checks: Check[]; pageId:
       </div>
       {checks.map((check) => {
         const icon = ICON[check.status];
-        const canSuggest = check.check_type === "meta_description" && check.status !== "pass";
+        const suggestable = SUGGESTABLE[check.check_type];
+        const canSuggest = Boolean(suggestable) && check.status !== "pass";
         const suggestion = suggestions[check.check_type];
 
         return (
@@ -75,7 +84,7 @@ export default function CheckList({ checks, pageId }: { checks: Check[]; pageId:
                   style={{ cursor: suggestion?.loading ? "default" : "pointer" }}
                   onClick={() => !suggestion?.loading && handleGenerate(check.check_type)}
                 >
-                  {suggestion?.loading ? "Generating…" : "Generate a suggestion →"}
+                  {suggestion?.loading ? "Generating…" : `Generate a ${suggestable.label} suggestion →`}
                 </div>
               )}
 

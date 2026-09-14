@@ -62,3 +62,32 @@ export interface KeywordRank {
 export interface MetaDescriptionSuggestion {
   suggestion: string;
 }
+
+export interface TitleTagSuggestion {
+  suggestion: string;
+}
+
+export interface SiteVerificationResult {
+  verified: boolean;
+  message: string;
+}
+
+export interface CompetitorResult {
+  position: number;
+  title: string;
+  domain: string;
+  url: string;
+}
+
+export interface LocationOption {
+  code: number;
+  label: string;
+}
+
+export const LOCATION_OPTIONS: LocationOption[] = [
+  { code: 2356, label: "India" },
+  { code: 2840, label: "United States" },
+  { code: 2826, label: "United Kingdom" },
+  { code: 2124, label: "Canada" },
+  { code: 2036, label: "Australia" },
+];

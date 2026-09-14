@@ -1,4 +1,16 @@
-import type { Audit, AuditDetail, KeywordRank, MetaDescriptionSuggestion, Page, Site, User } from "./types";
+import type {
+  Audit,
+  AuditDetail,
+  CompetitorResult,
+  KeywordRank,
+  MetaDescriptionSuggestion,
+  Page,
+  Site,
+  SiteVerificationResult,
+  TitleTagSuggestion,
+  User,
+  VerificationMethod,
+} from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "signal_token";
@@ -69,6 +81,8 @@ export const api = {
   updateSite: (id: number, domain: string) =>
     request<Site>(`/sites/${id}`, { method: "PATCH", body: JSON.stringify({ domain }) }),
   deleteSite: (id: number) => request<void>(`/sites/${id}`, { method: "DELETE" }),
+  verifySite: (id: number, method: VerificationMethod) =>
+    request<SiteVerificationResult>(`/sites/${id}/verify`, { method: "POST", body: JSON.stringify({ method }) }),
 
   listPages: (siteId: number) => request<Page[]>(`/sites/${siteId}/pages`),
   createPage: (siteId: number, url: string, targetKeyword?: string) =>
@@ -86,11 +100,31 @@ export const api = {
   runAudit: (pageId: number) => request<AuditDetail>(`/pages/${pageId}/audits`, { method: "POST" }),
 
   listKeywords: (pageId: number) => request<KeywordRank[]>(`/pages/${pageId}/keywords`),
-  addKeyword: (pageId: number, keyword: string) =>
-    request<KeywordRank>(`/pages/${pageId}/keywords`, { method: "POST", body: JSON.stringify({ keyword }) }),
+  addKeyword: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
+    request<KeywordRank>(`/pages/${pageId}/keywords`, {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        ...(locationCode !== undefined ? { location_code: locationCode } : {}),
+        ...(device !== undefined ? { device } : {}),
+      }),
+    }),
   recheckKeywords: (pageId: number) =>
     request<KeywordRank[]>(`/pages/${pageId}/keywords/recheck`, { method: "POST" }),
+  keywordHistory: (pageId: number, keyword: string) =>
+    request<KeywordRank[]>(`/pages/${pageId}/keywords/history?keyword=${encodeURIComponent(keyword)}`),
+  getCompetitors: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
+    request<CompetitorResult[]>(`/pages/${pageId}/keywords/competitors`, {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        ...(locationCode !== undefined ? { location_code: locationCode } : {}),
+        ...(device !== undefined ? { device } : {}),
+      }),
+    }),
 
   suggestMetaDescription: (pageId: number) =>
     request<MetaDescriptionSuggestion>(`/pages/${pageId}/suggestions/meta-description`, { method: "POST" }),
+  suggestTitleTag: (pageId: number) =>
+    request<TitleTagSuggestion>(`/pages/${pageId}/suggestions/title-tag`, { method: "POST" }),
 };
