@@ -2,10 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
-import { LOCATION_OPTIONS, type CompetitorResult, type KeywordRank } from "@/lib/types";
+import { LOCATION_OPTIONS, type CompetitorResult, type KeywordOpportunity, type KeywordRank } from "@/lib/types";
 import RankHistoryChart from "./RankHistoryChart";
 
-type DetailTab = "history" | "competitors";
+type DetailTab = "history" | "competitors" | "opportunities";
 
 export default function KeywordPanel({ pageId }: { pageId: number }) {
   const [keywords, setKeywords] = useState<KeywordRank[] | null>(null);
@@ -21,8 +21,11 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
   const [tab, setTab] = useState<DetailTab>("history");
   const [historyCache, setHistoryCache] = useState<Record<string, KeywordRank[]>>({});
   const [competitorsCache, setCompetitorsCache] = useState<Record<string, CompetitorResult[]>>({});
+  const [opportunitiesCache, setOpportunitiesCache] = useState<Record<string, KeywordOpportunity[]>>({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [addingOpportunity, setAddingOpportunity] = useState<string | null>(null);
+  const [addedOpportunities, setAddedOpportunities] = useState<Set<string>>(new Set());
 
   async function load() {
     try {
@@ -60,6 +63,7 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
       await api.recheckKeywords(pageId);
       setHistoryCache({});
       setCompetitorsCache({});
+      setOpportunitiesCache({});
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not recheck rankings.");
@@ -102,6 +106,30 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
       } finally {
         setDetailLoading(false);
       }
+    }
+    if (nextTab === "opportunities" && !opportunitiesCache[kw.keyword]) {
+      setDetailLoading(true);
+      try {
+        const opportunities = await api.getKeywordOpportunities(pageId, kw.keyword, kw.location_code, kw.device);
+        setOpportunitiesCache((prev) => ({ ...prev, [kw.keyword]: opportunities }));
+      } catch (err) {
+        setDetailError(err instanceof ApiError ? err.message : "Could not load keyword opportunities.");
+      } finally {
+        setDetailLoading(false);
+      }
+    }
+  }
+
+  async function handleAddOpportunity(opportunityKeyword: string) {
+    setAddingOpportunity(opportunityKeyword);
+    try {
+      await api.addKeyword(pageId, opportunityKeyword, locationCode, device);
+      setAddedOpportunities((prev) => new Set(prev).add(opportunityKeyword));
+      await load();
+    } catch (err) {
+      setDetailError(err instanceof ApiError ? err.message : "Could not add keyword.");
+    } finally {
+      setAddingOpportunity(null);
     }
   }
 
@@ -211,6 +239,13 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
                   >
                     Competitors
                   </button>
+                  <button
+                    className={tab === "opportunities" ? "btn" : "btn-ghost btn"}
+                    style={{ fontSize: 11, padding: "4px 10px" }}
+                    onClick={() => showTab(kw, "opportunities")}
+                  >
+                    Opportunities
+                  </button>
                 </div>
 
                 {detailLoading && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</div>}
@@ -239,6 +274,54 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
                           {c.domain}
                         </a>
                       ))
+                    )}
+                  </div>
+                )}
+
+                {!detailLoading && !detailError && tab === "opportunities" && opportunitiesCache[kw.keyword] && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {opportunitiesCache[kw.keyword].length === 0 ? (
+                      <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                        No keyword opportunities found.
+                      </div>
+                    ) : (
+                      opportunitiesCache[kw.keyword].map((opp) => {
+                        const alreadyTracked =
+                          addedOpportunities.has(opp.keyword) ||
+                          keywords?.some((k) => k.keyword.toLowerCase() === opp.keyword.toLowerCase());
+                        return (
+                          <div
+                            key={opp.keyword}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 6,
+                              border: "1px solid var(--border)",
+                              background: "var(--surface-raised)",
+                            }}
+                          >
+                            <div style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 500 }}>
+                              {opp.keyword}
+                            </div>
+                            {opp.reason && (
+                              <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
+                                {opp.reason}
+                              </div>
+                            )}
+                            <button
+                              className="btn-ghost btn"
+                              style={{ fontSize: 11, padding: "4px 9px", marginTop: 6 }}
+                              disabled={alreadyTracked || addingOpportunity === opp.keyword}
+                              onClick={() => handleAddOpportunity(opp.keyword)}
+                            >
+                              {alreadyTracked
+                                ? "Tracking"
+                                : addingOpportunity === opp.keyword
+                                ? "Adding…"
+                                : "+ Add to tracking"}
+                            </button>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 )}

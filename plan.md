@@ -11,7 +11,7 @@ what to do next, and I can do it right here."
 
 ## Phase A — Unified "Opportunities" list
 
-**Status: in progress**
+**Status: done**
 
 Aggregate what we already store — failing/warning audit checks and
 concerning keyword ranks — into one prioritized action list per site. No new
@@ -33,21 +33,35 @@ table, linking each item to the page (and check/keyword) it's about.
 
 ## Phase B — Widen AI-assisted fixes beyond meta/title
 
-Today `CheckList`'s suggestable checks are just `meta_description` and
-`title_tag`. Extend `ai_suggestions.py` and the frontend's `SUGGESTABLE`
-table to also generate: heading structure fixes, alt text,
-readability/content rewrites, and internal-linking suggestions. Same
-`AIProvider` abstraction, just more suggestion types — turns most audit
-failures into a one-click fix instead of just two of them.
+**Status: done**
+
+Extended `ai_suggestions.py` and the frontend's `SUGGESTABLE` table (now
+kind-aware: text vs. list) to also generate: heading structure outlines
+(`/pages/{id}/suggestions/heading`), a simplified rewrite of the opening
+passage for low-readability pages (`/suggestions/readability`), per-image
+alt text for every `<img>` missing one, batched into a single AI call
+(`/suggestions/alt-text`), and internal-linking suggestions against the
+page's actual sibling pages on the site (`/suggestions/internal-links`,
+skips the AI call entirely - and the credit - when there are no sibling
+pages to link to). Same `AIProvider` abstraction throughout. Verified live:
+real OpenAI-generated alt text for 8 real Wikipedia images and a genuinely
+simpler readability rewrite, both via the actual on-page checklist.
 
 ## Phase C — Keyword opportunity discovery
 
-The headline "how do I improve keyword targeting" feature. Using the
-competitor SERP data we already fetch (`get_competitors`) plus a page's own
-content, ask the AI what keywords/topics the page is missing compared to
-whoever outranks it, and let the user add a suggested keyword to tracking in
-one click. This is what turns "you're not ranking" into "target this
-instead."
+**Status: done**
+
+`POST /pages/{id}/keywords/opportunities` - given a tracked keyword, reuses
+the existing competitor SERP lookup (`get_competitors`, no new external API)
+plus the page's own content, and asks the AI what related keywords/topics
+would close the gap with whoever's outranking it. Shown as a third
+"Opportunities" tab next to History/Competitors in `KeywordPanel`, each
+suggestion with a one-click "+ Add to tracking" that calls the existing
+add-keyword flow. Costs 2 credits (SERP lookup + AI call), charged
+separately so an AI failure after a successful lookup doesn't double-charge.
+Verified live: real AI-suggested keywords ("SEO techniques", "SEO best
+practices", ...) for a tracked "search engine optimization" keyword, added
+to tracking and appearing in the main keyword list with a real rank check.
 
 ## Phase D — Close the loop: track & verify
 

@@ -167,6 +167,30 @@ class TitleTagSuggestion(BaseModel):
     suggestion: str
 
 
+class HeadingSuggestion(BaseModel):
+    suggestion: str
+
+
+class ReadabilitySuggestion(BaseModel):
+    suggestion: str
+
+
+class InternalLinkSuggestion(BaseModel):
+    suggestion: str
+
+
+class AltTextSuggestion(BaseModel):
+    src: str
+    suggested_alt: str
+
+
+# --- keyword opportunities (AI-suggested keywords based on competitor gaps) ---
+
+class KeywordOpportunity(BaseModel):
+    keyword: str
+    reason: str
+
+
 # --- opportunities ---
 
 class OpportunityType(str, Enum):

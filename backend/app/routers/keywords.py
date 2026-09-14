@@ -7,9 +7,18 @@ from app.database import get_session
 from app.deps import get_current_user
 from app.models import PLAN_LIMITS, KeywordRank, User
 from app.routers.pages import get_owned_page
-from app.schemas import CompetitorResult, CompetitorsRequest, KeywordRankCreate, KeywordRankRead
+from app.schemas import (
+    CompetitorResult,
+    CompetitorsRequest,
+    KeywordOpportunity,
+    KeywordRankCreate,
+    KeywordRankRead,
+)
+from app.services.ai_providers import AIProviderError
 from app.services.competitors import get_competitors
 from app.services.credits import deduct_credit, require_credits
+from app.services.fetcher import fetch_html
+from app.services.keyword_opportunities import generate_keyword_opportunities
 from app.services.keyword_rank_runner import check_keyword_rank
 from app.services.rank_providers import RankProviderError
 
@@ -127,3 +136,38 @@ def keyword_competitors(
     return [
         CompetitorResult(position=c.position, title=c.title, domain=c.domain, url=c.url) for c in competitors
     ]
+
+
+@router.post("/pages/{page_id}/keywords/opportunities", response_model=List[KeywordOpportunity])
+def keyword_opportunities(
+    page_id: int,
+    payload: CompetitorsRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """AI-suggested related keywords, based on who's outranking this page for
+    `payload.keyword` (Signal roadmap Phase C - plan.md). Costs 2 credits:
+    one for the competitor SERP lookup, one for the AI call."""
+    page = get_owned_page(session, page_id, current_user)
+    require_credits(current_user, needed=2)
+
+    try:
+        competitors = get_competitors(
+            payload.keyword, page.url, payload.location_code, payload.language_code, payload.device
+        )
+    except RankProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    deduct_credit(session, current_user)
+
+    try:
+        html = fetch_html(page.url)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not fetch page: {exc}")
+
+    try:
+        opportunities = generate_keyword_opportunities(html, page.url, payload.keyword, competitors)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    deduct_credit(session, current_user)
+    return [KeywordOpportunity(**o) for o in opportunities]

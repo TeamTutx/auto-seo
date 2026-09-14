@@ -67,6 +67,21 @@ export interface TitleTagSuggestion {
   suggestion: string;
 }
 
+// Shape shared by the heading/readability/internal-linking suggestion endpoints.
+export interface TextSuggestion {
+  suggestion: string;
+}
+
+export interface AltTextSuggestion {
+  src: string;
+  suggested_alt: string;
+}
+
+export interface KeywordOpportunity {
+  keyword: string;
+  reason: string;
+}
+
 export interface SiteVerificationResult {
   verified: boolean;
   message: string;

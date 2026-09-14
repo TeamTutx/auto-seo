@@ -1,14 +1,17 @@
 import type {
   Alert,
+  AltTextSuggestion,
   Audit,
   AuditDetail,
   CompetitorResult,
+  KeywordOpportunity,
   KeywordRank,
   MetaDescriptionSuggestion,
   Opportunity,
   Page,
   Site,
   SiteVerificationResult,
+  TextSuggestion,
   TitleTagSuggestion,
   User,
   VerificationMethod,
@@ -129,9 +132,27 @@ export const api = {
     request<MetaDescriptionSuggestion>(`/pages/${pageId}/suggestions/meta-description`, { method: "POST" }),
   suggestTitleTag: (pageId: number) =>
     request<TitleTagSuggestion>(`/pages/${pageId}/suggestions/title-tag`, { method: "POST" }),
+  suggestHeading: (pageId: number) =>
+    request<TextSuggestion>(`/pages/${pageId}/suggestions/heading`, { method: "POST" }),
+  suggestReadability: (pageId: number) =>
+    request<TextSuggestion>(`/pages/${pageId}/suggestions/readability`, { method: "POST" }),
+  suggestInternalLinks: (pageId: number) =>
+    request<TextSuggestion>(`/pages/${pageId}/suggestions/internal-links`, { method: "POST" }),
+  suggestAltText: (pageId: number) =>
+    request<AltTextSuggestion[]>(`/pages/${pageId}/suggestions/alt-text`, { method: "POST" }),
 
   listAlerts: () => request<Alert[]>("/alerts"),
   markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
 
   getOpportunities: (siteId: number) => request<Opportunity[]>(`/sites/${siteId}/opportunities`),
+
+  getKeywordOpportunities: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
+    request<KeywordOpportunity[]>(`/pages/${pageId}/keywords/opportunities`, {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        ...(locationCode !== undefined ? { location_code: locationCode } : {}),
+        ...(device !== undefined ? { device } : {}),
+      }),
+    }),
 };
