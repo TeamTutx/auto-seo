@@ -5,6 +5,7 @@ __pycache__/
 node_modules/
 .next/
 *.db
+dump.rdb
 .env*.local
 *.tsbuildinfo
 next-env.d.ts
