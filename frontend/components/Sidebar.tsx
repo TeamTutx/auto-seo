@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useSites } from "@/lib/sites-context";
+import AlertsBell from "./AlertsBell";
 
 const PLAN_LABEL: Record<string, string> = {
   free: "Free plan",
@@ -115,6 +116,7 @@ export default function Sidebar() {
         <div className="plan-widget">
           <div className="plan-widget-top">
             <div className="plan-name">{PLAN_LABEL[user.plan] ?? user.plan}</div>
+            <AlertsBell />
           </div>
           <div className="plan-credits">{user.credits_balance} credits remaining</div>
         </div>

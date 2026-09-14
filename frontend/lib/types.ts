@@ -91,3 +91,15 @@ export const LOCATION_OPTIONS: LocationOption[] = [
   { code: 2124, label: "Canada" },
   { code: 2036, label: "Australia" },
 ];
+
+export type AlertType = "score_drop" | "new_fail";
+
+export interface Alert {
+  id: number;
+  page_id: number;
+  site_id: number;
+  alert_type: AlertType;
+  message: string;
+  read: boolean;
+  created_at: string;
+}

@@ -1,8 +1,9 @@
 # Signal frontend
 
 Next.js (App Router) dashboard wired to the [backend](../backend) API —
-steps 4, 6, and part of 7 of the build order in
-[`../docs/REQUIREMENTS.md`](../docs/REQUIREMENTS.md#8-suggested-build-order).
+steps 4, 6, and most of 7 of the build order in
+[`../docs/REQUIREMENTS.md`](../docs/REQUIREMENTS.md#8-suggested-build-order),
+plus site verification (§2.1) and competitor comparison (§2.4).
 The static design reference is still at
 [`seo-dashboard-mockup.html`](seo-dashboard-mockup.html); this app implements
 that design against real data instead of hardcoded fixtures.
@@ -77,22 +78,39 @@ with CORS already configured for `http://localhost:3000` in
   `/keywords/competitors` endpoint). Surfaces the backend's plan-limit and
   credit-exhaustion errors inline the same way the rest of the dashboard
   does.
+- `components/AlertsBell.tsx` — in the sidebar's plan widget: a badge with
+  the unread count from `GET /alerts`, polled every 60s so a scheduled-audit
+  alert (see `backend/README.md`) shows up without a manual refresh.
+  Clicking an alert marks it read and navigates straight to the page it's
+  about. Closes on an outside click.
 
 Verified manually end-to-end in a real browser: register → add site (with
 domain validation/normalization) → verify it via a real DNS TXT lookup
 (correctly reports "not verified" against a real domain with no matching
-record) → add a page → run a real audit → generate a real AI meta
-description suggestion → track a keyword with India as the location → see
-its live rank → expand it to see history and a real competitor list (own
-domain correctly excluded) → edit a site's domain and a page's url/keyword
-→ delete a page → delete a site and confirm the sidebar updates without a
-reload. Also hit the free-tier site-limit (402) and rescan-throttle (429)
-errors and confirmed they render as inline messages.
+record) → add a page → run a real audit → generate real AI meta
+description and title suggestions → track a keyword with India as the
+location → see its live rank → expand it to see history and a real
+competitor list (own domain correctly excluded) → edit a site's domain and
+a page's url/keyword → delete a page → delete a site and confirm the
+sidebar updates without a reload → open a real alert (seeded by an actual
+Celery worker run against real Redis) and confirm it marks read and
+navigates to the right page. Also hit the free-tier site-limit (402) and
+rescan-throttle (429) errors and confirmed they render as inline messages.
 
-Note: `window.confirm()` (used for both delete confirmations) doesn't
-surface in automated/headless browser testing - had to override it via
-injected JS (`window.confirm = () => true`) to verify the delete flows.
-Works normally for a real user in a real browser.
+Two things worth knowing if you're driving this with browser automation
+rather than a human:
+- `window.confirm()` (used for both delete confirmations) doesn't surface
+  in automated/headless testing - override it via injected JS
+  (`window.confirm = () => true`) to verify the delete flows. Works
+  normally for a real user in a real browser.
+- A long-lived tab in this session started producing bizarre, incorrect
+  screenshots (page content shrunk into a corner) despite the DOM/viewport
+  reporting completely normal values via `read_page`/`window.innerWidth` -
+  purely a rendering artifact of that specific tab after a lot of
+  navigation, not a real bug. A fresh tab rendered correctly every time.
+  Worth knowing so you don't chase a phantom bug: if a screenshot looks
+  wrong but `read_page` and DOM introspection say the state is correct,
+  open a new tab before concluding there's an actual problem.
 
 ## Known gaps
 
@@ -104,4 +122,5 @@ Works normally for a real user in a real browser.
   through Celery) — fine for a handful of pages, not for hundreds.
 - No GSC/GA connection UI (step 8) — blocked on Google OAuth credentials,
   see `backend/README.md`.
-- No scheduled-audit/alerts UI yet.
+- No dedicated alerts page - `AlertsBell` is a quick list, not a full
+  history/filter view.

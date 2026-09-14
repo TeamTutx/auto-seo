@@ -23,6 +23,11 @@ class CheckStatus(str, Enum):
     fail = "fail"
 
 
+class AlertType(str, Enum):
+    score_drop = "score_drop"
+    new_fail = "new_fail"
+
+
 # Plan limits referenced by routers when enforcing free/paid gates (REQUIREMENTS.md §3.1)
 PLAN_LIMITS = {
     PlanTier.free: {"max_sites": 1, "max_pages_per_site": 5, "max_keywords_per_page": 3},
@@ -105,3 +110,17 @@ class KeywordRank(SQLModel, table=True):
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
     page: Optional[Page] = Relationship(back_populates="keyword_ranks")
+
+
+class Alert(SQLModel, table=True):
+    """In-app notifications for scheduled audits (REQUIREMENTS.md §2.7, §3.1
+    "Scheduled automated audits + alerts" - paid-tier only). Email delivery
+    needs a Resend/SendGrid key we don't have yet, so this is the in-app
+    substitute for now - see app/workers/tasks.py."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    page_id: int = Field(foreign_key="page.id", index=True)
+    alert_type: AlertType
+    message: str
+    read: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

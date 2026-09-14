@@ -1,4 +1,5 @@
 import type {
+  Alert,
   Audit,
   AuditDetail,
   CompetitorResult,
@@ -127,4 +128,7 @@ export const api = {
     request<MetaDescriptionSuggestion>(`/pages/${pageId}/suggestions/meta-description`, { method: "POST" }),
   suggestTitleTag: (pageId: number) =>
     request<TitleTagSuggestion>(`/pages/${pageId}/suggestions/title-tag`, { method: "POST" }),
+
+  listAlerts: () => request<Alert[]>("/alerts"),
+  markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
 };

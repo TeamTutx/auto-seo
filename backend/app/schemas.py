@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models import CheckStatus, PlanTier, VerificationMethod
+from app.models import AlertType, CheckStatus, PlanTier, VerificationMethod
 
 _DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
@@ -164,3 +164,15 @@ class MetaDescriptionSuggestion(BaseModel):
 
 class TitleTagSuggestion(BaseModel):
     suggestion: str
+
+
+# --- alerts ---
+
+class AlertRead(BaseModel):
+    id: int
+    page_id: int
+    site_id: int  # not on the Alert row itself - joined from Page so the frontend can link straight to the page
+    alert_type: AlertType
+    message: str
+    read: bool
+    created_at: datetime
