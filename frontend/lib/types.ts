@@ -107,7 +107,7 @@ export const LOCATION_OPTIONS: LocationOption[] = [
   { code: 2036, label: "Australia" },
 ];
 
-export type AlertType = "score_drop" | "new_fail";
+export type AlertType = "score_drop" | "new_fail" | "fix_verified";
 
 export interface Alert {
   id: number;
@@ -138,4 +138,20 @@ export interface Opportunity {
   suggested_fix: string | null;
   check_type: string | null;
   keyword: string | null;
+  applied: boolean;
+}
+
+export interface AppliedFix {
+  id: number;
+  page_id: number;
+  type: OpportunityType;
+  check_type: string | null;
+  keyword: string | null;
+  applied_at: string;
+  resolved: boolean;
+  resolved_at: string | null;
+}
+
+export interface RankingActionPlan {
+  plan: string;
 }

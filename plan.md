@@ -65,10 +65,38 @@ to tracking and appearing in the main keyword list with a real rank check.
 
 ## Phase D — Close the loop: track & verify
 
-Let a user mark a recommendation as "applied," then have the next scheduled
-audit/rank-check automatically confirm whether it worked (score up, rank
-improved) instead of relying on the user to notice. Builds on the existing
-scheduled-audits/alerts system.
+**Status: done**
+
+Signal has no write access to a user's actual site, so this is the
+"apply changes from the app" story for now: a user applies a suggestion
+themselves (copies it into their own CMS/code) and clicks "Mark as applied"
+on that opportunity. `POST /pages/{id}/opportunities/apply` records a
+baseline (`AppliedFix` table - current audit score, or current rank
+position). The next audit or rank check - which already runs on every
+manual rescan/recheck, not just Pro/Agency's scheduled ones - automatically
+checks pending fixes against the new result and, if resolved, raises an
+in-app `fix_verified` alert. Shown on the Opportunities card as "Applied -
+verifying on next scan" until then. Verified live (negative path: a real
+rescan correctly leaves an unresolved meta-description fix marked
+"verifying" since the real page still lacks one) and via an automated test
+covering the positive path with controlled HTML (fix resolves, opportunity
+disappears, alert fires).
+
+**Not yet built (explicitly deferred, not silently dropped):** actually
+pushing a change to the user's live site (editing their WordPress/CMS/repo
+directly) instead of the user applying it themselves. That needs a real
+integration with wherever a given site's content lives, and the user had no
+preference yet on which one to build first - revisit once a specific site's
+hosting/CMS is known.
+
+Also added as part of this phase: `POST /pages/{id}/keywords/action-plan` -
+for a tracked keyword with no rank (or a poor one), an AI-generated action
+plan (competitor gap analysis, same shallow SERP lookup as keyword
+opportunities) for what would actually help *that* keyword start ranking,
+as opposed to Phase C's "here are other keywords to try instead." Shown as
+a 4th "Action plan" tab in `KeywordPanel`, only for keywords ranking #11+
+or not found at all. Verified live with a nonsense keyword genuinely
+producing a sensible, keyword-specific plan via real OpenAI.
 
 ## Phase E — Site Health rollup
 
@@ -81,5 +109,9 @@ actual "come here and see everything" home screen for a site.
 
 - **GSC/GA integration** — real traffic and real search-query data instead
   of only SERP-checked keywords would make Phase C much stronger, but it's
-  blocked on setting up Google OAuth credentials. Sequence after the above.
+  blocked on setting up Google OAuth credentials. This is also the answer to
+  "get a keyword indexed/ranking from zero" beyond content guidance — a page
+  can have zero rank simply because Google hasn't crawled it yet, and GSC's
+  Indexing API is the fix for that. Sequence after the above.
+- **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
 - **Stripe billing** — deliberately deferred per earlier decision.

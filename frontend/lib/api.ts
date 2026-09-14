@@ -1,6 +1,7 @@
 import type {
   Alert,
   AltTextSuggestion,
+  AppliedFix,
   Audit,
   AuditDetail,
   CompetitorResult,
@@ -8,7 +9,9 @@ import type {
   KeywordRank,
   MetaDescriptionSuggestion,
   Opportunity,
+  OpportunityType,
   Page,
+  RankingActionPlan,
   Site,
   SiteVerificationResult,
   TextSuggestion,
@@ -156,5 +159,21 @@ export const api = {
         ...(locationCode !== undefined ? { location_code: locationCode } : {}),
         ...(device !== undefined ? { device } : {}),
       }),
+    }),
+
+  getRankingActionPlan: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
+    request<RankingActionPlan>(`/pages/${pageId}/keywords/action-plan`, {
+      method: "POST",
+      body: JSON.stringify({
+        keyword,
+        ...(locationCode !== undefined ? { location_code: locationCode } : {}),
+        ...(device !== undefined ? { device } : {}),
+      }),
+    }),
+
+  applyFix: (pageId: number, type: OpportunityType, checkType?: string | null, keyword?: string | null) =>
+    request<AppliedFix>(`/pages/${pageId}/opportunities/apply`, {
+      method: "POST",
+      body: JSON.stringify({ type, check_type: checkType ?? null, keyword: keyword ?? null }),
     }),
 };

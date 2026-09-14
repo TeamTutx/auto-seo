@@ -5,7 +5,13 @@ import { api, ApiError } from "@/lib/api";
 import { LOCATION_OPTIONS, type CompetitorResult, type KeywordOpportunity, type KeywordRank } from "@/lib/types";
 import RankHistoryChart from "./RankHistoryChart";
 
-type DetailTab = "history" | "competitors" | "opportunities";
+type DetailTab = "history" | "competitors" | "opportunities" | "action-plan";
+
+const LOW_RANK_THRESHOLD = 10; // matches the backend's opportunities service
+
+function needsActionPlan(kw: KeywordRank): boolean {
+  return kw.rank_position === null || kw.rank_position > LOW_RANK_THRESHOLD;
+}
 
 export default function KeywordPanel({ pageId }: { pageId: number }) {
   const [keywords, setKeywords] = useState<KeywordRank[] | null>(null);
@@ -23,6 +29,7 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
   const [historyCache, setHistoryCache] = useState<Record<string, KeywordRank[]>>({});
   const [competitorsCache, setCompetitorsCache] = useState<Record<string, CompetitorResult[]>>({});
   const [opportunitiesCache, setOpportunitiesCache] = useState<Record<string, KeywordOpportunity[]>>({});
+  const [actionPlanCache, setActionPlanCache] = useState<Record<string, string>>({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [addingOpportunity, setAddingOpportunity] = useState<string | null>(null);
@@ -65,6 +72,7 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
       setHistoryCache({});
       setCompetitorsCache({});
       setOpportunitiesCache({});
+      setActionPlanCache({});
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not recheck rankings.");
@@ -134,6 +142,17 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
         setOpportunitiesCache((prev) => ({ ...prev, [kw.keyword]: opportunities }));
       } catch (err) {
         setDetailError(err instanceof ApiError ? err.message : "Could not load keyword opportunities.");
+      } finally {
+        setDetailLoading(false);
+      }
+    }
+    if (nextTab === "action-plan" && !actionPlanCache[kw.keyword]) {
+      setDetailLoading(true);
+      try {
+        const { plan } = await api.getRankingActionPlan(pageId, kw.keyword, kw.location_code, kw.device);
+        setActionPlanCache((prev) => ({ ...prev, [kw.keyword]: plan }));
+      } catch (err) {
+        setDetailError(err instanceof ApiError ? err.message : "Could not load an action plan.");
       } finally {
         setDetailLoading(false);
       }
@@ -288,6 +307,15 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
                     >
                       Opportunities
                     </button>
+                    {needsActionPlan(kw) && (
+                      <button
+                        className={tab === "action-plan" ? "btn" : "btn-ghost btn"}
+                        style={{ fontSize: 11, padding: "4px 10px" }}
+                        onClick={() => showTab(kw, "action-plan")}
+                      >
+                        Action plan
+                      </button>
+                    )}
                   </div>
 
                   {detailLoading && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</div>}
@@ -365,6 +393,21 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
                           );
                         })
                       )}
+                    </div>
+                  )}
+
+                  {!detailLoading && !detailError && tab === "action-plan" && actionPlanCache[kw.keyword] && (
+                    <div
+                      style={{
+                        padding: "10px 12px",
+                        background: "var(--surface-raised)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        fontSize: 12.5,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {actionPlanCache[kw.keyword]}
                     </div>
                   )}
                 </div>

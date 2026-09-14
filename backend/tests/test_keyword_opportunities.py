@@ -1,5 +1,9 @@
 from app.services.ai_providers.base import AIProvider
-from app.services.keyword_opportunities import _parse_opportunity_lines, generate_keyword_opportunities
+from app.services.keyword_opportunities import (
+    _parse_opportunity_lines,
+    generate_keyword_opportunities,
+    generate_ranking_action_plan,
+)
 from app.services.rank_providers.base import SerpResult
 
 HTML = """
@@ -68,3 +72,31 @@ def test_parse_opportunity_lines_handles_dash_and_colon_formats():
 def test_parse_opportunity_lines_skips_blank_lines():
     raw = "keyword one - reason one\n\n\nkeyword two - reason two"
     assert len(_parse_opportunity_lines(raw)) == 2
+
+
+def test_generate_ranking_action_plan_includes_page_and_competitor_context(monkeypatch):
+    import app.services.keyword_opportunities as keyword_opportunities
+
+    provider = _FakeProvider("Add a dedicated ingredients section.\nCover sensitive-skin use cases.")
+    monkeypatch.setattr(keyword_opportunities, "get_ai_provider", lambda: provider)
+
+    result = generate_ranking_action_plan(HTML, "https://example.com/serum", "vitamin c serum", COMPETITORS)
+
+    assert result == "Add a dedicated ingredients section.\nCover sensitive-skin use cases."
+    system_prompt, user_prompt, _ = provider.calls[0]
+    assert "action plan" in system_prompt.lower()
+    assert "vitamin c serum" in user_prompt
+    assert "Best Vitamin C Serums for Dark Spots" in user_prompt
+    assert "brightens skin and evens tone" in user_prompt
+
+
+def test_generate_ranking_action_plan_with_no_competitors(monkeypatch):
+    import app.services.keyword_opportunities as keyword_opportunities
+
+    provider = _FakeProvider("Publish original content targeting this term directly.")
+    monkeypatch.setattr(keyword_opportunities, "get_ai_provider", lambda: provider)
+
+    generate_ranking_action_plan(HTML, "https://example.com/serum", "vitamin c serum", [])
+
+    _, user_prompt, _ = provider.calls[0]
+    assert "low-competition keyword" in user_prompt

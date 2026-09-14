@@ -1,7 +1,8 @@
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
-from app.models import KeywordRank, Page
+from app.models import KeywordRank, Page, Site
+from app.services.applied_fixes import verify_applied_fixes_for_keyword
 from app.services.rank_providers import RankProviderError, get_rank_provider
 
 
@@ -36,4 +37,9 @@ def check_keyword_rank(
     session.add(keyword_rank)
     session.commit()
     session.refresh(keyword_rank)
+
+    site = session.get(Site, page.site_id)
+    if site is not None:
+        verify_applied_fixes_for_keyword(session, site.user_id, page, keyword_rank)
+
     return keyword_rank

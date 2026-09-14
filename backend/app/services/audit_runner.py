@@ -1,7 +1,8 @@
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from app.models import Audit, Check, Page
+from app.models import Audit, Check, Page, Site
+from app.services.applied_fixes import verify_applied_fixes_for_audit
 from app.services.audit_engine import run_onpage_audit
 from app.services.fetcher import fetch_html
 
@@ -55,4 +56,9 @@ def audit_page(session: Session, page_id: int) -> Audit:
         ))
     session.commit()
     session.refresh(audit)
+
+    site = session.get(Site, page.site_id)
+    if site is not None:
+        verify_applied_fixes_for_audit(session, site.user_id, page, audit)
+
     return audit

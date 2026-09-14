@@ -26,6 +26,15 @@ class CheckStatus(str, Enum):
 class AlertType(str, Enum):
     score_drop = "score_drop"
     new_fail = "new_fail"
+    fix_verified = "fix_verified"
+
+
+class OpportunityType(str, Enum):
+    audit_fail = "audit_fail"
+    audit_warning = "audit_warning"
+    keyword_not_found = "keyword_not_found"
+    keyword_low_rank = "keyword_low_rank"
+    keyword_rank_drop = "keyword_rank_drop"
 
 
 # Plan limits referenced by routers when enforcing free/paid gates (REQUIREMENTS.md §3.1)
@@ -124,3 +133,22 @@ class Alert(SQLModel, table=True):
     message: str
     read: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AppliedFix(SQLModel, table=True):
+    """Track/verify loop for AI-suggested fixes (Signal roadmap Phase D -
+    plan.md). Signal has no write access to a user's actual site, so a user
+    applies a suggestion themselves and tells us via POST .../opportunities/apply;
+    the baseline captured here lets the next audit/rank check (which already
+    happens on every rescan/recheck, not just Pro/Agency's scheduled ones)
+    confirm whether the underlying issue actually cleared."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    page_id: int = Field(foreign_key="page.id", index=True)
+    opportunity_type: OpportunityType
+    check_type: Optional[str] = Field(default=None)  # set for audit_fail / audit_warning
+    keyword: Optional[str] = Field(default=None)  # set for the keyword_* types
+    baseline_score: Optional[int] = Field(default=None)  # audit score when marked applied
+    baseline_rank: Optional[int] = Field(default=None)  # rank_position when marked applied (None = not found)
+    applied_at: datetime = Field(default_factory=datetime.utcnow)
+    resolved: bool = Field(default=False)
+    resolved_at: Optional[datetime] = Field(default=None)

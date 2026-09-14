@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models import AlertType, CheckStatus, PlanTier, VerificationMethod
+from app.models import AlertType, CheckStatus, OpportunityType, PlanTier, VerificationMethod
 
 _DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
@@ -193,14 +193,6 @@ class KeywordOpportunity(BaseModel):
 
 # --- opportunities ---
 
-class OpportunityType(str, Enum):
-    audit_fail = "audit_fail"
-    audit_warning = "audit_warning"
-    keyword_not_found = "keyword_not_found"
-    keyword_low_rank = "keyword_low_rank"
-    keyword_rank_drop = "keyword_rank_drop"
-
-
 class OpportunitySeverity(str, Enum):
     high = "high"
     medium = "medium"
@@ -217,6 +209,32 @@ class Opportunity(BaseModel):
     suggested_fix: Optional[str] = None
     check_type: Optional[str] = None  # set for audit_* types - lets the frontend link into CheckList's suggestion action
     keyword: Optional[str] = None  # set for keyword_* types
+    applied: bool = False  # a pending AppliedFix exists - user says they applied this, awaiting the next scan/check
+
+
+# --- applied fixes (track/verify loop - Signal roadmap Phase D) ---
+
+class ApplyFixRequest(BaseModel):
+    type: OpportunityType
+    check_type: Optional[str] = None
+    keyword: Optional[str] = None
+
+
+class AppliedFixRead(BaseModel):
+    id: int
+    page_id: int
+    type: OpportunityType
+    check_type: Optional[str]
+    keyword: Optional[str]
+    applied_at: datetime
+    resolved: bool
+    resolved_at: Optional[datetime]
+
+
+# --- ranking action plan (AI guidance for a keyword with no/low rank) ---
+
+class RankingActionPlan(BaseModel):
+    plan: str
 
 
 # --- alerts ---

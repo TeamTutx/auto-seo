@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Opportunity, OpportunitySeverity } from "@/lib/types";
 
 const SEVERITY_ORDER: OpportunitySeverity[] = ["high", "medium", "low"];
@@ -14,6 +14,8 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<"all" | OpportunitySeverity>("all");
   const [bulkAction, setBulkAction] = useState<"collapse" | "expand">("collapse");
+  const [applyingIndex, setApplyingIndex] = useState<number | null>(null);
+  const [applyError, setApplyError] = useState<Record<number, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +54,20 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
 
   function toggleCard(i: number) {
     setExpanded((prev) => ({ ...prev, [i]: !prev[i] }));
+  }
+
+  async function handleApply(i: number, opp: Opportunity) {
+    setApplyingIndex(i);
+    setApplyError((prev) => ({ ...prev, [i]: "" }));
+    try {
+      await api.applyFix(opp.page_id, opp.type, opp.check_type, opp.keyword);
+      setOpportunities((prev) => (prev ? prev.map((o, idx) => (idx === i ? { ...o, applied: true } : o)) : prev));
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Could not mark this as applied.";
+      setApplyError((prev) => ({ ...prev, [i]: message }));
+    } finally {
+      setApplyingIndex(null);
+    }
   }
 
   function handleBulkToggle() {
@@ -117,6 +133,27 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
                   >
                     {opp.page_url} →
                   </a>
+
+                  {opp.applied ? (
+                    <div className="status-pill good" style={{ marginTop: 10 }}>
+                      Applied — verifying on next scan
+                    </div>
+                  ) : (
+                    <button
+                      className="btn-ghost btn"
+                      style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 10 }}
+                      disabled={applyingIndex === i}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleApply(i, opp);
+                      }}
+                    >
+                      {applyingIndex === i ? "Marking…" : "Mark as applied"}
+                    </button>
+                  )}
+                  {applyError[i] && (
+                    <div style={{ color: "var(--bad)", fontSize: 11.5, marginTop: 6 }}>{applyError[i]}</div>
+                  )}
                 </div>
               )}
             </div>
