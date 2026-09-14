@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import type { Site } from "@/lib/types";
+import { useSites } from "@/lib/sites-context";
 
 const PLAN_LABEL: Record<string, string> = {
   free: "Free plan",
@@ -19,23 +19,11 @@ export default function Sidebar() {
   const params = useParams<{ siteId?: string }>();
   const activeSiteId = params?.siteId ? Number(params.siteId) : null;
 
-  const [sites, setSites] = useState<Site[] | null>(null);
+  const { sites, refreshSites } = useSites();
   const [adding, setAdding] = useState(false);
   const [domain, setDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  async function loadSites() {
-    try {
-      setSites(await api.listSites());
-    } catch {
-      setSites([]);
-    }
-  }
-
-  useEffect(() => {
-    loadSites();
-  }, []);
 
   async function handleAddSite(e: FormEvent) {
     e.preventDefault();
@@ -45,7 +33,7 @@ export default function Sidebar() {
       const site = await api.createSite(domain.trim());
       setDomain("");
       setAdding(false);
-      await loadSites();
+      await refreshSites();
       router.push(`/sites/${site.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add site.");

@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { scoreBucket } from "@/lib/score";
+import { useSites } from "@/lib/sites-context";
 import ScoreGauge from "@/components/ScoreGauge";
 import type { Audit, Page, Site } from "@/lib/types";
 
@@ -16,6 +17,7 @@ export default function SiteOverviewPage() {
   const params = useParams<{ siteId: string }>();
   const siteId = Number(params.siteId);
   const router = useRouter();
+  const { refreshSites } = useSites();
 
   const [site, setSite] = useState<Site | null>(null);
   const [rows, setRows] = useState<PageRow[] | null>(null);
@@ -28,6 +30,13 @@ export default function SiteOverviewPage() {
   const [keyword, setKeyword] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [editingDomain, setEditingDomain] = useState(false);
+  const [domainInput, setDomainInput] = useState("");
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [savingDomain, setSavingDomain] = useState(false);
+  const [deletingSite, setDeletingSite] = useState(false);
+  const [deletingPageId, setDeletingPageId] = useState<number | null>(null);
 
   async function loadAll() {
     try {
@@ -69,6 +78,47 @@ export default function SiteOverviewPage() {
     }
   }
 
+  async function handleSaveDomain(e: FormEvent) {
+    e.preventDefault();
+    setDomainError(null);
+    setSavingDomain(true);
+    try {
+      await api.updateSite(siteId, domainInput.trim());
+      setEditingDomain(false);
+      await Promise.all([loadAll(), refreshSites()]);
+    } catch (err) {
+      setDomainError(err instanceof ApiError ? err.message : "Could not update domain.");
+    } finally {
+      setSavingDomain(false);
+    }
+  }
+
+  async function handleDeleteSite() {
+    if (!confirm(`Delete ${site?.domain}? This removes every page, audit, and tracked keyword under it.`)) return;
+    setDeletingSite(true);
+    try {
+      await api.deleteSite(siteId);
+      await refreshSites();
+      router.push("/");
+    } catch (err) {
+      setBanner(err instanceof ApiError ? err.message : "Could not delete site.");
+      setDeletingSite(false);
+    }
+  }
+
+  async function handleDeletePage(pageId: number, pageUrl: string) {
+    if (!confirm(`Delete ${pageUrl}? This removes its audit history and tracked keywords.`)) return;
+    setDeletingPageId(pageId);
+    try {
+      await api.deletePage(pageId);
+      await loadAll();
+    } catch (err) {
+      setBanner(err instanceof ApiError ? err.message : "Could not delete page.");
+    } finally {
+      setDeletingPageId(null);
+    }
+  }
+
   async function handleRunFullScan() {
     if (!rows || rows.length === 0) return;
     setScanning(true);
@@ -104,16 +154,68 @@ export default function SiteOverviewPage() {
   return (
     <div>
       <div className="topbar">
-        <div>
-          <div className="page-title">{site.domain}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editingDomain ? (
+            <form onSubmit={handleSaveDomain} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                autoFocus
+                value={domainInput}
+                onChange={(e) => setDomainInput(e.target.value)}
+                style={{
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  color: "var(--text)",
+                  fontSize: 18,
+                  fontFamily: "var(--font-display)",
+                  minWidth: 220,
+                }}
+              />
+              <button className="btn" type="submit" disabled={savingDomain || !domainInput.trim()} style={{ fontSize: 12.5 }}>
+                Save
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn"
+                style={{ fontSize: 12.5 }}
+                onClick={() => {
+                  setEditingDomain(false);
+                  setDomainError(null);
+                }}
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <div className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {site.domain}
+              <button
+                className="btn-ghost btn"
+                style={{ fontSize: 11, padding: "4px 9px" }}
+                onClick={() => {
+                  setDomainInput(site.domain);
+                  setEditingDomain(true);
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          )}
+          {domainError && <div style={{ color: "var(--bad)", fontSize: 12, marginTop: 4 }}>{domainError}</div>}
           <div className="page-sub">
             {rows.length} page{rows.length === 1 ? "" : "s"} tracked
             {!site.verified && " · domain not verified"}
           </div>
         </div>
-        <button className="btn" onClick={handleRunFullScan} disabled={scanning || rows.length === 0}>
-          {scanning ? "Scanning…" : "Run full scan"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn" onClick={handleRunFullScan} disabled={scanning || rows.length === 0}>
+            {scanning ? "Scanning…" : "Run full scan"}
+          </button>
+          <button className="btn-ghost btn" onClick={handleDeleteSite} disabled={deletingSite} style={{ color: "var(--bad)" }}>
+            {deletingSite ? "Deleting…" : "Delete site"}
+          </button>
+        </div>
       </div>
 
       {banner && (
@@ -184,6 +286,7 @@ export default function SiteOverviewPage() {
                 <th>Score</th>
                 <th>Target keyword</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -237,6 +340,16 @@ export default function SiteOverviewPage() {
                       ) : (
                         <span className="status-pill bad">Critical</span>
                       )}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="btn-ghost btn"
+                        style={{ fontSize: 11, padding: "4px 9px", color: "var(--bad)" }}
+                        onClick={() => handleDeletePage(page.id, page.url)}
+                        disabled={deletingPageId === page.id}
+                      >
+                        {deletingPageId === page.id ? "Deleting…" : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 );

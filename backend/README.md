@@ -55,7 +55,10 @@ exercised manually.
 - `app/routers/` — `auth` (register/login/me, JWT), `sites`, `pages`,
   `audits`, `keywords`, `suggestions`. Plan limits (§3.1), the free-tier
   1x/day rescan throttle, and per-check credit spend are enforced in the
-  routers.
+  routers. `sites`/`pages` also have `PATCH`/`DELETE`; deleting either
+  cascades through `app/services/cascade_delete.py` (no ORM-level cascade
+  configured, so this is done manually - audits/checks/keyword_ranks would
+  otherwise be orphaned).
 - `app/services/credits.py` — the shared credit-spend gate
   (`require_credits`/`deduct_credit`) used by both `keywords` and
   `suggestions` routers, so the two metered features can't drift out of
@@ -104,7 +107,8 @@ exercised manually.
   check. New keyword strings count against the plan's
   `max_keywords_per_page` (free: 3); rechecking an already-tracked keyword
   doesn't. Every check (new or recheck) spends 1 credit from
-  `User.credits_balance` regardless of plan — see the note below.
+  `User.credits_balance` regardless of plan — see the note below. Defaults
+  to India (`location_code=2356`) - see "Default search location" below.
 - `GET /pages/{page_id}/keywords` — latest measurement per distinct tracked
   keyword.
 - `GET /pages/{page_id}/keywords/history?keyword=...` — full history for one
@@ -136,6 +140,35 @@ metered the same way. Revisit this once the scheduled-refresh job exists.
   briefs (§2.7, v2) would each be a new function in `ai_suggestions.py` plus
   a new router endpoint - the provider layer doesn't change.
 
+## Default search location
+
+`KeywordRank.location_code` defaults to **India (2356)**, not the US. Found
+via a real bug: a user tracked a keyword for an India-only service and got
+"not found" even though it genuinely ranked - it was checking Google.com
+from a US vantage point, which is a different result set entirely. There's
+no location picker in the UI yet, so every check happens in India until one
+is added; pass `location_code`/`language_code`/`device` explicitly on the
+request if you need something else in the meantime (all three fields exist
+on `KeywordRankCreate`, just not exposed by `KeywordPanel.tsx`).
+
+## Site/page CRUD and why rank checks match against page.url, not Site.domain
+
+Same real bug above had a second cause: rank checks used to match SERP
+results against `Site.domain`, which is free-text with no validation - a
+typo (`"zepto"` instead of `"zepto.com"`) silently broke every check for
+that site with no error, just permanent `rank_position: null`.
+`check_keyword_rank` now matches against `page.url` instead, since that's
+already a validated URL (the audit engine has to fetch it, so it can't be
+garbage) and is more specific if a site's pages ever diverge from its
+nominal domain (subdomains, redirects, etc.).
+
+`Site.domain` is still real and still used (site verification when that's
+built, the sidebar/overview display name) - editing it via `PATCH
+/sites/{id}` no longer risks rank-check correctness the way it used to, but
+it also isn't validated as a URL, so a typo there is now purely cosmetic
+instead of silently breaking a feature. Worth adding format validation on
+that field at some point regardless.
+
 ## Rank provider: SerpApi vs. DataForSEO
 
 Both are implemented; `RANK_PROVIDER=serpapi` is the current default since
@@ -162,3 +195,5 @@ switched on.
 - No GSC/GA integrations (step 8) yet.
 - No keyword-suggestion or competitor-comparison features (§2.4) — only
   rank checks for keywords the user explicitly adds.
+- No location picker anywhere - see "Default search location" above.
+- `Site.domain` still has no format validation - see the CRUD section above.

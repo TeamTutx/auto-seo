@@ -99,7 +99,7 @@ class KeywordRank(SQLModel, table=True):
     # Rank varies by search location/language/device, so each measurement
     # records what it was checked against - without this, comparing two
     # rows over time is meaningless if the defaults ever change.
-    location_code: int = Field(default=2840)  # DataForSEO location code, 2840 = United States
+    location_code: int = Field(default=2356)  # DataForSEO/SerpApi location code, 2356 = India
     language_code: str = Field(default="en")
     device: str = Field(default="desktop")
     checked_at: datetime = Field(default_factory=datetime.utcnow)

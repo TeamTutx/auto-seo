@@ -6,7 +6,8 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.deps import get_current_user
 from app.models import PLAN_LIMITS, Site, User
-from app.schemas import SiteCreate, SiteRead
+from app.schemas import SiteCreate, SiteRead, SiteUpdate
+from app.services.cascade_delete import delete_site
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
@@ -45,6 +46,33 @@ def list_sites(current_user: User = Depends(get_current_user), session: Session 
 def get_site(site_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     site = _get_owned_site(session, site_id, current_user)
     return site
+
+
+@router.patch("/{site_id}", response_model=SiteRead)
+def update_site(
+    site_id: int,
+    payload: SiteUpdate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    site = _get_owned_site(session, site_id, current_user)
+    if payload.domain is not None and payload.domain != site.domain:
+        site.domain = payload.domain
+        # A domain change invalidates whatever was verified before.
+        site.verified = False
+        site.verification_method = None
+    session.add(site)
+    session.commit()
+    session.refresh(site)
+    return site
+
+
+@router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_site(
+    site_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
+    site = _get_owned_site(session, site_id, current_user)
+    delete_site(session, site.id)
 
 
 def _get_owned_site(session: Session, site_id: int, current_user: User) -> Site:

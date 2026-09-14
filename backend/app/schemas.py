@@ -32,6 +32,10 @@ class SiteCreate(BaseModel):
     domain: str
 
 
+class SiteUpdate(BaseModel):
+    domain: Optional[str] = None
+
+
 class SiteRead(BaseModel):
     id: int
     domain: str
@@ -49,6 +53,11 @@ class SiteVerifyRequest(BaseModel):
 
 class PageCreate(BaseModel):
     url: str
+    target_keyword: Optional[str] = None
+
+
+class PageUpdate(BaseModel):
+    url: Optional[str] = None
     target_keyword: Optional[str] = None
 
 
@@ -83,7 +92,7 @@ class AuditRead(BaseModel):
 
 class KeywordRankCreate(BaseModel):
     keyword: str
-    location_code: int = 2840
+    location_code: int = 2356  # India - see app/models.py KeywordRank.location_code
     language_code: str = "en"
     device: str = "desktop"
 

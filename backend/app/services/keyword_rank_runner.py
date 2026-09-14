@@ -9,17 +9,18 @@ def check_keyword_rank(
     session: Session,
     page: Page,
     keyword: str,
-    location_code: int = 2840,
+    location_code: int = 2356,  # India - see app/models.py KeywordRank.location_code
     language_code: str = "en",
     device: str = "desktop",
 ) -> KeywordRank:
-    site = page.site
-    if site is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found for page")
-
+    # Match against page.url rather than site.domain: page.url is a real,
+    # validated URL (it has to be - the audit engine already fetches it),
+    # while site.domain is free text with no format enforcement and can
+    # drift from the actual site (e.g. a typo like "zepto" instead of
+    # "zepto.com" silently breaks every rank check for that site).
     provider = get_rank_provider()
     try:
-        rank_position = provider.fetch_rank(keyword, site.domain, location_code, language_code, device)
+        rank_position = provider.fetch_rank(keyword, page.url, location_code, language_code, device)
     except RankProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 

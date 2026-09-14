@@ -17,7 +17,7 @@ class DataForSEOProvider(RankProvider):
         self,
         keyword: str,
         target_domain: str,
-        location_code: int = 2840,
+        location_code: int = 2356,
         language_code: str = "en",
         device: str = "desktop",
     ) -> Optional[int]:

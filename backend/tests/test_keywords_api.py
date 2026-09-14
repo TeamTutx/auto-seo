@@ -96,3 +96,40 @@ def test_list_and_history_return_latest_and_full_history_per_keyword(client, fak
 
     history = client.get(f"/pages/{page_id}/keywords/history", params={"keyword": "a"}, headers=headers).json()
     assert [h["rank_position"] for h in history] == [9, 8]
+
+
+def test_defaults_to_india_when_location_not_specified(client, fake_ranks):
+    fake_ranks([1])
+    headers = register_and_login(client, "kw6@test.dev")
+    page_id = make_page(client, headers)
+
+    resp = client.post(f"/pages/{page_id}/keywords", json={"keyword": "a"}, headers=headers)
+    assert resp.json()["location_code"] == 2356  # India
+
+
+def test_rank_check_matches_against_page_url_not_site_domain(client, monkeypatch):
+    """Regression test: a real bug had rank checks match against Site.domain,
+    which is free-text with no format validation (a typo like "zepto" instead
+    of "zepto.com" silently broke every check for that site). page.url is a
+    validated URL and is what should be used instead."""
+    calls = []
+
+    class _RecordingProvider(RankProvider):
+        name = "recording"
+
+        def fetch_rank(self, keyword, target_domain, location_code, language_code, device):
+            calls.append(target_domain)
+            return 3
+
+    monkeypatch.setattr(keyword_rank_runner, "get_rank_provider", lambda: _RecordingProvider())
+
+    headers = register_and_login(client, "kw7@test.dev")
+    # deliberately mismatched/malformed site domain, like the real bug
+    site = client.post("/sites", json={"domain": "typo-domain"}, headers=headers).json()
+    page = client.post(
+        f"/sites/{site['id']}/pages", json={"url": "https://real-domain.com/page"}, headers=headers
+    ).json()
+
+    client.post(f"/pages/{page['id']}/keywords", json={"keyword": "a"}, headers=headers)
+
+    assert calls == ["https://real-domain.com/page"]

@@ -1,29 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { useSites } from "@/lib/sites-context";
 
 export default function DashboardHome() {
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
-  const [hasSites, setHasSites] = useState(false);
+  const { sites } = useSites();
 
   useEffect(() => {
-    api
-      .listSites()
-      .then((sites) => {
-        if (sites.length > 0) {
-          router.replace(`/sites/${sites[0].id}`);
-        } else {
-          setHasSites(false);
-          setChecked(true);
-        }
-      })
-      .catch(() => setChecked(true));
-  }, [router]);
+    if (sites && sites.length > 0) {
+      router.replace(`/sites/${sites[0].id}`);
+    }
+  }, [sites, router]);
 
-  if (!checked || hasSites) {
+  if (sites === null || sites.length > 0) {
     return <div className="loading-state">Loading…</div>;
   }
 

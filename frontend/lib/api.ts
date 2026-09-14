@@ -66,6 +66,9 @@ export const api = {
   listSites: () => request<Site[]>("/sites"),
   createSite: (domain: string) => request<Site>("/sites", { method: "POST", body: JSON.stringify({ domain }) }),
   getSite: (id: number) => request<Site>(`/sites/${id}`),
+  updateSite: (id: number, domain: string) =>
+    request<Site>(`/sites/${id}`, { method: "PATCH", body: JSON.stringify({ domain }) }),
+  deleteSite: (id: number) => request<void>(`/sites/${id}`, { method: "DELETE" }),
 
   listPages: (siteId: number) => request<Page[]>(`/sites/${siteId}/pages`),
   createPage: (siteId: number, url: string, targetKeyword?: string) =>
@@ -74,6 +77,9 @@ export const api = {
       body: JSON.stringify({ url, target_keyword: targetKeyword || null }),
     }),
   getPage: (id: number) => request<Page>(`/pages/${id}`),
+  updatePage: (id: number, data: { url?: string; target_keyword?: string }) =>
+    request<Page>(`/pages/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deletePage: (id: number) => request<void>(`/pages/${id}`, { method: "DELETE" }),
 
   listAudits: (pageId: number) => request<Audit[]>(`/pages/${pageId}/audits`),
   getAudit: (id: number) => request<AuditDetail>(`/audits/${id}`),

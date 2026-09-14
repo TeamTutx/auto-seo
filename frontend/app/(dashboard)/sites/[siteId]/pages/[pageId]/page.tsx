@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import ScoreGauge from "@/components/ScoreGauge";
 import CheckList from "@/components/CheckList";
@@ -13,6 +13,7 @@ export default function PageDetailPage() {
   const params = useParams<{ siteId: string; pageId: string }>();
   const siteId = Number(params.siteId);
   const pageId = Number(params.pageId);
+  const router = useRouter();
 
   const [site, setSite] = useState<Site | null>(null);
   const [page, setPage] = useState<Page | null>(null);
@@ -21,6 +22,13 @@ export default function PageDetailPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+
+  const [editing, setEditing] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     try {
@@ -61,6 +69,33 @@ export default function PageDetailPage() {
     }
   }
 
+  async function handleSaveEdit(e: FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+    setSaving(true);
+    try {
+      const updated = await api.updatePage(pageId, { url: urlInput.trim(), target_keyword: keywordInput.trim() });
+      setPage(updated);
+      setEditing(false);
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : "Could not update page.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeletePage() {
+    if (!page || !confirm(`Delete ${page.url}? This removes its audit history and tracked keywords.`)) return;
+    setDeleting(true);
+    try {
+      await api.deletePage(pageId);
+      router.push(`/sites/${siteId}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete page.");
+      setDeleting(false);
+    }
+  }
+
   if (notFound) return <div className="empty-state">Page not found.</div>;
   if (loading || !site || !page) return <div className="loading-state">Loading…</div>;
 
@@ -78,13 +113,73 @@ export default function PageDetailPage() {
         {path !== "/" && <> / {path}</>}
       </div>
       <div className="detail-header">
-        <div>
-          <div className="detail-title">{audit?.extracted_title || path}</div>
-          <div className="detail-url">{page.url}</div>
-        </div>
-        <button className="btn" onClick={handleRescan} disabled={running}>
-          {running ? "Scanning…" : audit ? "Rescan page" : "Run first audit"}
-        </button>
+        {editing ? (
+          <form onSubmit={handleSaveEdit} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              autoFocus
+              type="url"
+              required
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              style={{
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "8px 10px",
+                color: "var(--text)",
+                fontSize: 13.5,
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Target keyword (optional)"
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              style={{
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "8px 10px",
+                color: "var(--text)",
+                fontSize: 13.5,
+              }}
+            />
+            {editError && <div style={{ color: "var(--bad)", fontSize: 12.5 }}>{editError}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" type="submit" disabled={saving}>
+                Save
+              </button>
+              <button type="button" className="btn-ghost btn" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div>
+              <div className="detail-title">{audit?.extracted_title || path}</div>
+              <div className="detail-url">{page.url}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={handleRescan} disabled={running}>
+                {running ? "Scanning…" : audit ? "Rescan page" : "Run first audit"}
+              </button>
+              <button
+                className="btn-ghost btn"
+                onClick={() => {
+                  setUrlInput(page.url);
+                  setKeywordInput(page.target_keyword || "");
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </button>
+              <button className="btn-ghost btn" onClick={handleDeletePage} disabled={deleting} style={{ color: "var(--bad)" }}>
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {error && <div className="form-error">{error}</div>}

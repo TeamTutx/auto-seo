@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { SitesProvider } from "@/lib/sites-context";
 import Sidebar from "@/components/Sidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -18,9 +19,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="app">
-      <Sidebar />
-      <main className="main">{children}</main>
-    </div>
+    <SitesProvider>
+      <div className="app">
+        <Sidebar />
+        <main className="main">{children}</main>
+      </div>
+    </SitesProvider>
   );
 }

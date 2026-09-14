@@ -35,17 +35,26 @@ with CORS already configured for `http://localhost:3000` in
 ## What's here
 
 - `lib/api.ts` — typed fetch wrapper for every backend endpoint used so far
-  (auth, sites, pages, audits, keywords, AI suggestions). Stores the JWT in
-  `localStorage`.
+  (auth, sites, pages, audits, keywords, AI suggestions), including
+  `update`/`delete` for sites and pages. Stores the JWT in `localStorage`.
 - `lib/auth-context.tsx` — React context exposing `user`/`login`/`register`/`logout`.
+- `lib/sites-context.tsx` — React context holding the sites list, shared by
+  the sidebar and every page that lists/mutates sites. Without this, editing
+  or deleting a site on the overview page left the sidebar showing stale
+  data until a full reload — any component that mutates a site must call
+  `refreshSites()` afterward.
 - `app/login/` — combined login/register form.
 - `app/(dashboard)/layout.tsx` + `components/Sidebar.tsx` — auth-gated shell:
   sites list, plan/credits widget, add-site form.
 - `app/(dashboard)/sites/[siteId]/page.tsx` — site overview: score gauge
   (average of pages' latest audit scores), stat row, pages table, add-page
-  form, "Run full scan" (re-audits every page on the site).
+  form, "Run full scan" (re-audits every page on the site), inline domain
+  edit, delete-site (confirm dialog, cascades on the backend), per-row
+  delete-page.
 - `app/(dashboard)/sites/[siteId]/pages/[pageId]/page.tsx` — page detail:
-  full checklist from the on-page audit engine, rescan button.
+  full checklist from the on-page audit engine, rescan button, inline
+  url/target-keyword edit, delete-page (confirm dialog, redirects to the
+  site overview).
 - `components/ScoreGauge.tsx`, `components/CheckList.tsx` — presentational
   pieces shared between the two dashboard views. `CheckList` also drives the
   "Generate a suggestion →" action on the `meta_description` check (step 7):
@@ -62,8 +71,15 @@ with CORS already configured for `http://localhost:3000` in
 Verified manually end-to-end in a real browser: register → add site → add
 page → run a real audit against a live URL → see the checklist and score →
 generate a real AI meta-description suggestion → track a keyword and see
-its live rank → recheck it. Also hit the free-tier site-limit (402) and
-rescan-throttle (429) errors and confirmed they render as inline messages.
+its live rank → recheck it → edit a site's domain and a page's url/keyword
+→ delete a page → delete a site and confirm the sidebar updates without a
+reload. Also hit the free-tier site-limit (402) and rescan-throttle (429)
+errors and confirmed they render as inline messages.
+
+Note: `window.confirm()` (used for both delete confirmations) doesn't
+surface in automated/headless browser testing - had to override it via
+injected JS (`window.confirm = () => true`) to verify the delete flows.
+Works normally for a real user in a real browser.
 
 ## Known gaps
 
