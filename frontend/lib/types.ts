@@ -155,3 +155,34 @@ export interface AppliedFix {
 export interface RankingActionPlan {
   plan: string;
 }
+
+export interface ScoreTrendPoint {
+  date: string;
+  score: number;
+}
+
+export interface ScoreMovement {
+  page_id: number;
+  page_url: string;
+  previous_score: number;
+  new_score: number;
+  delta: number;
+}
+
+export interface KeywordMovement {
+  page_id: number;
+  page_url: string;
+  keyword: string;
+  previous_rank: number | null;
+  new_rank: number | null;
+  delta: number;
+}
+
+export interface SiteHealth {
+  score_trend: ScoreTrendPoint[];
+  score_wins: ScoreMovement[];
+  score_losses: ScoreMovement[];
+  keyword_wins: KeywordMovement[];
+  keyword_losses: KeywordMovement[];
+  top_opportunities: Opportunity[];
+}

@@ -776,6 +776,62 @@ tbody tr.clickable:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* Site health: trend chart panel, win/loss row lists */
+.health-panel {
+  padding: 18px;
+}
+.health-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  margin: 0 -4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.health-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+.health-row:last-child {
+  border-bottom: none;
+}
+.health-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.health-sub {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 1px;
+}
+.health-delta {
+  font-family: var(--font-display), "Space Grotesk", sans-serif;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-size: 12.5px;
+}
+.health-delta.good {
+  color: var(--good);
+}
+.health-delta.bad {
+  color: var(--bad);
+}
+.health-subtitle {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 14px 0 6px 0;
+}
+.health-subtitle:first-child {
+  margin-top: 0;
+}
+
 /* Auth pages */
 .auth-shell {
   min-height: 100vh;

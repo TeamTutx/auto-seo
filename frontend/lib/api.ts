@@ -13,6 +13,7 @@ import type {
   Page,
   RankingActionPlan,
   Site,
+  SiteHealth,
   SiteVerificationResult,
   TextSuggestion,
   TitleTagSuggestion,
@@ -150,6 +151,7 @@ export const api = {
   markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
 
   getOpportunities: (siteId: number) => request<Opportunity[]>(`/sites/${siteId}/opportunities`),
+  getSiteHealth: (siteId: number) => request<SiteHealth>(`/sites/${siteId}/health`),
 
   getKeywordOpportunities: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
     request<KeywordOpportunity[]>(`/pages/${pageId}/keywords/opportunities`, {

@@ -100,10 +100,31 @@ producing a sensible, keyword-specific plan via real OpenAI.
 
 ## Phase E — Site Health rollup
 
-A single per-site dashboard: score trend over time (we already keep every
-historical `Audit`, same charting approach as the rank-history chart),
-biggest wins/losses, and the top items from Phase A's opportunity list — the
-actual "come here and see everything" home screen for a site.
+**Status: done**
+
+No external requirements — pure aggregation over data already stored (no
+new tables, no API keys). `GET /sites/{id}/health` returns:
+- **Score trend** — reconstructs what the site's blended score (same
+  "average of each page's latest audit" the overview gauge already shows)
+  would have read at every point in its audit history, not just right now.
+  Charted with the same inline-SVG approach as the keyword rank-history
+  chart (`ScoreTrendChart.tsx`).
+- **Score wins/losses** — biggest per-page score deltas between each page's
+  two most recent audits.
+- **Keyword wins/losses** — biggest per-keyword rank deltas between the two
+  most recent checks, including newly-found (win) and newly-lost (loss)
+  transitions. This is new: until now the app only ever alerted on rank
+  *drops* (`applied_fixes.py`/`scheduled_audits.py`) - improvements were
+  never surfaced anywhere.
+- `top_opportunities` (reused from Phase A, for API completeness) - the
+  frontend doesn't re-render this since the existing `OpportunitiesPanel`
+  already covers it on the same page.
+
+Shown as a new "Site health" section on the site overview page, between the
+score/stat summary and Opportunities. Verified live: trend chart correctly
+reflects a real score change, wins/losses correctly categorize a keyword
+improvement and a score drop with the right direction/delta, and the
+existing Opportunities section stayed accurate alongside it.
 
 ## Not yet scheduled
 

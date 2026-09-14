@@ -237,6 +237,39 @@ class RankingActionPlan(BaseModel):
     plan: str
 
 
+# --- site health rollup (Signal roadmap Phase E) ---
+
+class ScoreTrendPoint(BaseModel):
+    date: datetime
+    score: float  # average of each page's latest-as-of-then score - see app/services/site_health.py
+
+
+class ScoreMovement(BaseModel):
+    page_id: int
+    page_url: str
+    previous_score: int
+    new_score: int
+    delta: int  # new - previous; positive means it improved
+
+
+class KeywordMovement(BaseModel):
+    page_id: int
+    page_url: str
+    keyword: str
+    previous_rank: Optional[int]  # None = wasn't found in the previous check
+    new_rank: Optional[int]  # None = not found in the latest check
+    delta: int  # previous - new (positive = improved); a found/lost transition uses a large sentinel for sorting
+
+
+class SiteHealth(BaseModel):
+    score_trend: List[ScoreTrendPoint]
+    score_wins: List[ScoreMovement]
+    score_losses: List[ScoreMovement]
+    keyword_wins: List[KeywordMovement]
+    keyword_losses: List[KeywordMovement]
+    top_opportunities: List[Opportunity]
+
+
 # --- alerts ---
 
 class AlertRead(BaseModel):

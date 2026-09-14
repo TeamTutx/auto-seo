@@ -7,6 +7,7 @@ import { scoreBucket } from "@/lib/score";
 import { useSites } from "@/lib/sites-context";
 import OpportunitiesPanel from "@/components/OpportunitiesPanel";
 import ScoreGauge from "@/components/ScoreGauge";
+import SiteHealthPanel from "@/components/SiteHealthPanel";
 import SiteVerification from "@/components/SiteVerification";
 import type { Audit, Page, Site } from "@/lib/types";
 
@@ -251,6 +252,8 @@ export default function SiteOverviewPage() {
           </div>
         </div>
       </div>
+
+      <SiteHealthPanel siteId={siteId} />
 
       <OpportunitiesPanel siteId={siteId} />
 
