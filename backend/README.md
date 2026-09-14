@@ -267,8 +267,14 @@ user** connects their own Google account through a real consent screen -
 there's no way to fully exercise this without doing the setup below.
 
 1. Create/select a project at [console.cloud.google.com](https://console.cloud.google.com).
-2. Enable **Search Console API** and **Google Analytics Data API**
-   (APIs & Services → Library).
+2. Enable **Search Console API**, **Google Analytics Data API**, and
+   **Google Analytics Admin API** (APIs & Services → Library). The Admin
+   API is easy to miss - it's a separate API from the Data API, needed
+   only for listing which GA4 properties the connected account can see
+   (`GET /integrations/google/status`); actually fetching metrics
+   (`GET /pages/{id}/ga/metrics`) uses the Data API alone. Skipping it
+   fails with `Google Analytics Admin API has not been used in project
+   ... before or it is disabled.`
 3. Configure the **OAuth consent screen** (APIs & Services → OAuth
    consent screen). While in testing mode, only Google accounts you add
    as test users can connect - fine for dev.
