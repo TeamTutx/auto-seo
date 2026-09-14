@@ -1,9 +1,27 @@
+import re
 from datetime import datetime
 from typing import List, Optional
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 from app.models import CheckStatus, PlanTier, VerificationMethod
+
+_DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
+
+
+def _clean_domain(value: str) -> str:
+    """Accept "example.com", "https://example.com/path", "www.example.com",
+    etc. and normalize down to a bare hostname - or reject it outright. This
+    is what stops a typo like "zepto" (no TLD) from being silently accepted
+    and then breaking rank checks with no visible error (see keyword_rank_runner.py)."""
+    value = value.strip().lower()
+    netloc = urlparse(value if "//" in value else f"//{value}").netloc.split(":")[0]
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    if not netloc or not _DOMAIN_RE.match(netloc):
+        raise ValueError(f'"{value}" doesn\'t look like a valid domain (expected something like example.com)')
+    return netloc
 
 
 # --- auth ---
@@ -31,9 +49,19 @@ class Token(BaseModel):
 class SiteCreate(BaseModel):
     domain: str
 
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, v: str) -> str:
+        return _clean_domain(v)
+
 
 class SiteUpdate(BaseModel):
     domain: Optional[str] = None
+
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_domain(v) if v is not None else v
 
 
 class SiteRead(BaseModel):
@@ -47,6 +75,11 @@ class SiteRead(BaseModel):
 
 class SiteVerifyRequest(BaseModel):
     method: VerificationMethod
+
+
+class SiteVerificationResult(BaseModel):
+    verified: bool
+    message: str
 
 
 # --- pages ---
@@ -109,7 +142,25 @@ class KeywordRankRead(BaseModel):
     checked_at: datetime
 
 
+class CompetitorsRequest(BaseModel):
+    keyword: str
+    location_code: int = 2356  # India - see app/models.py KeywordRank.location_code
+    language_code: str = "en"
+    device: str = "desktop"
+
+
+class CompetitorResult(BaseModel):
+    position: int
+    title: str
+    domain: str
+    url: str
+
+
 # --- AI suggestions ---
 
 class MetaDescriptionSuggestion(BaseModel):
+    suggestion: str
+
+
+class TitleTagSuggestion(BaseModel):
     suggestion: str

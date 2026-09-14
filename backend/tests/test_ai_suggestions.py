@@ -43,3 +43,17 @@ def test_generate_meta_description_omits_keyword_line_when_none_set(monkeypatch)
 
     _, user_prompt, _ = provider.calls[0]
     assert "Target keyword" not in user_prompt
+
+
+def test_generate_title_tag_includes_page_context_in_prompt(monkeypatch):
+    provider = _FakeProvider()
+    monkeypatch.setattr(ai_suggestions, "get_ai_provider", lambda: provider)
+
+    ai_suggestions.generate_title_tag(HTML, "https://example.com/serum", "vitamin c serum")
+
+    assert len(provider.calls) == 1
+    system_prompt, user_prompt, max_tokens = provider.calls[0]
+    assert "title tag" in system_prompt.lower()
+    assert "Vitamin C Brightening Serum" in user_prompt
+    assert "vitamin c serum" in user_prompt
+    assert max_tokens < 300

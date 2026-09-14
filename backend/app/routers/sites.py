@@ -5,9 +5,10 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import PLAN_LIMITS, Site, User
-from app.schemas import SiteCreate, SiteRead, SiteUpdate
+from app.models import PLAN_LIMITS, Site, User, VerificationMethod
+from app.schemas import SiteCreate, SiteRead, SiteUpdate, SiteVerificationResult, SiteVerifyRequest
 from app.services.cascade_delete import delete_site
+from app.services.site_verification import verify_dns_txt, verify_file_upload, verify_meta_tag
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
@@ -65,6 +66,31 @@ def update_site(
     session.commit()
     session.refresh(site)
     return site
+
+
+@router.post("/{site_id}/verify", response_model=SiteVerificationResult)
+def verify_site(
+    site_id: int,
+    payload: SiteVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    site = _get_owned_site(session, site_id, current_user)
+
+    if payload.method == VerificationMethod.dns_txt:
+        verified, message = verify_dns_txt(site.domain, site.verification_token)
+    elif payload.method == VerificationMethod.meta_tag:
+        verified, message = verify_meta_tag(site.domain, site.verification_token)
+    else:
+        verified, message = verify_file_upload(site.domain, site.verification_token)
+
+    if verified:
+        site.verified = True
+        site.verification_method = payload.method
+        session.add(site)
+        session.commit()
+
+    return SiteVerificationResult(verified=verified, message=message)
 
 
 @router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)

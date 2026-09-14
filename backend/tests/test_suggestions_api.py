@@ -59,3 +59,22 @@ def test_out_of_credits_blocks_before_calling_the_provider(client, monkeypatch, 
     resp = client.post(f"/pages/{page_id}/suggestions/meta-description", headers=headers)
     assert resp.status_code == 402
     assert calls == []  # provider never called once credits are exhausted
+
+
+def test_title_tag_suggestion_endpoint(client, monkeypatch):
+    monkeypatch.setattr(suggestions_router, "fetch_html", lambda url: FAKE_HTML)
+    monkeypatch.setattr(
+        suggestions_router,
+        "generate_title_tag",
+        lambda html, url, keyword: "Vitamin C Serum for Glowing, Even-Toned Skin",
+    )
+
+    headers = register_and_login(client, "ai4@test.dev")
+    page_id = make_page(client, headers)
+
+    resp = client.post(f"/pages/{page_id}/suggestions/title-tag", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"suggestion": "Vitamin C Serum for Glowing, Even-Toned Skin"}
+
+    me = client.get("/auth/me", headers=headers).json()
+    assert me["credits_balance"] == 2

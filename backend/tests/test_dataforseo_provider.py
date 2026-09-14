@@ -5,26 +5,25 @@ SERP_RESPONSE = {
     "tasks": [{
         "result": [{
             "items": [
-                {"type": "organic", "rank_absolute": 1, "domain": "competitor.com", "url": "https://competitor.com/a"},
+                {"type": "organic", "rank_absolute": 1, "domain": "competitor.com", "url": "https://competitor.com/a", "title": "Competitor"},
                 {"type": "featured_snippet", "rank_absolute": 1, "domain": "competitor.com"},
-                {"type": "organic", "rank_absolute": 2, "domain": "www.example.com", "url": "https://www.example.com/serum"},
-                {"type": "organic", "rank_absolute": 3, "domain": "other.com", "url": "https://other.com/b"},
+                {"type": "organic", "rank_absolute": 2, "domain": "www.example.com", "url": "https://www.example.com/serum", "title": "Example"},
+                {"type": "organic", "rank_absolute": 3, "domain": "other.com", "url": "https://other.com/b", "title": "Other"},
             ]
         }]
     }],
 }
 
 
-def test_finds_rank_for_target_domain():
-    assert DataForSEOProvider.extract_rank(SERP_RESPONSE, "example.com") == 2
+def test_parses_organic_results_in_order():
+    results = DataForSEOProvider.parse_serp(SERP_RESPONSE)
+    assert [r.position for r in results] == [1, 2, 3]
+    assert [r.domain for r in results] == ["competitor.com", "example.com", "other.com"]
 
 
-def test_matches_regardless_of_www_prefix():
-    assert DataForSEOProvider.extract_rank(SERP_RESPONSE, "www.example.com") == 2
-
-
-def test_returns_none_when_domain_not_present():
-    assert DataForSEOProvider.extract_rank(SERP_RESPONSE, "not-ranked.com") is None
+def test_normalizes_www_prefix():
+    results = DataForSEOProvider.parse_serp(SERP_RESPONSE)
+    assert results[1].domain == "example.com"  # not "www.example.com"
 
 
 def test_ignores_non_organic_items():
@@ -33,10 +32,19 @@ def test_ignores_non_organic_items():
             {"type": "featured_snippet", "rank_absolute": 1, "domain": "example.com"},
         ]}]}]
     }
-    assert DataForSEOProvider.extract_rank(response, "example.com") is None
+    assert DataForSEOProvider.parse_serp(response) == []
 
 
 def test_handles_malformed_response():
-    assert DataForSEOProvider.extract_rank({}, "example.com") is None
-    assert DataForSEOProvider.extract_rank({"tasks": []}, "example.com") is None
-    assert DataForSEOProvider.extract_rank({"tasks": [{"result": None}]}, "example.com") is None
+    assert DataForSEOProvider.parse_serp({}) == []
+    assert DataForSEOProvider.parse_serp({"tasks": []}) == []
+    assert DataForSEOProvider.parse_serp({"tasks": [{"result": None}]}) == []
+
+
+def test_fetch_rank_finds_target_via_parsed_serp(monkeypatch):
+    provider = DataForSEOProvider()
+    monkeypatch.setattr(provider, "fetch_serp", lambda keyword, location_code, language_code, device: DataForSEOProvider.parse_serp(SERP_RESPONSE))
+
+    assert provider.fetch_rank("kw", "example.com", 2356, "en", "desktop") == 2
+    assert provider.fetch_rank("kw", "www.example.com", 2356, "en", "desktop") == 2
+    assert provider.fetch_rank("kw", "not-ranked.com", 2356, "en", "desktop") is None

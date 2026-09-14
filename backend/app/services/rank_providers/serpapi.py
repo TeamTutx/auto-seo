@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import List
 
 import httpx
 
 from app.config import settings
 
-from .base import RankProvider, RankProviderError, normalize_domain
+from .base import RankProvider, RankProviderError, SerpResult, normalize_domain
 
 # SerpApi targets a market with a 2-letter country code ("gl"), not DataForSEO's
 # numeric location_code - this maps the common ones so KeywordRank rows stay
@@ -24,14 +24,13 @@ class SerpApiProvider(RankProvider):
     URL = "https://serpapi.com/search"
     NUM_RESULTS = 100  # how many organic results to scan for the target domain
 
-    def fetch_rank(
+    def fetch_serp(
         self,
         keyword: str,
-        target_domain: str,
         location_code: int = 2356,
         language_code: str = "en",
         device: str = "desktop",
-    ) -> Optional[int]:
+    ) -> List[SerpResult]:
         if not settings.serpapi_key:
             raise RankProviderError("SerpApi credentials are not configured (SERPAPI_KEY).")
 
@@ -59,13 +58,20 @@ class SerpApiProvider(RankProvider):
         if "error" in data:
             raise RankProviderError(f"SerpApi error: {data['error']}")
 
-        return self.extract_rank(data, target_domain)
+        return self.parse_serp(data)
 
     @staticmethod
-    def extract_rank(response_json: dict, target_domain: str) -> Optional[int]:
-        target = normalize_domain(target_domain)
+    def parse_serp(response_json: dict) -> List[SerpResult]:
+        results = []
         for item in response_json.get("organic_results", []):
+            position = item.get("position")
             link = item.get("link", "")
-            if normalize_domain(link) == target:
-                return item.get("position")
-        return None
+            if position is None or not link:
+                continue
+            results.append(SerpResult(
+                position=position,
+                title=item.get("title", ""),
+                domain=normalize_domain(link),
+                url=link,
+            ))
+        return results

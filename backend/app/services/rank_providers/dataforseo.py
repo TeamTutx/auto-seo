@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import List
 
 import httpx
 
 from app.config import settings
 
-from .base import RankProvider, RankProviderError, normalize_domain
+from .base import RankProvider, RankProviderError, SerpResult, normalize_domain
 
 
 class DataForSEOProvider(RankProvider):
@@ -13,14 +13,13 @@ class DataForSEOProvider(RankProvider):
     URL = "https://api.dataforseo.com/v3/serp/google/organic/live/regular"
     SEARCH_DEPTH = 100  # how many organic results to scan for the target domain
 
-    def fetch_rank(
+    def fetch_serp(
         self,
         keyword: str,
-        target_domain: str,
         location_code: int = 2356,
         language_code: str = "en",
         device: str = "desktop",
-    ) -> Optional[int]:
+    ) -> List[SerpResult]:
         if not settings.dataforseo_login or not settings.dataforseo_password:
             raise RankProviderError("DataForSEO credentials are not configured (DATAFORSEO_LOGIN/PASSWORD).")
 
@@ -54,20 +53,27 @@ class DataForSEOProvider(RankProvider):
         if data.get("status_code") != 20000:
             raise RankProviderError(f"DataForSEO error: {data.get('status_message', 'unknown error')}")
 
-        return self.extract_rank(data, target_domain)
+        return self.parse_serp(data)
 
     @staticmethod
-    def extract_rank(response_json: dict, target_domain: str) -> Optional[int]:
-        target = normalize_domain(target_domain)
+    def parse_serp(response_json: dict) -> List[SerpResult]:
         try:
             items = response_json["tasks"][0]["result"][0]["items"] or []
         except (KeyError, IndexError, TypeError):
-            return None
+            return []
 
+        results = []
         for item in items:
             if item.get("type") != "organic":
                 continue
-            item_domain = item.get("domain") or item.get("url", "")
-            if normalize_domain(item_domain) == target:
-                return item.get("rank_absolute")
-        return None
+            raw_domain = item.get("domain") or item.get("url", "")
+            position = item.get("rank_absolute")
+            if position is None:
+                continue
+            results.append(SerpResult(
+                position=position,
+                title=item.get("title", ""),
+                domain=normalize_domain(raw_domain),
+                url=item.get("url", ""),
+            ))
+        return results

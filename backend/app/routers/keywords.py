@@ -7,9 +7,11 @@ from app.database import get_session
 from app.deps import get_current_user
 from app.models import PLAN_LIMITS, KeywordRank, User
 from app.routers.pages import get_owned_page
-from app.schemas import KeywordRankCreate, KeywordRankRead
+from app.schemas import CompetitorResult, CompetitorsRequest, KeywordRankCreate, KeywordRankRead
+from app.services.competitors import get_competitors
 from app.services.credits import deduct_credit, require_credits
 from app.services.keyword_rank_runner import check_keyword_rank
+from app.services.rank_providers import RankProviderError
 
 router = APIRouter(tags=["keywords"])
 
@@ -102,3 +104,26 @@ def recheck_keywords(
         deduct_credit(session, current_user)
         results.append(result)
     return results
+
+
+@router.post("/pages/{page_id}/keywords/competitors", response_model=List[CompetitorResult])
+def keyword_competitors(
+    page_id: int,
+    payload: CompetitorsRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    page = get_owned_page(session, page_id, current_user)
+    require_credits(current_user)
+
+    try:
+        competitors = get_competitors(
+            payload.keyword, page.url, payload.location_code, payload.language_code, payload.device
+        )
+    except RankProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    deduct_credit(session, current_user)
+    return [
+        CompetitorResult(position=c.position, title=c.title, domain=c.domain, url=c.url) for c in competitors
+    ]

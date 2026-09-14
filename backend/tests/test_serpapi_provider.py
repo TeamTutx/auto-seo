@@ -9,17 +9,24 @@ SERP_RESPONSE = {
 }
 
 
-def test_finds_rank_for_target_domain():
-    assert SerpApiProvider.extract_rank(SERP_RESPONSE, "example.com") == 2
+def test_parses_organic_results_in_order():
+    results = SerpApiProvider.parse_serp(SERP_RESPONSE)
+    assert [r.position for r in results] == [1, 2, 3]
+    assert [r.domain for r in results] == ["competitor.com", "example.com", "other.com"]
 
 
-def test_matches_regardless_of_www_prefix():
-    assert SerpApiProvider.extract_rank(SERP_RESPONSE, "www.example.com") == 2
-
-
-def test_returns_none_when_domain_not_present():
-    assert SerpApiProvider.extract_rank(SERP_RESPONSE, "not-ranked.com") is None
+def test_normalizes_www_prefix():
+    results = SerpApiProvider.parse_serp(SERP_RESPONSE)
+    assert results[1].domain == "example.com"
 
 
 def test_handles_missing_organic_results():
-    assert SerpApiProvider.extract_rank({}, "example.com") is None
+    assert SerpApiProvider.parse_serp({}) == []
+
+
+def test_fetch_rank_finds_target_via_parsed_serp(monkeypatch):
+    provider = SerpApiProvider()
+    monkeypatch.setattr(provider, "fetch_serp", lambda keyword, location_code, language_code, device: SerpApiProvider.parse_serp(SERP_RESPONSE))
+
+    assert provider.fetch_rank("kw", "example.com", 2356, "en", "desktop") == 2
+    assert provider.fetch_rank("kw", "not-ranked.com", 2356, "en", "desktop") is None

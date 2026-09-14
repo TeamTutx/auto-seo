@@ -12,6 +12,9 @@ class _FakeProvider(RankProvider):
         self.sequence = sequence
         self.i = 0
 
+    def fetch_serp(self, keyword, location_code, language_code, device):
+        return []  # unused - fetch_rank is overridden directly below
+
     def fetch_rank(self, keyword, target_domain, location_code, language_code, device):
         value = self.sequence[self.i % len(self.sequence)]
         self.i += 1
@@ -108,14 +111,19 @@ def test_defaults_to_india_when_location_not_specified(client, fake_ranks):
 
 
 def test_rank_check_matches_against_page_url_not_site_domain(client, monkeypatch):
-    """Regression test: a real bug had rank checks match against Site.domain,
-    which is free-text with no format validation (a typo like "zepto" instead
-    of "zepto.com" silently broke every check for that site). page.url is a
-    validated URL and is what should be used instead."""
+    """Regression test: a real bug had rank checks match against Site.domain
+    instead of page.url. Site.domain now has format validation (see
+    schemas.py _clean_domain) which would catch the exact "zepto" typo that
+    caused it, but the two can still legitimately diverge (a site's pages on
+    a different subdomain, a domain migration, etc.) - so this still matters
+    even with validation in place."""
     calls = []
 
     class _RecordingProvider(RankProvider):
         name = "recording"
+
+        def fetch_serp(self, keyword, location_code, language_code, device):
+            return []  # unused - fetch_rank is overridden directly below
 
         def fetch_rank(self, keyword, target_domain, location_code, language_code, device):
             calls.append(target_domain)
@@ -124,8 +132,8 @@ def test_rank_check_matches_against_page_url_not_site_domain(client, monkeypatch
     monkeypatch.setattr(keyword_rank_runner, "get_rank_provider", lambda: _RecordingProvider())
 
     headers = register_and_login(client, "kw7@test.dev")
-    # deliberately mismatched/malformed site domain, like the real bug
-    site = client.post("/sites", json={"domain": "typo-domain"}, headers=headers).json()
+    # valid domain, but deliberately different from the page's actual domain
+    site = client.post("/sites", json={"domain": "wrong-domain.com"}, headers=headers).json()
     page = client.post(
         f"/sites/{site['id']}/pages", json={"url": "https://real-domain.com/page"}, headers=headers
     ).json()
