@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -164,6 +165,34 @@ class MetaDescriptionSuggestion(BaseModel):
 
 class TitleTagSuggestion(BaseModel):
     suggestion: str
+
+
+# --- opportunities ---
+
+class OpportunityType(str, Enum):
+    audit_fail = "audit_fail"
+    audit_warning = "audit_warning"
+    keyword_not_found = "keyword_not_found"
+    keyword_low_rank = "keyword_low_rank"
+    keyword_rank_drop = "keyword_rank_drop"
+
+
+class OpportunitySeverity(str, Enum):
+    high = "high"
+    medium = "medium"
+    low = "low"
+
+
+class Opportunity(BaseModel):
+    type: OpportunityType
+    severity: OpportunitySeverity
+    page_id: int
+    page_url: str
+    title: str
+    detail: str
+    suggested_fix: Optional[str] = None
+    check_type: Optional[str] = None  # set for audit_* types - lets the frontend link into CheckList's suggestion action
+    keyword: Optional[str] = None  # set for keyword_* types
 
 
 # --- alerts ---

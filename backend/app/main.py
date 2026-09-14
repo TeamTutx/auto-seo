@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_db_and_tables
-from app.routers import alerts, audits, auth, keywords, pages, sites, suggestions
+from app.routers import alerts, audits, auth, keywords, opportunities, pages, sites, suggestions
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.include_router(audits.router)
 app.include_router(keywords.router)
 app.include_router(suggestions.router)
 app.include_router(alerts.router)
+app.include_router(opportunities.router)
 
 
 @app.get("/health")

@@ -5,6 +5,7 @@ import type {
   CompetitorResult,
   KeywordRank,
   MetaDescriptionSuggestion,
+  Opportunity,
   Page,
   Site,
   SiteVerificationResult,
@@ -131,4 +132,6 @@ export const api = {
 
   listAlerts: () => request<Alert[]>("/alerts"),
   markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
+
+  getOpportunities: (siteId: number) => request<Opportunity[]>(`/sites/${siteId}/opportunities`),
 };

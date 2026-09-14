@@ -103,3 +103,24 @@ export interface Alert {
   read: boolean;
   created_at: string;
 }
+
+export type OpportunityType =
+  | "audit_fail"
+  | "audit_warning"
+  | "keyword_not_found"
+  | "keyword_low_rank"
+  | "keyword_rank_drop";
+
+export type OpportunitySeverity = "high" | "medium" | "low";
+
+export interface Opportunity {
+  type: OpportunityType;
+  severity: OpportunitySeverity;
+  page_id: number;
+  page_url: string;
+  title: string;
+  detail: string;
+  suggested_fix: string | null;
+  check_type: string | null;
+  keyword: string | null;
+}

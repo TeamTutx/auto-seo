@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { scoreBucket } from "@/lib/score";
 import { useSites } from "@/lib/sites-context";
+import OpportunitiesPanel from "@/components/OpportunitiesPanel";
 import ScoreGauge from "@/components/ScoreGauge";
 import SiteVerification from "@/components/SiteVerification";
 import type { Audit, Page, Site } from "@/lib/types";
@@ -250,6 +251,8 @@ export default function SiteOverviewPage() {
           </div>
         </div>
       </div>
+
+      <OpportunitiesPanel siteId={siteId} />
 
       <div className="panel pages-panel">
         <div className="pages-header">
