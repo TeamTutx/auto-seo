@@ -1,41 +1,144 @@
 # Signal — Self-Serve SEO Platform
 
-A website that lets users run SEO audits, track rankings, and get
-AI-assisted fixes for their own web pages.
+A website that lets users run SEO audits, track keyword rankings, and get
+AI-assisted fixes for their own web pages — without hiring an agency.
 
 - Full requirements: [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)
-- UI mockup: [`frontend/seo-dashboard-mockup.html`](frontend/seo-dashboard-mockup.html)
-- Backend: [`backend/`](backend/README.md)
-- Frontend: [`frontend/`](frontend/README.md)
+- UI mockup / design reference: [`frontend/seo-dashboard-mockup.html`](frontend/seo-dashboard-mockup.html)
+- Backend details: [`backend/README.md`](backend/README.md)
+- Frontend details: [`frontend/README.md`](frontend/README.md)
 
-## Status
-Steps 1-4, 6, and most of 7 of the [suggested build order](docs/REQUIREMENTS.md#8-suggested-build-order)
-are done, fully wired frontend-to-backend, plus two pieces pulled forward
-from later sections: site domain verification (§2.1) and competitor
-comparison (§2.4). Concretely: DB schema, FastAPI scaffold + auth, the
-on-page audit engine, a Next.js dashboard (add/edit/delete sites and pages,
-run an audit, see the score and checklist), keyword rank tracking with a
-location/device picker (add/list/recheck a keyword, see its live rank,
-rank-history chart, competitor list), AI-generated meta description and
-title suggestions, domain verification (DNS TXT/meta tag/file upload), and
-scheduled Pro/Agency audits that raise in-app alerts on a regression
-(needs Redis + a Celery worker + beat process running - see
-`backend/README.md`).
+## Features
 
-Rank tracking and AI suggestions both sit behind swappable vendor
-interfaces (rank: SerpApi/DataForSEO; AI: OpenAI/Anthropic) picked by one
-env var each. Step 5 (Stripe) is deliberately skipped for now, to be added
-before going live.
+**Sites & pages**
+- Add, edit, and delete sites and pages; domain input is validated and
+  normalized (rejects things like `"zepto"` with no TLD).
+- Domain ownership verification — DNS TXT record, meta tag, or hosted file
+  (same three options Google Search Console offers).
 
-**Not started:** content briefs (§2.7 v2), keyword search-volume/difficulty
-suggestions (§2.4 - blocked on a funded keyword-data API), GSC/GA
-integrations (step 8 - blocked on Google OAuth credentials), email alert
-delivery (blocked on a Resend/SendGrid key - alerts are in-app only for
-now), team/agency multi-user seats.
+**On-page SEO audits** (free, no external API cost)
+- Checks: title tag, meta description, heading structure, image alt text,
+  internal/external links, content length, keyword density, readability
+  (Flesch score), canonical tag, robots meta, structured data (schema.org).
+- 0–100 score per page, recalculated on every scan.
+- Manual rescan, throttled to 1×/day on the free plan; unlimited on
+  Pro/Agency.
+
+**Keyword rank tracking**
+- Track keywords per page with a location/device picker (defaults to
+  India; also supports US/UK/Canada/Australia, desktop or mobile).
+- Rank-history chart per keyword.
+- Competitor comparison — top organic results for a keyword, your own
+  domain excluded.
+- "Recheck rankings now" to refresh every tracked keyword on a page at once.
+- Backed by SerpApi or DataForSEO — swappable via one config value, no
+  code changes.
+
+**AI-generated suggestions**
+- One-click meta description and title tag rewrites, generated from the
+  page's actual content and target keyword.
+- Backed by OpenAI or Anthropic — swappable via one config value.
+
+**Scheduled audits + alerts** (Pro/Agency)
+- Daily automated re-audit of every page on a paid plan.
+- In-app alerts when a page's score drops ≥10 points or a check starts
+  newly failing — shown as a badge in the dashboard sidebar.
+
+**Accounts & plans**
+- Email/password auth (JWT).
+- Free / Pro / Agency plans with enforced limits (sites, pages per site,
+  tracked keywords per page).
+- Credit system metering paid actions (rank checks, AI suggestions,
+  competitor lookups) — ready for Stripe to plug into later.
+
+**Not yet built:** Stripe billing (deliberately deferred), Google Search
+Console / Analytics integrations (need Google OAuth credentials), keyword
+search-volume/difficulty data (needs a funded keyword-data API), email
+delivery for alerts (needs a Resend/SendGrid key), AI content briefs, and
+team/agency multi-user seats. Details and reasoning for each are in
+[`backend/README.md`](backend/README.md#known-gaps).
 
 ## Stack
-- Backend: Python (FastAPI, SQLModel, Celery + Redis for scheduled audits —
-  see [`backend/README.md`](backend/README.md))
-- Frontend: Next.js (App Router)
-- DB: SQLite for local dev, PostgreSQL via `DATABASE_URL` for anything real
-- Billing: Stripe (not yet integrated)
+- **Backend:** Python, FastAPI, SQLModel, Celery + Redis (scheduled audits)
+- **Frontend:** Next.js (App Router), TypeScript
+- **DB:** SQLite for local dev, PostgreSQL via `DATABASE_URL` for anything real
+- **External services:** SerpApi/DataForSEO (rank data), OpenAI/Anthropic
+  (AI suggestions) — Stripe planned, not yet integrated
+
+## How to run
+
+### Prerequisites
+- Python 3.9+
+- Node.js ≥ 18.17 (`node --version` — if it's older, the frontend won't
+  start; see [`frontend/README.md`](frontend/README.md) for a Homebrew fix)
+- Redis — only needed for scheduled audits/alerts; everything else runs
+  without it
+
+### 1. Backend
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Open `.env` and fill in whichever API keys you have (see the table below —
+none are required just to get the server running; features that need a
+missing key return a clean error instead of crashing).
+
+```bash
+uvicorn app.main:app --reload
+```
+
+API is now at `http://localhost:8000` (interactive docs at `/docs`).
+SQLite tables are created automatically on first run.
+
+### 2. Frontend
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+cp .env.local.example .env.local
+npm run dev
+```
+
+Dashboard is now at `http://localhost:3000`. Register a new account there
+to get started — the local database starts empty.
+
+### 3. (Optional) Scheduled audits — Redis + Celery
+
+Only needed if you want the daily Pro/Agency audit + alert job to actually
+run. Skip this if you're just exploring the app.
+
+```bash
+redis-server                                            # or: brew services start redis
+cd backend && source .venv/bin/activate
+celery -A app.workers.celery_app worker --loglevel=info  # in one terminal
+celery -A app.workers.celery_app beat --loglevel=info    # in another
+```
+
+### API keys
+
+None of these are required to start the app — each just unlocks one
+feature area. Add them to `backend/.env` as you get them.
+
+| Key(s) | Unlocks | Get it from |
+|---|---|---|
+| `SERPAPI_KEY` (default) or `DATAFORSEO_LOGIN`/`DATAFORSEO_PASSWORD` | Keyword rank checks, competitor comparison | [serpapi.com](https://serpapi.com) (100 free searches/mo) or [dataforseo.com](https://dataforseo.com) |
+| `OPENAI_API_KEY` (default) or `ANTHROPIC_API_KEY` | AI meta description/title suggestions | [platform.openai.com](https://platform.openai.com) or [console.anthropic.com](https://console.anthropic.com) |
+
+Switch which vendor is active with `RANK_PROVIDER` (`serpapi` /
+`dataforseo`) and `AI_PROVIDER` (`openai` / `anthropic`) in `.env` — no
+code changes needed either way.
+
+## Project structure
+
+```
+backend/    FastAPI app — see backend/README.md for the full endpoint/module breakdown
+frontend/   Next.js dashboard — see frontend/README.md for the component breakdown
+docs/       Product & technical requirements (docs/REQUIREMENTS.md)
+```
