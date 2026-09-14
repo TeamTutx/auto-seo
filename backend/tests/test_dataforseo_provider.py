@@ -1,3 +1,8 @@
+import httpx
+import pytest
+
+from app.config import settings
+from app.services.rank_providers.base import RankProviderError
 from app.services.rank_providers.dataforseo import DataForSEOProvider
 
 SERP_RESPONSE = {
@@ -48,3 +53,46 @@ def test_fetch_rank_finds_target_via_parsed_serp(monkeypatch):
     assert provider.fetch_rank("kw", "example.com", 2356, "en", "desktop") == 2
     assert provider.fetch_rank("kw", "www.example.com", 2356, "en", "desktop") == 2
     assert provider.fetch_rank("kw", "not-ranked.com", 2356, "en", "desktop") is None
+
+
+def test_fetch_serp_passes_num_results_through_as_depth(monkeypatch):
+    monkeypatch.setattr(settings, "dataforseo_login", "user")
+    monkeypatch.setattr(settings, "dataforseo_password", "pass")
+    captured = {}
+
+    def fake_post(url, json, auth, timeout):
+        captured.update(json[0])
+        return httpx.Response(200, json=SERP_RESPONSE, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    DataForSEOProvider().fetch_serp("kw", 2356, "en", "desktop", num_results=15)
+    assert captured["depth"] == 15
+
+
+def test_fetch_serp_retries_once_on_a_read_timeout(monkeypatch):
+    monkeypatch.setattr(settings, "dataforseo_login", "user")
+    monkeypatch.setattr(settings, "dataforseo_password", "pass")
+    calls = []
+
+    def fake_post(url, json, auth, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("timed out", request=httpx.Request("POST", url))
+        return httpx.Response(200, json=SERP_RESPONSE, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    results = DataForSEOProvider().fetch_serp("kw", 2356, "en", "desktop")
+    assert len(calls) == 2
+    assert [r.position for r in results] == [1, 2, 3]
+
+
+def test_fetch_serp_raises_after_two_consecutive_timeouts(monkeypatch):
+    monkeypatch.setattr(settings, "dataforseo_login", "user")
+    monkeypatch.setattr(settings, "dataforseo_password", "pass")
+
+    def fake_post(url, json, auth, timeout):
+        raise httpx.ReadTimeout("timed out", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(RankProviderError, match="timed out twice"):
+        DataForSEOProvider().fetch_serp("kw", 2356, "en", "desktop")

@@ -15,7 +15,7 @@ FAKE_HTML = "<html><head><title>Serum</title></head><body>Vitamin C serum for gl
 class _FakeSerpProvider(RankProvider):
     name = "fake-serp"
 
-    def fetch_serp(self, keyword, location_code, language_code, device):
+    def fetch_serp(self, keyword, location_code, language_code, device, num_results=100):
         return SAMPLE_SERP
 
 

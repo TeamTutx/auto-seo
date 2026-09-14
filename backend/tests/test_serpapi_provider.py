@@ -1,3 +1,8 @@
+import httpx
+import pytest
+
+from app.config import settings
+from app.services.rank_providers.base import RankProviderError
 from app.services.rank_providers.serpapi import SerpApiProvider
 
 SERP_RESPONSE = {
@@ -30,3 +35,43 @@ def test_fetch_rank_finds_target_via_parsed_serp(monkeypatch):
 
     assert provider.fetch_rank("kw", "example.com", 2356, "en", "desktop") == 2
     assert provider.fetch_rank("kw", "not-ranked.com", 2356, "en", "desktop") is None
+
+
+def test_fetch_serp_passes_num_results_through(monkeypatch):
+    monkeypatch.setattr(settings, "serpapi_key", "test-key")
+    captured = {}
+
+    def fake_get(url, params, timeout):
+        captured.update(params)
+        return httpx.Response(200, json=SERP_RESPONSE, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    SerpApiProvider().fetch_serp("kw", 2356, "en", "desktop", num_results=15)
+    assert captured["num"] == 15
+
+
+def test_fetch_serp_retries_once_on_a_read_timeout(monkeypatch):
+    monkeypatch.setattr(settings, "serpapi_key", "test-key")
+    calls = []
+
+    def fake_get(url, params, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("timed out", request=httpx.Request("GET", url))
+        return httpx.Response(200, json=SERP_RESPONSE, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    results = SerpApiProvider().fetch_serp("kw", 2356, "en", "desktop")
+    assert len(calls) == 2
+    assert [r.position for r in results] == [1, 2, 3]
+
+
+def test_fetch_serp_raises_after_two_consecutive_timeouts(monkeypatch):
+    monkeypatch.setattr(settings, "serpapi_key", "test-key")
+
+    def fake_get(url, params, timeout):
+        raise httpx.ReadTimeout("timed out", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    with pytest.raises(RankProviderError, match="timed out twice"):
+        SerpApiProvider().fetch_serp("kw", 2356, "en", "desktop")

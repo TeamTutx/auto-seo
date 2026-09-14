@@ -14,7 +14,7 @@ SAMPLE_SERP = [
 class _FakeSerpProvider(RankProvider):
     name = "fake-serp"
 
-    def fetch_serp(self, keyword, location_code, language_code, device):
+    def fetch_serp(self, keyword, location_code, language_code, device, num_results=100):
         return SAMPLE_SERP
 
 

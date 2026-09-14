@@ -33,11 +33,18 @@ class RankProvider(ABC):
         location_code: int,
         language_code: str,
         device: str,
+        num_results: int = 100,
     ) -> List[SerpResult]:
         """Return the organic results this provider found for keyword, ordered
         by position. This is the one real call to the vendor API - fetch_rank
         and competitor lookups both just filter/search this list, so there's
-        exactly one place that parses a vendor's response shape."""
+        exactly one place that parses a vendor's response shape.
+
+        num_results controls how deep the vendor scans (default 100, enough to
+        tell "ranks on page 8" from "not found"). Callers that only need the
+        top few results (competitor comparison) should pass a much smaller
+        value - asking for 100 when 15 would do is most of why those lookups
+        were slow enough to time out."""
 
     def fetch_rank(
         self,

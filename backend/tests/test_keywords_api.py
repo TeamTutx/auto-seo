@@ -12,7 +12,7 @@ class _FakeProvider(RankProvider):
         self.sequence = sequence
         self.i = 0
 
-    def fetch_serp(self, keyword, location_code, language_code, device):
+    def fetch_serp(self, keyword, location_code, language_code, device, num_results=100):
         return []  # unused - fetch_rank is overridden directly below
 
     def fetch_rank(self, keyword, target_domain, location_code, language_code, device):
@@ -122,7 +122,7 @@ def test_rank_check_matches_against_page_url_not_site_domain(client, monkeypatch
     class _RecordingProvider(RankProvider):
         name = "recording"
 
-        def fetch_serp(self, keyword, location_code, language_code, device):
+        def fetch_serp(self, keyword, location_code, language_code, device, num_results=100):
             return []  # unused - fetch_rank is overridden directly below
 
         def fetch_rank(self, keyword, target_domain, location_code, language_code, device):

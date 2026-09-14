@@ -11,7 +11,9 @@ class DataForSEOProvider(RankProvider):
     name = "dataforseo"
 
     URL = "https://api.dataforseo.com/v3/serp/google/organic/live/regular"
-    SEARCH_DEPTH = 100  # how many organic results to scan for the target domain
+    # A short connect timeout (DataForSEO is either reachable or it isn't) but a
+    # generous read timeout - a deep-depth scrape can genuinely take a while.
+    TIMEOUT = httpx.Timeout(10.0, read=45.0)
 
     def fetch_serp(
         self,
@@ -19,6 +21,7 @@ class DataForSEOProvider(RankProvider):
         location_code: int = 2356,
         language_code: str = "en",
         device: str = "desktop",
+        num_results: int = 100,
     ) -> List[SerpResult]:
         if not settings.dataforseo_login or not settings.dataforseo_password:
             raise RankProviderError("DataForSEO credentials are not configured (DATAFORSEO_LOGIN/PASSWORD).")
@@ -28,18 +31,10 @@ class DataForSEOProvider(RankProvider):
             "location_code": location_code,
             "language_code": language_code,
             "device": device,
-            "depth": self.SEARCH_DEPTH,
+            "depth": num_results,
         }]
 
-        try:
-            response = httpx.post(
-                self.URL,
-                json=payload,
-                auth=(settings.dataforseo_login, settings.dataforseo_password),
-                timeout=30.0,
-            )
-        except httpx.TransportError as exc:
-            raise RankProviderError(f"DataForSEO request failed: {exc}") from exc
+        response = self._post_with_retry(payload)
 
         # DataForSEO returns a JSON body with status_code/status_message on 4xx/5xx
         # responses too (e.g. unverified account, insufficient balance) - that detail
@@ -54,6 +49,26 @@ class DataForSEOProvider(RankProvider):
             raise RankProviderError(f"DataForSEO error: {data.get('status_message', 'unknown error')}")
 
         return self.parse_serp(data)
+
+    def _post_with_retry(self, payload: list) -> httpx.Response:
+        """One retry on a read timeout - a fresh connection often succeeds
+        where waiting longer on the same one wouldn't."""
+        for attempt in range(2):
+            try:
+                return httpx.post(
+                    self.URL,
+                    json=payload,
+                    auth=(settings.dataforseo_login, settings.dataforseo_password),
+                    timeout=self.TIMEOUT,
+                )
+            except httpx.TimeoutException:
+                if attempt == 1:
+                    raise RankProviderError(
+                        "DataForSEO request timed out twice in a row. It may be under heavy load - try again shortly."
+                    )
+            except httpx.TransportError as exc:
+                raise RankProviderError(f"DataForSEO request failed: {exc}") from exc
+        raise AssertionError("unreachable")  # loop always returns or raises
 
     @staticmethod
     def parse_serp(response_json: dict) -> List[SerpResult]:
