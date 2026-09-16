@@ -35,7 +35,7 @@ export default function Sidebar() {
       setDomain("");
       setAdding(false);
       await refreshSites();
-      router.push(`/sites/${site.id}`);
+      router.push(`/dashboard/sites/${site.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add site.");
     } finally {
@@ -45,10 +45,10 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="brand">
+      <Link href="/dashboard" className="brand" style={{ textDecoration: "none" }}>
         <div className="brand-mark" />
         <div className="brand-name">Signal</div>
-      </div>
+      </Link>
 
       <div className="nav-section" style={{ flex: 1, overflow: "auto" }}>
         <div className="nav-label">SITES</div>
@@ -58,7 +58,7 @@ export default function Sidebar() {
           {sites?.map((site) => (
             <Link
               key={site.id}
-              href={`/sites/${site.id}`}
+              href={`/dashboard/sites/${site.id}`}
               className={`site-item ${activeSiteId === site.id ? "active" : ""}`}
             >
               <div className="site-item-name">
@@ -113,7 +113,7 @@ export default function Sidebar() {
       </div>
 
       <Link
-        href="/settings"
+        href="/dashboard/settings"
         className="add-site-btn"
         style={{ textDecoration: "none", justifyContent: "flex-start" }}
       >

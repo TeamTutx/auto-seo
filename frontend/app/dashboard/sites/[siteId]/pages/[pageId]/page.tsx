@@ -91,7 +91,7 @@ export default function PageDetailPage() {
     setDeleting(true);
     try {
       await api.deletePage(pageId);
-      router.push(`/sites/${siteId}`);
+      router.push(`/dashboard/sites/${siteId}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not delete page.");
       setDeleting(false);
@@ -111,7 +111,7 @@ export default function PageDetailPage() {
   return (
     <div>
       <div className="breadcrumb">
-        <Link href={`/sites/${siteId}`}>{site.domain}</Link>
+        <Link href={`/dashboard/sites/${siteId}`}>{site.domain}</Link>
         {path !== "/" && <> / {path}</>}
       </div>
       <div className="detail-header">

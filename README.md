@@ -120,8 +120,10 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Dashboard is now at `http://localhost:3000`. Register a new account there
-to get started — the local database starts empty.
+The app is now at `http://localhost:3000` — a public landing page explaining
+the product, with "Get started free" leading to registration. The dashboard
+itself lives at `/dashboard` once you're signed in; the local database
+starts empty.
 
 ### 3. (Optional) Scheduled audits — Redis + Celery
 

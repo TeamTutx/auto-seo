@@ -38,7 +38,7 @@ export default function SiteHealthPanel({ siteId }: { siteId: number }) {
     health.keyword_losses.length > 0;
 
   function goToPage(pageId: number) {
-    router.push(`/sites/${siteId}/pages/${pageId}`);
+    router.push(`/dashboard/sites/${siteId}/pages/${pageId}`);
   }
 
   function ScoreRow({ m }: { m: ScoreMovement }) {

@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useSites } from "@/lib/sites-context";
 import type { GoogleConnectionStatus } from "@/lib/types";
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <SettingsContent />
+    </Suspense>
+  );
+}
+
+function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { sites, refreshSites } = useSites();
@@ -40,7 +48,7 @@ export default function SettingsPage() {
       setBannerIsError(true);
     }
     if (connected || error) {
-      router.replace("/settings");
+      router.replace("/dashboard/settings");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

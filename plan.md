@@ -162,7 +162,40 @@ page (a real write action via a separate Indexing API + scope, deliberately
 left out to keep the OAuth surface reviewable), and feeding GSC query data
 into the Phase A opportunities list as a new opportunity type.
 
+## Phase G — Public landing page
+
+**Status: done**
+
+`/` was previously the (auth-gated) dashboard home - there was no public
+page to explain the product before signing up. The dashboard moved to
+`/dashboard/*` (was a route group living at `/`; every internal link was
+updated) and `/` is now a public marketing page (`frontend/app/page.tsx`)
+with login/register CTAs.
+
+The page explains every shipped feature (Phases A-F) using stylized
+recreations of the real dashboard UI - score gauge, check-card grid, rank
+chart, opportunity states, site-health trend, GSC/GA stat rows and query
+table - built from the product's own design tokens
+(`frontend/app/globals.css`, `.lp-*` prefixed rules), not a generic
+template. Keyword tracking/competition and Google Search Console/Analytics
+get full-width "deep dive" treatment (competitor comparison, AI ranking
+action plan, keyword opportunities with one-click add; impressions/clicks
+trend chart) since those came up as the features to emphasize.
+
+CTAs are auth-aware: logged out sees "Log in" / "Get started free"
+(`/login`, `/login?mode=register`); logged in sees a single "Go to
+dashboard" link instead, everywhere a CTA appears.
+
+**Convention going forward:** the landing page is expected to track the
+product, not drift from it - see the "Landing page parity" section in
+`CLAUDE.md` for exactly what to update and when. Plan limits shown there
+mirror `PLAN_LIMITS` in `backend/app/models.py`; Pro/Agency show "Contact us
+to upgrade" (inert, not a link) rather than a real checkout, since Stripe
+billing isn't built yet - see below.
+
 ## Not yet scheduled
 
 - **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
-- **Stripe billing** — deliberately deferred per earlier decision.
+- **Stripe billing** — deliberately deferred per earlier decision. The
+  landing page's Pro/Agency plan cards are ready for a real checkout link
+  once this exists.

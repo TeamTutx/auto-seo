@@ -10,7 +10,7 @@ export default function DashboardHome() {
 
   useEffect(() => {
     if (sites && sites.length > 0) {
-      router.replace(`/sites/${sites[0].id}`);
+      router.replace(`/dashboard/sites/${sites[0].id}`);
     }
   }, [sites, router]);
 

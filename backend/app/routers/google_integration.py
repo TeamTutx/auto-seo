@@ -46,21 +46,23 @@ def callback(code: str = Query(...), state: str = Query(...), session: Session =
     email = decode_subject(state)
     if email is None:
         return RedirectResponse(
-            f"{settings.frontend_url}/settings?google_error="
+            f"{settings.frontend_url}/dashboard/settings?google_error="
             + quote("That connection request expired - try again.")
         )
 
     user = session.exec(select(User).where(User.email == email)).first()
     if user is None:
-        return RedirectResponse(f"{settings.frontend_url}/settings?google_error=" + quote("User not found."))
+        return RedirectResponse(
+            f"{settings.frontend_url}/dashboard/settings?google_error=" + quote("User not found.")
+        )
 
     try:
         token_data = exchange_code(code)
         save_connection(session, user, token_data)
     except (GoogleOAuthError, ValueError) as exc:
-        return RedirectResponse(f"{settings.frontend_url}/settings?google_error=" + quote(str(exc)))
+        return RedirectResponse(f"{settings.frontend_url}/dashboard/settings?google_error=" + quote(str(exc)))
 
-    return RedirectResponse(f"{settings.frontend_url}/settings?google=connected")
+    return RedirectResponse(f"{settings.frontend_url}/dashboard/settings?google=connected")
 
 
 @router.get("/status", response_model=GoogleConnectionStatus)

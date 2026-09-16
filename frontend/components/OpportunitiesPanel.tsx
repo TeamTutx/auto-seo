@@ -127,9 +127,9 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
                     className="check-goto"
                     onClick={(e) => {
                       e.preventDefault();
-                      router.push(`/sites/${siteId}/pages/${opp.page_id}`);
+                      router.push(`/dashboard/sites/${siteId}/pages/${opp.page_id}`);
                     }}
-                    href={`/sites/${siteId}/pages/${opp.page_id}`}
+                    href={`/dashboard/sites/${siteId}/pages/${opp.page_id}`}
                   >
                     {opp.page_url} →
                   </a>

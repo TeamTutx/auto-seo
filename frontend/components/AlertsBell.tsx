@@ -48,7 +48,7 @@ export default function AlertsBell() {
       }
     }
     setOpen(false);
-    router.push(`/sites/${alert.site_id}/pages/${alert.page_id}`);
+    router.push(`/dashboard/sites/${alert.site_id}/pages/${alert.page_id}`);
   }
 
   if (alerts === null || alerts.length === 0) return null;

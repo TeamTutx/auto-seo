@@ -1,22 +1,34 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="auth-shell" />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const { user, loading, login, register } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(
+    searchParams.get("mode") === "register" ? "register" : "login"
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) router.replace("/");
+    if (!loading && user) router.replace("/dashboard");
   }, [loading, user, router]);
 
   async function handleSubmit(e: FormEvent) {
@@ -29,7 +41,7 @@ export default function LoginPage() {
       } else {
         await register(email, password);
       }
-      router.replace("/");
+      router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
@@ -40,10 +52,10 @@ export default function LoginPage() {
   return (
     <div className="auth-shell">
       <div className="auth-card">
-        <div className="brand" style={{ padding: "0 0 20px 0" }}>
+        <Link href="/" className="brand" style={{ padding: "0 0 20px 0", textDecoration: "none" }}>
           <div className="brand-mark" />
           <div className="brand-name">Signal</div>
-        </div>
+        </Link>
         <div className="auth-title">{mode === "login" ? "Welcome back" : "Create your account"}</div>
         <div className="auth-sub">
           {mode === "login" ? "Sign in to run audits on your sites." : "Start with the free plan — no card required."}

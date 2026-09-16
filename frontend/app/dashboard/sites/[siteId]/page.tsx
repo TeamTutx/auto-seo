@@ -102,7 +102,7 @@ export default function SiteOverviewPage() {
     try {
       await api.deleteSite(siteId);
       await refreshSites();
-      router.push("/");
+      router.push("/dashboard");
     } catch (err) {
       setBanner(err instanceof ApiError ? err.message : "Could not delete site.");
       setDeletingSite(false);
@@ -306,7 +306,7 @@ export default function SiteOverviewPage() {
             }
             return (
               <div className="page-card" key={page.id}>
-                <div className="page-card-top" onClick={() => router.push(`/sites/${siteId}/pages/${page.id}`)}>
+                <div className="page-card-top" onClick={() => router.push(`/dashboard/sites/${siteId}/pages/${page.id}`)}>
                   <div style={{ minWidth: 0 }}>
                     <div className="page-path">{path}</div>
                     <div className="page-url">{page.url}</div>
