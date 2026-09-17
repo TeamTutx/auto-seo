@@ -27,8 +27,11 @@ services:
     plan: free
     region: singapore
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: alembic upgrade head
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # preDeployCommand isn't available on the free plan - Render's own docs
+    # recommend folding migrations into startCommand instead. Alembic is
+    # idempotent (no-ops once already at head), so this is safe to re-run on
+    # every cold start (free web services spin down after 15 min idle).
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL

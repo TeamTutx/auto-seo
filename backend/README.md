@@ -342,11 +342,13 @@ Steps:
    `backend/.env.example`). `FRONTEND_URL`, `CORS_ORIGINS`, and
    `GOOGLE_REDIRECT_URI` depend on URLs you won't have yet at this point —
    leave them blank for now, or use placeholders, and fix them in step 4.
-3. `alembic upgrade head` runs automatically before every deploy
-   (`preDeployCommand`) — the fresh Postgres database gets its schema from
-   the migration chain, not `create_all()` (see CLAUDE.md's dev-DB gotcha —
-   that one is SQLite-only; Postgres here starts empty and migration-tracked
-   from day one).
+3. `alembic upgrade head` runs at the start of every boot, chained into
+   `startCommand` (`preDeployCommand` isn't available on Render's free
+   plan) — the fresh Postgres database gets its schema from the migration
+   chain, not `create_all()` (see CLAUDE.md's dev-DB gotcha — that one is
+   SQLite-only; Postgres here starts empty and migration-tracked from day
+   one). Alembic no-ops once already at head, so this is safe to re-run on
+   every cold start.
 4. Once deployed, Render gives `signal-api` a URL
    (`https://signal-api-xxxx.onrender.com`, or your custom domain if you've
    attached one under Settings → Custom Domains). Go back into the service's
