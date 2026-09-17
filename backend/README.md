@@ -365,7 +365,10 @@ Steps:
    cap) — upgrade the database's plan before then, or the data is deleted.
    Free web services also spin down after 15 minutes idle (a real request
    wakes it back up with a several-second cold start) — fine while testing,
-   worth upgrading once real users show up.
+   worth upgrading once real users show up. `.github/workflows/keep-backend-alive.yml`
+   pings `/health` every 10 minutes to prevent that spin-down for free
+   (Render's own Cron Jobs need a paid plan) — GitHub Actions is free and
+   unlimited for a public repo, which this one is.
 
 ## Known gaps
 

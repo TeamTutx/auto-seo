@@ -112,38 +112,53 @@ rather than a human:
   wrong but `read_page` and DOM introspection say the state is correct,
   open a new tab before concluding there's an actual problem.
 
-## Deploying (Vercel)
+## Deploying (Netlify)
 
 No code changes needed — the app already reads its API base URL from
 `NEXT_PUBLIC_API_URL` (`lib/api.ts`, defaults to `http://localhost:8000` for
-local dev) and `next.config.js` has no custom build behavior, so it's a
-standard Vercel import.
+local dev) and `next.config.mjs` has no custom build behavior.
 
-1. In the Vercel dashboard: **Add New → Project**, import the
-   `TeamTutx/auto-seo` GitHub repo.
-2. This is a monorepo (frontend + backend in one repo) — set **Root
-   Directory** to `frontend` in the import screen (or Project Settings →
-   General → Root Directory afterwards). Framework preset should
-   auto-detect as Next.js; build/output/install commands can stay default.
-3. Add one environment variable before deploying:
-   - `NEXT_PUBLIC_API_URL` — the Render backend's URL (e.g.
-     `https://signal-api-xxxx.onrender.com`, or `https://api.signal-seo.in`
-     once that custom domain is attached — see backend/README.md
-     "Deploying (Render)"). No trailing slash.
-4. Deploy. Vercel gives you a `*.vercel.app` URL immediately.
+**Why Netlify and not Vercel:** Vercel's free Hobby plan flatly refuses to
+connect a project to any repo owned by a GitHub *Organization* (private or
+public — `TeamTutx/auto-seo` is org-owned) unless you pay for Pro. Netlify
+has the same restriction but only for **private** org repos, so the fix was
+making the repo public (already verified no secrets are committed — real
+`.env` files are gitignored) rather than paying. If this ever needs to be
+private again, Netlify Pro or moving the repo to a personal account are the
+options.
+
+1. In the Netlify dashboard: **Add new site → Import an existing project →
+   GitHub**. First time connecting this org: click **Configure the Netlify
+   app on GitHub** (opens a real, separate GitHub popup/tab — if it looks
+   like nothing happened, check for a new window) and grant it access to
+   `TeamTutx/auto-seo`.
+2. Pick the repo. In the import screen, set:
+   - **Base directory**: `frontend`
+   - **Build command**: `npm run build`
+   - **Publish directory**: `frontend/.next` — **must not equal the base
+     directory**, or the build fails with "Your publish directory cannot be
+     the same as the base directory of your site." Netlify's Next.js
+     Runtime otherwise auto-suggests `frontend/` for both, which trips this.
+   - Add environment variable `NEXT_PUBLIC_API_URL` = the Render backend's
+     URL (e.g. `https://signal-api-xxxx.onrender.com`), no trailing slash.
+3. Deploy. If **Site configuration → Build & deploy → Runtime** doesn't
+   already show **Next.js**, set it explicitly — without it Netlify skips
+   the Next.js Runtime plugin entirely (build phase silently shows
+   "Skipped" and every route 404s, even though the deploy reports success).
+4. Netlify gives you a `*.netlify.app` URL immediately. New sites default
+   to **Private** (Netlify's own access gate, unrelated to GitHub) — go to
+   **Project overview → Make public** to open it to real visitors.
 5. Go back to the **backend** (Render dashboard → `signal-api` →
-   Environment) and fill in, now that this URL exists:
-   - `CORS_ORIGINS` — this Vercel URL (and your custom domain once attached,
-     comma-separated: `https://signal-seo.in,https://<project>.vercel.app`).
+   Environment) and add, now that this URL exists:
+   - `CORS_ORIGINS` — this Netlify URL (comma-separated if you add a custom
+     domain later: `https://signal-seo.in,https://<project>.netlify.app`).
    - `FRONTEND_URL` — same origin, used to build the Google OAuth redirect.
-   Without this the browser console will show CORS errors on every API call
-   and the app will look broken even though both services are up.
-6. Custom domain (`signal-seo.in`, bought via GoDaddy): add it under Vercel
-   Project Settings → Domains — Vercel gives you the exact DNS records to
-   add. Change `signal-seo.in`'s DNS at GoDaddy (either add those records
-   directly there, or move the domain's nameservers to Vercel/Cloudflare
-   first if you want to manage DNS elsewhere) rather than at the registrar's
-   own DNS panel if you've moved nameservers away from GoDaddy.
+   Skip this and every API call fails from the browser (CORS), even though
+   both services are individually up and healthy.
+6. Custom domain (`signal-seo.in`, bought via GoDaddy): add it under
+   Project configuration → Domain management — Netlify gives you the exact
+   DNS records to add at GoDaddy (or move nameservers to Netlify first if
+   you'd rather manage DNS there).
 
 ## Known gaps
 

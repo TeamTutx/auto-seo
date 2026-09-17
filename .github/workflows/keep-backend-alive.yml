@@ -1,0 +1,25 @@
+name: Keep Render backend alive
+
+# Render's free web service plan spins down after 15 minutes of no inbound
+# traffic (see backend/README.md "Deploying (Render)"), which means a cold
+# visitor eats a 50+ second wake-up delay. Render's own Cron Jobs need a
+# paid plan - this workflow gets the same "don't sleep" outcome for free by
+# pinging the app's health check often enough that it never sees 15 idle
+# minutes.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://signal-api-ecah.onrender.com/health)
+          echo "signal-api /health responded $status"
+          if [ "$status" != "200" ]; then
+            echo "::warning::Unexpected status from /health: $status"
+          fi
