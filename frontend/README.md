@@ -112,6 +112,39 @@ rather than a human:
   wrong but `read_page` and DOM introspection say the state is correct,
   open a new tab before concluding there's an actual problem.
 
+## Deploying (Vercel)
+
+No code changes needed — the app already reads its API base URL from
+`NEXT_PUBLIC_API_URL` (`lib/api.ts`, defaults to `http://localhost:8000` for
+local dev) and `next.config.js` has no custom build behavior, so it's a
+standard Vercel import.
+
+1. In the Vercel dashboard: **Add New → Project**, import the
+   `TeamTutx/auto-seo` GitHub repo.
+2. This is a monorepo (frontend + backend in one repo) — set **Root
+   Directory** to `frontend` in the import screen (or Project Settings →
+   General → Root Directory afterwards). Framework preset should
+   auto-detect as Next.js; build/output/install commands can stay default.
+3. Add one environment variable before deploying:
+   - `NEXT_PUBLIC_API_URL` — the Render backend's URL (e.g.
+     `https://signal-api-xxxx.onrender.com`, or `https://api.signal-seo.in`
+     once that custom domain is attached — see backend/README.md
+     "Deploying (Render)"). No trailing slash.
+4. Deploy. Vercel gives you a `*.vercel.app` URL immediately.
+5. Go back to the **backend** (Render dashboard → `signal-api` →
+   Environment) and fill in, now that this URL exists:
+   - `CORS_ORIGINS` — this Vercel URL (and your custom domain once attached,
+     comma-separated: `https://signal-seo.in,https://<project>.vercel.app`).
+   - `FRONTEND_URL` — same origin, used to build the Google OAuth redirect.
+   Without this the browser console will show CORS errors on every API call
+   and the app will look broken even though both services are up.
+6. Custom domain (`signal-seo.in`, bought via GoDaddy): add it under Vercel
+   Project Settings → Domains — Vercel gives you the exact DNS records to
+   add. Change `signal-seo.in`'s DNS at GoDaddy (either add those records
+   directly there, or move the domain's nameservers to Vercel/Cloudflare
+   first if you want to manage DNS elsewhere) rather than at the registrar's
+   own DNS panel if you've moved nameservers away from GoDaddy.
+
 ## Known gaps
 
 - No credit-pack / upgrade modal — billing is step 5, intentionally
