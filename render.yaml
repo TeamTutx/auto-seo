@@ -1,0 +1,74 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+#
+# Deploys just the FastAPI backend (backend/). The frontend is deployed
+# separately (see README). Celery worker/beat + Redis are deliberately not
+# included yet - scheduled audits (backend/README.md "Scheduled audits +
+# alerts") work locally but aren't provisioned here; see plan.md "Not yet
+# scheduled" for why and how to add them back.
+#
+# After the first "Apply" in the Render dashboard, fill in every env var
+# below marked `sync: false` (Render prompts for these - they're not stored
+# in this file). FRONTEND_URL/GOOGLE_REDIRECT_URI/CORS_ORIGINS depend on
+# where the frontend ends up and this service's own Render URL, so they're
+# easiest to fill in *after* the first deploy once both URLs are known - see
+# backend/README.md "Deploying (Render)".
+
+databases:
+  - name: signal-postgres
+    plan: free
+    region: singapore
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: signal-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: signal-postgres
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+
+      # Fill in after the first deploy (see note above).
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+
+      # Rank checks / competitor comparison - pick one provider and fill in
+      # its credentials; the other pair can stay blank.
+      - key: RANK_PROVIDER
+        value: serpapi
+      - key: SERPAPI_KEY
+        sync: false
+      - key: DATAFORSEO_LOGIN
+        sync: false
+      - key: DATAFORSEO_PASSWORD
+        sync: false
+
+      # AI suggestions - pick one provider.
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # Google Search Console / Analytics OAuth client.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.database import create_db_and_tables
 from app.routers import (
     alerts,
@@ -27,10 +28,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Signal SEO API", lifespan=lifespan)
 
-# Dev-only: Next.js runs on a different origin (localhost:3000) than the API.
+# The frontend always runs on a different origin than this API (even in dev:
+# localhost:3000 vs 8000) - allowed origins come from CORS_ORIGINS (comma-
+# separated), see app/config.py.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

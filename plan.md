@@ -199,3 +199,16 @@ billing isn't built yet - see below.
 - **Stripe billing** — deliberately deferred per earlier decision. The
   landing page's Pro/Agency plan cards are ready for a real checkout link
   once this exists.
+- **Scheduled audits + alerts on Render** — the feature itself is built and
+  works anywhere Celery+Redis run (see "Scheduled audits + alerts" in
+  `backend/README.md`), but isn't provisioned on the production Render
+  deployment (`render.yaml`, 2026-09-18 decision) — Render has no free tier
+  for Background Workers or Cron Jobs, and right now Celery has exactly one
+  consumer (the daily 3am beat job), so paying for it upfront wasn't worth
+  it. Two ways to revisit once it is: (a) mirror the current code exactly —
+  add a Celery worker + beat as two more Background Workers to `render.yaml`
+  plus a Key Value (Redis) instance (free tier covers Redis, not the
+  workers), or (b) replace Celery/Redis entirely with a single Render Cron
+  Job calling `run_scheduled_audits` directly once a day — cheaper (billed
+  per execution instead of two always-on dynos) but needs a small new CLI
+  entrypoint script, since nothing else uses Celery today.

@@ -320,6 +320,51 @@ left out of this first pass to keep the OAuth surface reviewable) and
 feeding GSC query data into the Phase A opportunities list as a new
 opportunity type.
 
+## Deploying (Render)
+
+`render.yaml` at the repo root is a Render Blueprint that deploys this
+directory as a single web service (Python, `rootDir: backend`) plus a
+managed Postgres database. It does **not** include Celery worker/beat or
+Redis — scheduled audits (see above) are deliberately not running in
+production yet; see `plan.md`'s "Not yet scheduled" for the two ways to add
+them back (mirror Celery worker+beat as two more Background Workers, or
+replace the daily job with a Render Cron Job) once it's worth the cost,
+since Render has no free tier for either.
+
+Steps:
+
+1. In the Render dashboard: **New → Blueprint**, connect the
+   `TeamTutx/auto-seo` GitHub repo. Render finds `render.yaml` and shows the
+   `signal-api` web service + `signal-postgres` database it defines — Apply.
+2. Render prompts for every env var marked `sync: false` in `render.yaml`
+   during that first setup (`SERPAPI_KEY`, `OPENAI_API_KEY`,
+   `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, etc. — same keys as
+   `backend/.env.example`). `FRONTEND_URL`, `CORS_ORIGINS`, and
+   `GOOGLE_REDIRECT_URI` depend on URLs you won't have yet at this point —
+   leave them blank for now, or use placeholders, and fix them in step 4.
+3. `alembic upgrade head` runs automatically before every deploy
+   (`preDeployCommand`) — the fresh Postgres database gets its schema from
+   the migration chain, not `create_all()` (see CLAUDE.md's dev-DB gotcha —
+   that one is SQLite-only; Postgres here starts empty and migration-tracked
+   from day one).
+4. Once deployed, Render gives `signal-api` a URL
+   (`https://signal-api-xxxx.onrender.com`, or your custom domain if you've
+   attached one under Settings → Custom Domains). Go back into the service's
+   Environment settings and fill in:
+   - `CORS_ORIGINS` — the real frontend origin(s), e.g.
+     `https://signal-seo.in,https://www.signal-seo.in`.
+   - `FRONTEND_URL` — the frontend's origin (used to build the Google OAuth
+     redirect after connecting).
+   - `GOOGLE_REDIRECT_URI` — `https://<this service's domain>/integrations/google/callback`.
+     This must **also** be added as an authorized redirect URI on the OAuth
+     client in Google Cloud Console (see "Google Search Console / Analytics
+     integration" above) — Google rejects the callback otherwise.
+5. Render's free Postgres plan **expires 30 days after creation** (1 GB
+   cap) — upgrade the database's plan before then, or the data is deleted.
+   Free web services also spin down after 15 minutes idle (a real request
+   wakes it back up with a several-second cold start) — fine while testing,
+   worth upgrading once real users show up.
+
 ## Known gaps
 
 - Auth is homegrown JWT, not Clerk/NextAuth as REQUIREMENTS.md's stack
@@ -343,3 +388,6 @@ opportunity type.
   processes you start manually (or via `brew services`/a process manager)
   alongside `uvicorn`. Nothing breaks if they're not running; scheduled
   audits and alerts simply won't happen.
+- Not provisioned on the Render deployment at all (see "Deploying (Render)"
+  below) - deliberately deferred since Render has no free tier for
+  Background Workers/Cron Jobs and nothing else uses Celery yet.

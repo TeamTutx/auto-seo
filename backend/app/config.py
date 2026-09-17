@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # OAuth callback (app/routers/google_integration.py).
     frontend_url: str = "http://localhost:3000"
 
+    # Comma-separated list of origins allowed to call this API (CORS) - see
+    # app/main.py. Must include the real frontend origin(s) in production;
+    # the default only covers local dev.
+    cors_origins: str = "http://localhost:3000"
+
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
