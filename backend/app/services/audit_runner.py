@@ -43,8 +43,7 @@ def audit_page(session: Session, page_id: int) -> Audit:
         word_count=result.word_count,
     )
     session.add(audit)
-    session.commit()
-    session.refresh(audit)
+    session.flush()  # assigns audit.id without committing, so the checks below join the same transaction
 
     for check in result.checks:
         session.add(Check(
@@ -54,6 +53,9 @@ def audit_page(session: Session, page_id: int) -> Audit:
             message=check.message,
             suggested_fix=check.suggested_fix,
         ))
+    # One commit for the audit and all its checks: if a check insert fails, the
+    # audit row rolls back with it instead of being left behind as a score with
+    # an empty checklist (which also used up the free plan's daily rescan).
     session.commit()
     session.refresh(audit)
 

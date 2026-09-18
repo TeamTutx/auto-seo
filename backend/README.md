@@ -350,14 +350,19 @@ Steps:
    one). Alembic no-ops once already at head, so this is safe to re-run on
    every cold start.
 4. Once deployed, Render gives `signal-api` a URL
-   (`https://signal-api-xxxx.onrender.com`, or your custom domain if you've
-   attached one under Settings → Custom Domains). Go back into the service's
+   (`https://signal-api-xxxx.onrender.com`). Production also has a custom
+   domain, `api.signal-seo.in`: add it under Settings → Custom Domains, then at
+   the DNS host add a `CNAME api → signal-api-xxxx.onrender.com` (Render shows
+   the exact record; TLS is issued automatically once it resolves). Use the
+   custom domain everywhere below and in the frontend's `NEXT_PUBLIC_API_URL`,
+   so the API URL survives a change of Render service. Go back into the service's
    Environment settings and fill in:
    - `CORS_ORIGINS` — the real frontend origin(s), e.g.
      `https://signal-seo.in,https://www.signal-seo.in`.
    - `FRONTEND_URL` — the frontend's origin (used to build the Google OAuth
      redirect after connecting).
-   - `GOOGLE_REDIRECT_URI` — `https://<this service's domain>/integrations/google/callback`.
+   - `GOOGLE_REDIRECT_URI` — `https://<this service's domain>/integrations/google/callback`
+     (production: `https://api.signal-seo.in/integrations/google/callback`).
      This must **also** be added as an authorized redirect URI on the OAuth
      client in Google Cloud Console (see "Google Search Console / Analytics
      integration" above) — Google rejects the callback otherwise.

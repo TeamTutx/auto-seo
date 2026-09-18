@@ -62,6 +62,15 @@ writing copy for it.
   adding a column to an existing model, either apply it manually
   (`ALTER TABLE ... ADD COLUMN ...`) against the dev DB or rebuild it — don't
   assume writing the Alembic migration alone fixes the running dev DB.
+- SQLite (dev + the whole pytest suite) does **not** enforce enum labels;
+  Postgres (production) does. SQLAlchemy stores an `Enum` column by member
+  *name*, so a Python enum whose name differs from its value (e.g.
+  `CheckStatus.pass_ = "pass"`) needs the Postgres type's label to be the
+  **name** (`pass_`) — the initial migration got this wrong and every audit on
+  Render silently saved a score with zero checks until migration `0007`. When
+  adding or changing an enum, verify against a real Postgres (throwaway
+  `docker run postgres:16`, `DATABASE_URL=... alembic upgrade head`, then
+  exercise the insert) — the test suite alone won't catch it.
 - Any `useSearchParams()` usage in a page component needs a `<Suspense>`
   boundary around it, or `next build` fails with "should be wrapped in a
   suspense boundary". This doesn't show up in `npm run dev` — only a

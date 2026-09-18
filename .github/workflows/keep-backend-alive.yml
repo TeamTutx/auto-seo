@@ -18,8 +18,8 @@ jobs:
     steps:
       - name: Ping /health
         run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://signal-api-ecah.onrender.com/health)
-          echo "signal-api /health responded $status"
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://api.signal-seo.in/health)
+          echo "api.signal-seo.in /health responded $status"
           if [ "$status" != "200" ]; then
             echo "::warning::Unexpected status from /health: $status"
           fi

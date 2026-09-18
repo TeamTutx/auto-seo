@@ -140,7 +140,9 @@ options.
      the same as the base directory of your site." Netlify's Next.js
      Runtime otherwise auto-suggests `frontend/` for both, which trips this.
    - Add environment variable `NEXT_PUBLIC_API_URL` = the Render backend's
-     URL (e.g. `https://signal-api-xxxx.onrender.com`), no trailing slash.
+     URL (production: `https://api.signal-seo.in`, a custom domain on the Render
+     service; the raw `https://signal-api-xxxx.onrender.com` also works), no
+     trailing slash. It's inlined at build time, so changing it needs a redeploy.
 3. Deploy. If **Site configuration → Build & deploy → Runtime** doesn't
    already show **Next.js**, set it explicitly — without it Netlify skips
    the Next.js Runtime plugin entirely (build phase silently shows
