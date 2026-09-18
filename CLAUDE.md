@@ -6,7 +6,8 @@ read that for what's built, what's deliberately deferred, and why.
 
 ## Landing page parity
 
-`frontend/app/page.tsx` (the public `/` route) is a marketing page that
+`frontend/app/landing-page.tsx` (rendered by the public `/` route in `app/page.tsx`,
+which is a thin server wrapper owning the page's canonical URL and JSON-LD) is a marketing page that
 visually explains the product using stylized recreations of the real
 dashboard UI — score gauges, check cards, rank charts, opportunity lists,
 GSC/GA panels, etc. Its styles live in `frontend/app/globals.css` under the
@@ -20,7 +21,7 @@ don't leave it stale.** Concretely:
   `lp-feature-row` (or a full-width "deep dive" `lp-feature-row full`) or
   just a line in the `lp-strip` "also included" row, and add it.
 - Plan limits changed (`backend/app/models.py` `PLAN_LIMITS`) → update the
-  numbers in the Plans section of `page.tsx` (search for the comment above
+  numbers in the Plans section of `landing-page.tsx` (search for the comment above
   `lp-plans-grid` that points back at `PLAN_LIMITS`).
 - A concept gets renamed or removed (e.g. "Opportunities" becomes something
   else) → update the matching `lp-feature-tag` and copy.
@@ -38,7 +39,9 @@ writing copy for it.
 
 ## Routing
 
-- `/` — public landing page (`app/page.tsx`), not auth-gated.
+- `/` — public landing page (`app/landing-page.tsx` via `app/page.tsx`), not auth-gated.
+  `app/robots.ts` / `app/sitemap.ts` serve `/robots.txt` and `/sitemap.xml`
+  (public origin from `lib/site.ts`; `/dashboard` is disallowed).
 - `/login` — single page, handles both sign-in and sign-up (`?mode=register`
   defaults the toggle to registration). Redirects to `/dashboard` if already
   authenticated.

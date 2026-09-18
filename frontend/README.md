@@ -143,6 +143,12 @@ options.
      URL (production: `https://api.signal-seo.in`, a custom domain on the Render
      service; the raw `https://signal-api-xxxx.onrender.com` also works), no
      trailing slash. It's inlined at build time, so changing it needs a redeploy.
+   - Optional `NEXT_PUBLIC_GA_ID` = the Google Analytics 4 measurement ID
+     (`G-XXXXXXXXXX`, public by design). Unset means no tracking tag at all;
+     malformed values are ignored rather than injected into the page. Also
+     build-time.
+   - Optional `NEXT_PUBLIC_SITE_URL` (default `https://signal-seo.in`) — the
+     origin used for the canonical URL, `/sitemap.xml` and `/robots.txt`.
 3. Deploy. If **Site configuration → Build & deploy → Runtime** doesn't
    already show **Next.js**, set it explicitly — without it Netlify skips
    the Next.js Runtime plugin entirely (build phase silently shows

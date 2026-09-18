@@ -169,7 +169,7 @@ into the Phase A opportunities list as a new opportunity type.
 `/` was previously the (auth-gated) dashboard home - there was no public
 page to explain the product before signing up. The dashboard moved to
 `/dashboard/*` (was a route group living at `/`; every internal link was
-updated) and `/` is now a public marketing page (`frontend/app/page.tsx`)
+updated) and `/` is now a public marketing page (`frontend/app/landing-page.tsx`, rendered by `app/page.tsx`)
 with login/register CTAs.
 
 The page explains every shipped feature (Phases A-F) using stylized
