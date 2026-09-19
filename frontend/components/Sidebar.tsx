@@ -8,12 +8,6 @@ import { useAuth } from "@/lib/auth-context";
 import { useSites } from "@/lib/sites-context";
 import AlertsBell from "./AlertsBell";
 
-const PLAN_LABEL: Record<string, string> = {
-  free: "Free plan",
-  pro: "Pro plan",
-  agency: "Agency plan",
-};
-
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -139,12 +133,14 @@ export default function Sidebar() {
       {user && (
         <div className="plan-widget">
           <div className="plan-widget-top">
-            <div className="plan-name">{PLAN_LABEL[user.plan] ?? user.plan}</div>
+            <div className="plan-name">{user.credits_balance} credits</div>
             <AlertsBell />
           </div>
-          <div className="plan-credits">{user.credits_balance} credits remaining</div>
+          <div className="plan-credits">
+            {user.credits_balance === 0 ? "Top up to keep using rank checks and AI fixes" : "Audits are always free"}
+          </div>
           <Link href="/dashboard/billing" className="footer-text" style={{ color: "var(--accent)", textDecoration: "none" }}>
-            {user.plan === "free" ? "Upgrade or buy credits" : "Buy credits"}
+            Buy credits
           </Link>
         </div>
       )}

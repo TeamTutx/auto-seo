@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { formatDate, formatDateTime, formatUsd } from "@/lib/format";
 import type { AdminStats } from "@/lib/types";
-import { describeAudit, Money, PlanTag } from "@/components/admin/AdminBits";
+import { describeAudit, Money } from "@/components/admin/AdminBits";
 
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -20,8 +20,6 @@ export default function AdminOverviewPage() {
 
   if (error) return <div className="form-error">{error}</div>;
   if (!stats) return <div className="loading-state">Loading…</div>;
-
-  const plans = stats.users_by_plan;
 
   return (
     <>
@@ -46,13 +44,14 @@ export default function AdminOverviewPage() {
           <div className="stat-label">Paying users</div>
           <div className="stat-value">{stats.paying_users}</div>
           <div className="admin-hint">
-            {plans.pro ?? 0} Pro · {plans.agency ?? 0} Agency · {plans.free ?? 0} Free
+            {stats.total_users ? Math.round((stats.paying_users / stats.total_users) * 100) : 0}% of signups have bought
+            credits
           </div>
         </div>
         <div className="stat-cell">
-          <div className="stat-label">Est. monthly recurring</div>
-          <div className="stat-value">{formatUsd(stats.estimated_mrr_cents)}</div>
-          <div className="admin-hint">paid-plan users × catalog price</div>
+          <div className="stat-label">Credits sold, last 30 days</div>
+          <div className="stat-value">{stats.credits_sold_30d.toLocaleString()}</div>
+          <div className="admin-hint">{stats.credits_sold_all.toLocaleString()} all time</div>
         </div>
       </div>
 
@@ -60,7 +59,7 @@ export default function AdminOverviewPage() {
         <div className="stat-cell">
           <div className="stat-label">Credits outstanding</div>
           <div className="stat-value">{stats.credits_outstanding.toLocaleString()}</div>
-          <div className="admin-hint">across all user balances</div>
+          <div className="admin-hint">bought or granted, not yet spent — a liability</div>
         </div>
         <div className="stat-cell">
           <div className="stat-label">Credits spent, last 30 days</div>
@@ -74,11 +73,44 @@ export default function AdminOverviewPage() {
               Browse all users →
             </Link>
             <Link href="/admin/pricing" className="link-btn">
-              Edit pricing & Dodo setup →
+              Edit credit packs & Dodo setup →
             </Link>
           </div>
         </div>
       </div>
+
+      {stats.top_packs.length > 0 && (
+        <div className="panel pages-panel admin-section">
+          <div className="pages-header">
+            <h3>Revenue by pack</h3>
+            <Link href="/admin/pricing" className="link-btn">
+              Edit packs →
+            </Link>
+          </div>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Pack</th>
+                <th className="num">Sold</th>
+                <th className="num">Credits granted</th>
+                <th className="num">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.top_packs.map((pack) => (
+                <tr key={pack.product_key}>
+                  <td>{pack.name}</td>
+                  <td className="num">{pack.sales}</td>
+                  <td className="num muted">{pack.credits_granted.toLocaleString()}</td>
+                  <td className="num">
+                    <Money cents={pack.revenue_cents} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="admin-grid-2 admin-section">
         <div className="panel pages-panel">
@@ -95,9 +127,7 @@ export default function AdminOverviewPage() {
                         {u.email}
                       </Link>
                     </td>
-                    <td>
-                      <PlanTag plan={u.plan} />
-                    </td>
+                    <td className="num muted">{u.credits_balance} cr</td>
                     <td className="num">
                       <Money cents={u.total_paid_cents} />
                     </td>

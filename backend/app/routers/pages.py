@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import PLAN_LIMITS, Page, User
+from app.models import ACCOUNT_LIMITS, Page, User
 from app.routers.sites import _get_owned_site
 from app.schemas import PageCreate, PageRead, PageUpdate
 from app.services.cascade_delete import delete_page
@@ -21,11 +21,11 @@ def create_page(
     site = _get_owned_site(session, site_id, current_user)
 
     existing_count = len(session.exec(select(Page).where(Page.site_id == site.id)).all())
-    max_pages = PLAN_LIMITS[current_user.plan]["max_pages_per_site"]
+    max_pages = ACCOUNT_LIMITS["max_pages_per_site"]
     if max_pages is not None and existing_count >= max_pages:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"{current_user.plan} plan is limited to {max_pages} page(s) per site. Upgrade to add more.",
+            detail=f"A site can track {max_pages} pages. Email support if you need more.",
         )
 
     page = Page(site_id=site.id, url=payload.url, target_keyword=payload.target_keyword)

@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import PLAN_LIMITS, Site, User, VerificationMethod
+from app.models import ACCOUNT_LIMITS, Site, User, VerificationMethod
 from app.schemas import SiteCreate, SiteRead, SiteUpdate, SiteVerificationResult, SiteVerifyRequest
 from app.services.cascade_delete import delete_site
 from app.services.site_verification import verify_dns_txt, verify_file_upload, verify_meta_tag
@@ -20,11 +20,11 @@ def create_site(
     session: Session = Depends(get_session),
 ):
     existing_count = len(session.exec(select(Site).where(Site.user_id == current_user.id)).all())
-    max_sites = PLAN_LIMITS[current_user.plan]["max_sites"]
+    max_sites = ACCOUNT_LIMITS["max_sites"]
     if max_sites is not None and existing_count >= max_sites:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"{current_user.plan} plan is limited to {max_sites} site(s). Upgrade to add more.",
+            detail=f"An account can track {max_sites} sites. Email support if you need more.",
         )
 
     site = Site(

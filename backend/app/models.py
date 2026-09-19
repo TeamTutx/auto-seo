@@ -7,6 +7,11 @@ from sqlmodel import Field, Relationship, SQLModel
 
 
 class PlanTier(str, Enum):
+    """Legacy. Signal is credit-based now: there is one tier and nothing to
+    upgrade to, so every account is `free` and the limits below apply to all of
+    them. The column is kept because `payment.plan` records what historical
+    money bought, and because dropping a value from a Postgres enum is exactly
+    the kind of change that broke production once (see CLAUDE.md)."""
     free = "free"
     pro = "pro"
     agency = "agency"
@@ -38,12 +43,15 @@ class OpportunityType(str, Enum):
     keyword_rank_drop = "keyword_rank_drop"
 
 
-# Plan limits referenced by routers when enforcing free/paid gates (REQUIREMENTS.md §3.1)
-PLAN_LIMITS = {
-    PlanTier.free: {"max_sites": 1, "max_pages_per_site": 5, "max_keywords_per_page": 3},
-    PlanTier.pro: {"max_sites": 5, "max_pages_per_site": 50, "max_keywords_per_page": 50},
-    PlanTier.agency: {"max_sites": None, "max_pages_per_site": None, "max_keywords_per_page": None},
-}
+# The same limits for every account. Signal charges for credits, not for tiers:
+# everything that costs Signal real money (rank lookups, AI suggestions) is
+# metered in credits already, so these exist only to keep one scripted account
+# from filling the database for free. Raising them costs nothing but storage.
+ACCOUNT_LIMITS = {"max_sites": 5, "max_pages_per_site": 50, "max_keywords_per_page": 25}
+
+# What a new account starts with, so it can try Signal before buying credits.
+# Real money: every one of these is a SerpApi or OpenAI call.
+SIGNUP_CREDITS = 3
 
 
 class User(SQLModel, table=True):
@@ -51,7 +59,7 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     hashed_password: str
     plan: PlanTier = Field(default=PlanTier.free)
-    credits_balance: int = Field(default=3)
+    credits_balance: int = Field(default=SIGNUP_CREDITS)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Set from Dodo webhooks (app/services/dodo_webhooks.py): the customer id
     # lets us open the billing portal, the subscription id ties renewals and
@@ -208,20 +216,27 @@ class PaymentKind(str, Enum):
 
 
 class Product(SQLModel, table=True):
-    """What's for sale, and what the public pricing section shows. Edited from
-    the admin panel (/admin/pricing). The displayed price is informational -
-    the amount actually charged is whatever the linked Dodo product says, so the
-    admin page can compare the two (POST /admin/products/{id}/verify)."""
+    """A credit pack: what's for sale, and what the public pricing section
+    shows. Created and edited from the admin panel (/admin/pricing) - the owner
+    can have as many as they like, and the landing page renders whatever is
+    active, in sort_order. The displayed price is informational; the amount
+    actually charged is whatever the linked Dodo product says, so the admin page
+    can compare the two (POST /admin/products/{id}/verify).
+
+    `kind`/`interval`/`plan` are leftovers from the subscription catalog that
+    migration 0009 removed. They stay so old `payment` rows still make sense and
+    so a subscription product could be reintroduced without a schema change."""
     id: Optional[int] = Field(default=None, primary_key=True)
-    key: str = Field(index=True, unique=True)  # "pro", "agency", "credits_50"
+    key: str = Field(index=True, unique=True)  # "credits_10" - stable, used by checkout
     name: str
-    kind: str  # "subscription" | "credit_pack"
+    kind: str = "credit_pack"  # "credit_pack" | "subscription" (unused)
     price_cents: int
     interval: Optional[str] = None  # "month" for subscriptions
     plan: Optional[str] = None  # PlanTier value a subscription grants
-    credits: int = 0  # credits a credit pack grants
+    credits: int = 0  # credits this pack grants
     dodo_product_id: Optional[str] = None
     description: Optional[str] = None
+    badge: Optional[str] = None  # e.g. "Best value" - shown on the pricing card
     active: bool = True
     sort_order: int = 0
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -255,6 +270,7 @@ class Payment(SQLModel, table=True):
     tax_cents: int = 0
     kind: str
     plan: Optional[str] = None
+    product_key: Optional[str] = None  # the Product this bought, when there was one
     credits_granted: int = 0
     provider: str  # "manual" | "dodo"
     provider_ref: Optional[str] = None  # Dodo payment/refund id - webhook idempotency

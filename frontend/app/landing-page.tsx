@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { formatUsd, limitLabel } from "@/lib/format";
+import { formatRate, formatUsd, limitLabel } from "@/lib/format";
 import { SUPPORT_EMAIL } from "@/lib/site";
-import type { Pricing, PricingPlan } from "@/lib/types";
+import type { Pricing, PricingCreditPack } from "@/lib/types";
 
-// What each plan includes beyond its numeric limits (those come from the API,
-// which mirrors PLAN_LIMITS). Only list things the product really does in
-// production - scheduled audits are built but not deployed, so they're not here.
-const PLAN_EXTRAS: Record<string, string[]> = {
-  free: ["Full audits + opportunities list", "Manual rescan, 1× per day", "Credits included to try AI fixes & rank checks"],
-  pro: ["Everything in Free", "Unlimited manual rescans"],
-  agency: ["Everything in Pro", "Built for managing client sites"],
-};
+// What one credit actually buys. These are the real deduction points in
+// backend/app/routers/{keywords,suggestions}.py - keep them in step, because
+// this is the only place a visitor learns what they're paying for.
+const CREDIT_COSTS: { label: string; credits: number }[] = [
+  { label: "Track a keyword, or re-check its rank", credits: 1 },
+  { label: "See who outranks you for a keyword", credits: 1 },
+  { label: "Any AI fix: title, meta, headings, alt text, internal links", credits: 1 },
+  { label: "Keyword opportunities for a page", credits: 2 },
+  { label: "A full ranking action plan", credits: 2 },
+];
 
 export default function LandingPage({ pricing }: { pricing: Pricing }) {
   const { user } = useAuth();
@@ -32,7 +34,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           <div className="lp-nav-links">
             <a href="#features">Features</a>
             <a href="#how">How it works</a>
-            <a href="#plans">Plans</a>
+            <a href="#plans">Pricing</a>
           </div>
           <div className="lp-nav-actions">
             {user ? (
@@ -74,7 +76,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
               </Link>
             )}
           </div>
-          <div className="lp-hero-note">FREE PLAN · 1 SITE TO START · NO CARD REQUIRED</div>
+          <div className="lp-hero-note">FREE TO USE · NO SUBSCRIPTION · NO CARD REQUIRED</div>
         </div>
 
         <div className="lp-hero-visual">
@@ -156,7 +158,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
               and structured data — recalculated on every scan.
             </p>
             <ul className="lp-feature-list">
-              <li>Manual rescan any time — unlimited on Pro/Agency</li>
+              <li>Rescan any page any time — audits never cost a credit</li>
               <li>Each failing check ships with a suggested fix, not just a red X</li>
             </ul>
           </div>
@@ -642,23 +644,60 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
 
       <section id="plans" className="lp-section lp-plans">
         <div className="lp-section-head center">
-          <div className="lp-kicker">Plans</div>
-          <h2>Start free. Grow into more sites and automation.</h2>
+          <div className="lp-kicker">Pricing</div>
+          <h2>Free to use. Pay only for the expensive parts.</h2>
+          <p>
+            Audits, the opportunities list and everything in the dashboard are free and unlimited. Credits cover the
+            work that costs real money on our side — live rank lookups and AI writing. They never expire, and there is
+            no subscription.
+          </p>
         </div>
-        {/* Prices and limits come from GET /pricing (edited in /admin/pricing); PLAN_EXTRAS above is the copy. */}
-        <div className="lp-plans-grid">
-          {pricing.plans.map((plan) => (
-            <PlanCard key={plan.key} plan={plan} user={!!user} primaryHref={primaryHref} />
+
+        <div className="lp-free-band">
+          <div>
+            <div className="lp-free-title">Every account, free</div>
+            <ul className="lp-free-list">
+              <li>
+                <b>{limitLabel(pricing.limits.max_sites)}</b> sites
+              </li>
+              <li>
+                <b>{limitLabel(pricing.limits.max_pages_per_site)}</b> pages per site
+              </li>
+              <li>
+                <b>{limitLabel(pricing.limits.max_keywords_per_page)}</b> tracked keywords per page
+              </li>
+              <li>Unlimited audits, scores and opportunity lists</li>
+              <li>Google Search Console + Analytics, connected free</li>
+            </ul>
+          </div>
+          <div>
+            <div className="lp-free-title">What a credit buys</div>
+            <ul className="lp-credit-costs">
+              {CREDIT_COSTS.map((item) => (
+                <li key={item.label}>
+                  <span className="lp-credit-cost lp-mono">{item.credits}</span>
+                  {item.label}
+                </li>
+              ))}
+            </ul>
+            <p className="lp-free-foot">
+              New accounts start with <b>{pricing.signup_credits} free credits</b> — no card needed.
+            </p>
+          </div>
+        </div>
+
+        {/* Packs come from GET /pricing, which the owner edits in /admin/pricing;
+            there can be any number of them, so this grid adapts. */}
+        <div className="lp-packs-grid" data-count={pricing.credit_packs.length}>
+          {pricing.credit_packs.map((pack) => (
+            <PackCard key={pack.key} pack={pack} user={!!user} />
           ))}
         </div>
-        {pricing.credit_packs.length > 0 && (
-          <p className="lp-plans-note">
-            Need more credits? {pricing.credit_packs.map((p) => `${p.name} — ${formatUsd(p.price_cents)}`).join(" · ")} (one-time).
-          </p>
-        )}
+
         <p className="lp-plans-note">
-          Prices in USD, billed monthly, cancel any time. Payments are handled by Dodo Payments, our merchant of record, which adds
-          sales tax/VAT where required. See our <Link href="/refunds">refund policy</Link> and <Link href="/terms">terms</Link>.
+          Prices in USD, one-time — credits are added to your balance and do not expire. Payments are handled by Dodo
+          Payments, our merchant of record, which adds sales tax/VAT where required. See our{" "}
+          <Link href="/refunds">refund policy</Link> and <Link href="/terms">terms</Link>.
         </p>
       </section>
 
@@ -691,7 +730,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
               <h5>Product</h5>
               <a href="#features">Features</a>
               <a href="#how">How it works</a>
-              <a href="#plans">Plans</a>
+              <a href="#plans">Pricing</a>
             </div>
             <div className="lp-footer-col">
               <h5>Account</h5>
@@ -713,58 +752,29 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
   );
 }
 
-function PlanCard({ plan, user, primaryHref }: { plan: PricingPlan; user: boolean; primaryHref: string }) {
-  const free = plan.key === "free";
-  const featured = plan.key === "pro";
-  const limits = plan.limits;
-
-  let cta: React.ReactNode;
-  if (free) {
-    cta = (
-      <Link className="btn lp-btn-block" href={primaryHref}>
-        {user ? "Go to dashboard" : "Get started free"}
-      </Link>
-    );
-  } else if (plan.purchasable) {
-    cta = (
-      <Link className="btn lp-btn-block" href={user ? "/dashboard/billing" : "/login?mode=register"}>
-        {user ? `Upgrade to ${plan.name}` : `Get ${plan.name}`}
-      </Link>
-    );
-  } else {
-    cta = (
-      <span className="btn btn-ghost lp-btn-block" style={{ cursor: "default", opacity: 0.8 }}>
-        Coming soon
-      </span>
-    );
-  }
+function PackCard({ pack, user }: { pack: PricingCreditPack; user: boolean }) {
+  const perCredit = pack.price_per_credit_cents;
 
   return (
-    <div className={`lp-plan-card ${featured ? "featured" : ""}`}>
+    <div className={`lp-pack-card ${pack.badge ? "featured" : ""}`}>
       <div className="lp-plan-top">
-        <span className="lp-plan-name">{plan.name}</span>
-        {featured && <span className="lp-plan-flag">Popular</span>}
+        <span className="lp-plan-name">{pack.name}</span>
+        {pack.badge && <span className="lp-plan-flag">{pack.badge}</span>}
       </div>
-      <div className="lp-plan-price lp-mono">
-        {formatUsd(plan.price_cents)}
-        {plan.interval && <span className="lp-plan-per"> / {plan.interval}</span>}
+      <div className="lp-plan-price lp-mono">{formatUsd(pack.price_cents)}</div>
+      <div className="lp-pack-rate lp-mono">
+        {pack.credits} credits{perCredit ? ` · ${formatRate(perCredit)} each` : ""}
       </div>
-      <ul className="lp-plan-feats">
-        <li>
-          <b>{limitLabel(limits.max_sites)}</b> site{limits.max_sites === 1 ? "" : "s"}
-        </li>
-        <li>
-          <b>{limitLabel(limits.max_pages_per_site)}</b> pages per site
-        </li>
-        <li>
-          <b>{limitLabel(limits.max_keywords_per_page)}</b> tracked keywords per page
-        </li>
-        {(PLAN_EXTRAS[plan.key] ?? []).map((line) => (
-          <li key={line}>{line}</li>
-        ))}
-        {plan.description && <li>{plan.description}</li>}
-      </ul>
-      {cta}
+      {pack.description && <p className="lp-pack-desc">{pack.description}</p>}
+      {pack.purchasable ? (
+        <Link className="btn lp-btn-block" href={user ? "/dashboard/billing" : "/login?mode=register"}>
+          {user ? "Buy credits" : "Sign up to buy"}
+        </Link>
+      ) : (
+        <span className="btn btn-ghost lp-btn-block" style={{ cursor: "default", opacity: 0.8 }}>
+          Coming soon
+        </span>
+      )}
     </div>
   );
 }

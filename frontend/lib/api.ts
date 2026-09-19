@@ -36,6 +36,11 @@ import type {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "signal_token";
 
+/** Where "Continue with Google" sends the browser. A whole-tab navigation, not
+ *  a fetch: the API redirects to Google and back, and there's no token to send
+ *  until it returns one. */
+export const GOOGLE_LOGIN_URL = `${API_URL}/auth/google/start`;
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
@@ -216,7 +221,6 @@ export const api = {
   adminStats: () => request<AdminStats>("/admin/stats"),
   adminUsers: (params: {
     q?: string;
-    plan?: string;
     paid?: boolean;
     sort?: string;
     order?: "asc" | "desc";
@@ -225,7 +229,6 @@ export const api = {
   }) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
-    if (params.plan) qs.set("plan", params.plan);
     if (params.paid !== undefined) qs.set("paid", String(params.paid));
     if (params.sort) qs.set("sort", params.sort);
     if (params.order) qs.set("order", params.order);
@@ -236,19 +239,21 @@ export const api = {
   adminUser: (id: number) => request<AdminUserDetail>(`/admin/users/${id}`),
   adminAdjustCredits: (id: number, delta: number, note: string) =>
     request<AdminUserDetail>(`/admin/users/${id}/credits`, { method: "POST", body: JSON.stringify({ delta, note }) }),
-  adminChangePlan: (id: number, plan: string, note: string) =>
-    request<AdminUserDetail>(`/admin/users/${id}/plan`, { method: "POST", body: JSON.stringify({ plan, note }) }),
-  adminRecordPayment: (
-    id: number,
-    data: { amount_cents: number; credits: number; plan: string | null; note: string }
-  ) => request<AdminUserDetail>(`/admin/users/${id}/payments`, { method: "POST", body: JSON.stringify(data) }),
+  adminRecordPayment: (id: number, data: { amount_cents: number; credits: number; note: string }) =>
+    request<AdminUserDetail>(`/admin/users/${id}/payments`, { method: "POST", body: JSON.stringify(data) }),
   adminProducts: () => request<AdminProduct[]>("/admin/products"),
   adminUpdateProduct: (
     id: number,
     data: Partial<
-      Pick<AdminProduct, "name" | "price_cents" | "credits" | "dodo_product_id" | "description" | "active" | "sort_order">
+      Pick<
+        AdminProduct,
+        "name" | "price_cents" | "credits" | "dodo_product_id" | "description" | "badge" | "active" | "sort_order"
+      >
     >
   ) => request<AdminProduct>(`/admin/products/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  adminDeleteProduct: (id: number) => request<void>(`/admin/products/${id}`, { method: "DELETE" }),
+  adminReorderProducts: (ids: number[]) =>
+    request<AdminProduct[]>("/admin/products/reorder", { method: "POST", body: JSON.stringify({ ids }) }),
   // Ask the Next.js server to refresh the cached landing page after a pricing
   // change. Best-effort: if it fails the page just refreshes itself within 5 minutes.
   revalidatePublicPricing: async () => {
@@ -265,6 +270,8 @@ export const api = {
     name: string;
     price_cents: number;
     credits: number;
+    description?: string | null;
+    badge?: string | null;
     dodo_product_id?: string | null;
   }) => request<AdminProduct>("/admin/products", { method: "POST", body: JSON.stringify(data) }),
   adminVerifyProduct: (id: number) => request<ProductVerifyResult>(`/admin/products/${id}/verify`, { method: "POST" }),

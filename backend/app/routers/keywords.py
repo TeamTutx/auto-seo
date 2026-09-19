@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import PLAN_LIMITS, KeywordRank, User
+from app.models import ACCOUNT_LIMITS, KeywordRank, User
 from app.routers.pages import get_owned_page
 from app.schemas import (
     CompetitorResult,
@@ -55,13 +55,13 @@ def add_keyword(
     is_new_keyword = payload.keyword not in {r.keyword for r in existing}
 
     if is_new_keyword:
-        max_keywords = PLAN_LIMITS[current_user.plan]["max_keywords_per_page"]
+        max_keywords = ACCOUNT_LIMITS["max_keywords_per_page"]
         if max_keywords is not None and len(existing) >= max_keywords:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail=(
-                    f"{current_user.plan} plan is limited to {max_keywords} tracked keyword(s) per page. "
-                    "Upgrade to track more."
+                    f"A page can track {max_keywords} keywords. "
+                    "Remove one you no longer need, or email support."
                 ),
             )
 

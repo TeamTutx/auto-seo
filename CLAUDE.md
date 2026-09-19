@@ -20,17 +20,21 @@ don't leave it stale.** Concretely:
 - New feature shipped in the dashboard → decide whether it earns its own
   `lp-feature-row` (or a full-width "deep dive" `lp-feature-row full`) or
   just a line in the `lp-strip` "also included" row, and add it.
-- Plans/pricing: prices and the numeric limits are **not** hard-coded any more —
-  the Plans section renders `GET /pricing`, which reads the `Product` table (edited
-  by the owner in `/admin/pricing`) and `PLAN_LIMITS` in `backend/app/models.py`. So a
-  limit change needs no landing edit; a *new plan tier or credit pack behaviour* does
-  (`PLAN_EXTRAS` in `landing-page.tsx` holds each plan's non-numeric bullets, and
-  `lib/default-pricing.ts` is the fallback shown when the API is unreachable — keep it
-  in step with the migration's seeded catalog).
-- Never list a plan benefit that isn't running in production. Scheduled audits + alerts
-  are built but not deployed (see plan.md "Not yet scheduled"), so they are deliberately
-  *not* on the Pro card or in the "also included" strip — re-add them only once the
-  Celery/cron job is actually provisioned. Customers now pay for these plans.
+- Pricing: **Signal sells credits and nothing else** — there are no tiers and nothing
+  recurring. The pricing section renders `GET /pricing`, which returns the active rows of
+  the `Product` table (credit packs the owner creates, prices, reorders and retires in
+  `/admin/pricing`) plus `ACCOUNT_LIMITS` in `backend/app/models.py`, which apply to every
+  account equally. So a price, limit or *new pack* needs no landing edit — the grid sizes
+  itself to however many packs exist. `lib/default-pricing.ts` is the fallback shown when
+  the API is unreachable; keep it in step with the migration's seeded ladder.
+- `CREDIT_COSTS` in `landing-page.tsx` is the public list of what each action costs. It
+  mirrors the real `deduct_credit()` calls in `backend/app/routers/{keywords,suggestions}.py`
+  — change one and change the other, or the pricing page is lying about prices. The same
+  list appears on `/dashboard/billing`.
+- Never list a benefit that isn't running in production. Scheduled audits + alerts are
+  built but not deployed (see plan.md "Not yet scheduled"), so they are deliberately *not*
+  in the "also included" strip — re-add them only once the cron job is actually
+  provisioned.
 - A concept gets renamed or removed (e.g. "Opportunities" becomes something
   else) → update the matching `lp-feature-tag` and copy.
 - Auth/routing changes → the landing page's CTAs branch on `useAuth()`'s
@@ -53,16 +57,25 @@ writing copy for it.
   Also public: `/terms`, `/privacy`, `/refunds` (route group `app/(legal)/`, required by
   the payment provider — Dodo won't approve an account without them, pricing and a
   contact address; the contact is `SUPPORT_EMAIL` in `lib/site.ts`).
-- `/login` — single page, handles both sign-in and sign-up (`?mode=register`
-  defaults the toggle to registration). Redirects to `/dashboard` if already
-  authenticated.
+- `/login` — **"Continue with Google" is the only advertised way in**
+  (`GET /auth/google/start` → Google → `/auth/google/callback`, which redirects back
+  here with the token in the URL *fragment*; the page reads it, stores it and scrubs the
+  address bar). Email + password still works at `/login?password=1` and the
+  `/auth/register` + `/auth/login` endpoints are untouched — that's the deliberate way
+  back in if the OAuth client is ever misconfigured, so don't delete it. Redirects to
+  `/dashboard` if already authenticated.
+  Signing in asks Google for `openid email profile` only; Search Console/Analytics
+  access is a **separate** consent from Settings, with its own redirect URI
+  (`GOOGLE_LOGIN_REDIRECT_URI` vs `GOOGLE_REDIRECT_URI`). Accounts are matched by
+  verified email, so Google sign-in lands in an existing password account rather than
+  making a second one.
 - `/dashboard/*` — the actual product (sites, pages, settings), gated by
   `app/dashboard/layout.tsx` (redirects to `/login` if unauthenticated).
   This used to be a route group living at `/` before the landing page
   existed — if you ever run across old links to `/sites/...` or `/settings`
   (missing the `/dashboard` prefix), they're stale and need fixing.
-  `/dashboard/billing` is the customer's plan/credits/payment page.
-- `/admin/*` — the owner-only panel (users, payments, credits, pricing), client-gated by
+  `/dashboard/billing` is the customer's credits/payment page (buy a pack, history).
+- `/admin/*` — the owner-only panel (users, payments, credits, credit packs), client-gated by
   `app/admin/layout.tsx` and **really** gated by the API: every `/admin/*` route needs the
   caller's email in `ADMIN_EMAILS`. `/admin` is disallowed in `robots.ts`.
 - `app/api/revalidate-pricing` — admin-only Next route that refreshes the landing page's
@@ -91,8 +104,12 @@ writing copy for it.
 - The pytest suite runs on SQLite by default; run it against Postgres with
   `TEST_DATABASE_URL=postgresql://... pytest` (see `backend/README.md`) before shipping a
   schema/migration/billing change — that mode also enables the Postgres-only concurrency
-  tests. The app seeds the default product catalog on startup when the `product` table is
-  empty, so a `create_all` dev DB isn't missing its paid plans.
+  tests. The app seeds the default pack catalog on startup when the `product` table is
+  empty, so a `create_all` dev DB isn't missing its packs.
+- **`docs/DATABASE.md` is the runbook** for creating, moving or rebuilding the database.
+  `alembic upgrade head` on an empty Postgres builds the whole schema; `alembic check`
+  then proves the live tables match `app/models.py` and must stay clean — if it reports
+  drift, the migrations and the models have diverged.
 - SQLite (dev + the whole pytest suite) does **not** enforce enum labels;
   Postgres (production) does. SQLAlchemy stores an `Enum` column by member
   *name*, so a Python enum whose name differs from its value (e.g.

@@ -11,6 +11,7 @@ from app.routers import (
     alerts,
     audits,
     auth,
+    auth_google,
     billing,
     google_data,
     google_integration,
@@ -48,6 +49,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(auth_google.router)
 app.include_router(sites.router)
 app.include_router(pages.router)
 app.include_router(audits.router)

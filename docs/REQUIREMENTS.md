@@ -96,6 +96,14 @@ product's free hook.
 | — | Team seats / multi-user |
 
 ### 3.2 Billing model
+
+> **Superseded (2026-09-19).** The tier table below was the original intent. Signal now
+> sells **credits and nothing else**: one tier, the same limits for everyone, and
+> one-time credit packs the owner creates and prices in `/admin/pricing`. Everything
+> that costs Signal money was already metered in credits, so the tiers were charging for
+> storage rather than for cost. See `plan.md` Phase I; the live catalog is whatever
+> `GET /pricing` returns.
+
 Hybrid: subscription tiers for baseline usage + credit packs for burst usage,
 mirroring how Signal itself is billed by its own data providers.
 
@@ -112,8 +120,9 @@ mirroring how Signal itself is billed by its own data providers.
 ### 3.3 Billing implementation
 
 > **Update (2026-09-19):** payments are collected through **Dodo Payments** (a merchant of
-> record, chosen because Stripe accounts are invite-only in India), not Stripe. The rest of
-> this section describes intent; what's built is documented in `plan.md` Phase H and
+> record, chosen because Stripe accounts are invite-only in India), not Stripe, and there
+> are no subscriptions to manage — only one-time credit packs. The rest of this section
+> describes intent; what's built is documented in `plan.md` Phases H and I and
 > `backend/README.md` "Billing & admin".
 - **Stripe** — Billing for subscriptions, Checkout for credit packs, Customer
   Portal for self-serve plan management/cancellation

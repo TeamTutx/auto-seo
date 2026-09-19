@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 const LINKS = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/users", label: "Users" },
-  { href: "/admin/pricing", label: "Pricing & plans" },
+  { href: "/admin/pricing", label: "Credit packs" },
 ];
 
 export default function AdminSidebar() {

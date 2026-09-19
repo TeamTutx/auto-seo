@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/integrations/google/callback"
+    # "Sign in with Google" (app/routers/auth_google.py). Same OAuth client, but
+    # a second redirect URI and only the openid/email/profile scopes - signing
+    # in must not ask for Search Console access, and the consent screen has to
+    # be published for anyone but a test user to get through it.
+    google_login_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
     @property
     def admin_email_set(self) -> set:

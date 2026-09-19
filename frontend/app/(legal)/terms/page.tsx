@@ -3,7 +3,7 @@ import { SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms of Service — Signal",
-  description: "The terms that apply when you use Signal, including plans, credits, payments and acceptable use.",
+  description: "The terms that apply when you use Signal, including credits, payments and acceptable use.",
   alternates: { canonical: "/terms" },
 };
 
@@ -28,34 +28,36 @@ export default function TermsPage() {
       <h2>2. Your account</h2>
       <ul>
         <li>You must be at least 18 and able to enter a binding contract.</li>
-        <li>Give us a valid email address and keep your password secure. You’re responsible for activity on your account.</li>
-        <li>One person, one free account. Creating multiple free accounts to collect free credits is not allowed.</li>
+        <li>
+          You sign in with a Google account, or with an email address and password. Keep that account secure — you’re
+          responsible for activity on your Signal account.
+        </li>
+        <li>One person, one free account. Creating multiple accounts to collect free credits is not allowed.</li>
       </ul>
 
-      <h2>3. Plans, credits and payments</h2>
+      <h2>3. Credits and payments</h2>
       <ul>
         <li>
-          <b>Free plan.</b> Includes limited sites, pages and tracked keywords and a small one-time allowance of credits. Free
-          credits have no cash value and don’t renew.
+          <b>The Service is free to use.</b> There is no subscription and nothing renews. Audits, scores, the opportunities list
+          and connecting your own Google Search Console and Analytics cost nothing. Accounts are subject to the sites, pages and
+          tracked-keyword limits shown in our <a href="/#plans">pricing section</a>.
         </li>
         <li>
-          <b>Paid plans (Pro, Agency)</b> are monthly subscriptions that renew automatically until you cancel. The current price,
-          billing interval and plan limits are shown on our <a href="/#plans">pricing section</a> and on the Billing page in your
-          account.
+          <b>Credits.</b> Some actions call paid third-party services on your behalf: one credit pays for one keyword rank check
+          or one AI suggestion, and some actions use two. What each action costs is listed on the pricing section and on the
+          Billing page in your account. New accounts get a small one-time allowance of free credits, which have no cash value.
         </li>
         <li>
-          <b>Credits.</b> One credit pays for one keyword rank check or one AI suggestion (some actions use two). You can buy
-          additional credit packs as one-time purchases. Credits don’t expire while your account is active, aren’t transferable
-          and aren’t redeemable for cash.
+          <b>Buying credits.</b> Credit packs are one-time purchases at the prices shown at checkout. Credits don’t expire while
+          your account is active, aren’t transferable and aren’t redeemable for cash.
         </li>
         <li>
           <b>Prices and taxes.</b> Prices are in US dollars. Our payments are processed by Dodo Payments, our merchant of record,
-          which collects any applicable sales tax, VAT or GST at checkout and issues your receipt. We may change prices; a change
-          never affects a billing period you’ve already paid for, and we’ll tell you before it applies to your next renewal.
+          which collects any applicable sales tax, VAT or GST at checkout and issues your receipt. We may change prices at any
+          time; a change never affects credits you have already bought.
         </li>
         <li>
-          <b>Cancelling.</b> Cancel any time from Billing → Manage billing. You keep the plan until the end of the period you’ve
-          paid for; it then returns to Free. Refunds are covered in our <a href="/refunds">Refund Policy</a>.
+          <b>Refunds</b> are covered in our <a href="/refunds">Refund Policy</a>.
         </li>
       </ul>
 

@@ -4,9 +4,9 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { formatDate, formatUsd, limitLabel } from "@/lib/format";
-import type { BillingSummary, Pricing, PricingPlan } from "@/lib/types";
-import { Money, PlanTag } from "@/components/admin/AdminBits";
+import { formatDate, formatRate, formatUsd } from "@/lib/format";
+import type { BillingSummary } from "@/lib/types";
+import { Money } from "@/components/admin/AdminBits";
 
 export default function BillingPage() {
   // useSearchParams() needs a Suspense boundary or `next build` fails.
@@ -23,16 +23,14 @@ function BillingContent() {
   const { refresh } = useAuth();
 
   const [summary, setSummary] = useState<BillingSummary | null>(null);
-  const [pricing, setPricing] = useState<Pricing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(checkout === "success");
-  const baseline = useRef<{ payments: number; plan: string } | null>(null);
+  const baseline = useRef<number | null>(null);
 
   const load = useCallback(async () => {
-    const [s, p] = await Promise.all([api.getBilling(), api.getPricing()]);
+    const s = await api.getBilling();
     setSummary(s);
-    setPricing(p);
     return s;
   }, []);
 
@@ -40,8 +38,9 @@ function BillingContent() {
     load().catch((e) => setError(e instanceof ApiError ? e.message : "Could not load billing."));
   }, [load]);
 
-  // Coming back from checkout: the plan/credits are granted by a webhook that can
-  // land a few seconds after the redirect, so poll briefly instead of showing stale data.
+  // Coming back from checkout: the credits are granted by a webhook that can land
+  // a few seconds after the redirect, so poll briefly instead of showing a stale
+  // balance and making them wonder whether the payment worked.
   useEffect(() => {
     if (!waiting) return;
     let tries = 0;
@@ -49,8 +48,8 @@ function BillingContent() {
       tries += 1;
       try {
         const s = await load();
-        if (baseline.current === null) baseline.current = { payments: s.payments.length, plan: s.plan };
-        else if (s.payments.length > baseline.current.payments || s.plan !== baseline.current.plan) {
+        if (baseline.current === null) baseline.current = s.payments.length;
+        else if (s.payments.length > baseline.current) {
           await refresh();
           setWaiting(false);
         }
@@ -86,82 +85,93 @@ function BillingContent() {
     }
   }
 
-  if (!summary || !pricing) {
+  if (!summary) {
     return error ? <div className="form-error">{error}</div> : <div className="loading-state">Loading…</div>;
   }
-
-  const paidPlans = pricing.plans.filter((p) => p.key !== "free");
 
   return (
     <>
       <div className="topbar">
-        <h1 className="page-title">Billing</h1>
+        <h1 className="page-title">Credits & billing</h1>
       </div>
 
-      {waiting && <div className="note">Payment received — updating your account…</div>}
+      {waiting && <div className="note">Payment received — adding your credits…</div>}
       {checkout === "cancelled" && <div className="note">Checkout cancelled — you haven’t been charged.</div>}
-      {!pricing.billing_enabled && <div className="note">Online payments aren’t switched on yet. Plans and credits will be purchasable here soon.</div>}
+      {!summary.billing_enabled && (
+        <div className="note">Online payments aren’t switched on yet. Credit packs will be purchasable here soon.</div>
+      )}
       {error && <div className="form-error">{error}</div>}
 
       <div className="stat-row">
         <div className="stat-cell">
-          <div className="stat-label">Current plan</div>
-          <div className="stat-value" style={{ textTransform: "capitalize" }}>
-            {summary.plan}
-          </div>
-        </div>
-        <div className="stat-cell">
           <div className="stat-label">Credits remaining</div>
           <div className="stat-value">{summary.credits_balance}</div>
-          <div className="admin-hint">1 credit = one rank check or AI suggestion</div>
+          <div className="admin-hint">they don’t expire</div>
         </div>
         <div className="stat-cell">
-          <div className="stat-label">Subscription</div>
+          <div className="stat-label">Credits bought</div>
+          <div className="stat-value">{summary.credits_purchased}</div>
+          <div className="admin-hint">including anything we’ve granted you</div>
+        </div>
+        <div className="stat-cell">
+          <div className="stat-label">Payment details</div>
           {summary.can_manage_billing ? (
             <button className="btn btn-ghost btn-sm" style={{ marginTop: 6 }} disabled={busy === "portal"} onClick={manage}>
-              Manage billing
+              Manage in portal
             </button>
           ) : (
             <div className="admin-hint" style={{ marginTop: 8 }}>
-              {summary.has_subscription ? "Active" : "None"}
+              Nothing saved yet — there’s no subscription to cancel.
             </div>
           )}
         </div>
       </div>
 
       <div className="section-title" style={{ margin: "28px 0 10px" }}>
-        Plans
+        Buy credits
       </div>
-      <div className="plan-cards">
-        {pricing.plans.map((plan) => (
-          <PlanCard key={plan.key} plan={plan} current={summary.plan} summary={summary} busy={busy} onBuy={buy} onManage={manage} />
-        ))}
-      </div>
-      {paidPlans.length === 0 && <div className="admin-hint">No paid plans are available right now.</div>}
-
-      {pricing.credit_packs.length > 0 && (
-        <>
-          <div className="section-title" style={{ margin: "28px 0 10px" }}>
-            Credit packs
-          </div>
-          <div className="plan-cards">
-            {pricing.credit_packs.map((pack) => (
-              <div key={pack.key} className="plan-card">
-                <div className="plan-card-name">{pack.name}</div>
-                <div className="plan-card-price">{formatUsd(pack.price_cents)}</div>
-                <ul>
-                  <li>{pack.credits} credits, added instantly</li>
-                  {pack.description && <li>{pack.description}</li>}
-                  <li>Credits don’t expire</li>
-                </ul>
-                <button className="btn" disabled={!pack.purchasable || busy === pack.key} onClick={() => buy(pack.key)}>
-                  {pack.purchasable ? "Buy credits" : "Coming soon"}
-                </button>
+      {summary.packs.length === 0 ? (
+        <div className="admin-hint">No credit packs are on sale right now.</div>
+      ) : (
+        <div className="plan-cards">
+          {summary.packs.map((pack) => (
+            <div key={pack.key} className={`plan-card ${pack.badge ? "current" : ""}`}>
+              <div className="plan-card-name">
+                {pack.name}
+                {pack.badge && <span className="admin-tag">{pack.badge}</span>}
               </div>
-            ))}
-          </div>
-        </>
+              <div className="plan-card-price">{formatUsd(pack.price_cents)}</div>
+              <ul>
+                <li>
+                  {pack.credits} credits, added as soon as the payment clears
+                  {pack.price_per_credit_cents ? ` (${formatRate(pack.price_per_credit_cents)} each)` : ""}
+                </li>
+                {pack.description && <li>{pack.description}</li>}
+                <li>One-time payment — no subscription</li>
+              </ul>
+              <button className="btn" disabled={!pack.purchasable || busy === pack.key} onClick={() => buy(pack.key)}>
+                {pack.purchasable ? "Buy credits" : "Coming soon"}
+              </button>
+            </div>
+          ))}
+        </div>
       )}
+
+      <div className="section-title" style={{ margin: "28px 0 10px" }}>
+        What a credit buys
+      </div>
+      <div className="panel">
+        <ul className="admin-hint" style={{ display: "grid", gap: 8, marginLeft: 16, listStyle: "disc" }}>
+          <li>Tracking a keyword, or re-checking its rank — 1 each</li>
+          <li>Seeing who outranks you for a keyword — 1</li>
+          <li>Any AI fix (title, meta description, headings, alt text, internal links) — 1</li>
+          <li>Keyword opportunities for a page — 2</li>
+          <li>A full ranking action plan — 2</li>
+        </ul>
+        <div className="admin-hint" style={{ marginTop: 12 }}>
+          Audits, scores, the opportunities list and your Search Console and Analytics data are free and unlimited.
+        </div>
+      </div>
 
       <div className="section-title" style={{ margin: "28px 0 10px" }}>
         Payment history
@@ -174,7 +184,6 @@ function BillingContent() {
                 <td className="muted">{formatDate(p.paid_at)}</td>
                 <td>
                   {p.kind.replace("_", " ")}
-                  {p.plan ? <> · <PlanTag plan={p.plan} /></> : null}
                   {p.credits_granted ? ` · +${p.credits_granted} credits` : ""}
                 </td>
                 <td className="num">
@@ -198,68 +207,5 @@ function BillingContent() {
         .
       </div>
     </>
-  );
-}
-
-function PlanCard({
-  plan,
-  current,
-  summary,
-  busy,
-  onBuy,
-  onManage,
-}: {
-  plan: PricingPlan;
-  current: string;
-  summary: BillingSummary;
-  busy: string | null;
-  onBuy: (key: string) => void;
-  onManage: () => void;
-}) {
-  const isCurrent = plan.key === current;
-  let cta: React.ReactNode = null;
-  if (isCurrent) {
-    cta = (
-      <button className="btn btn-ghost" disabled>
-        Current plan
-      </button>
-    );
-  } else if (plan.key !== "free") {
-    if (summary.has_subscription && summary.can_manage_billing) {
-      cta = (
-        <button className="btn btn-ghost" disabled={busy === "portal"} onClick={onManage}>
-          Change in billing portal
-        </button>
-      );
-    } else if (plan.purchasable && plan.product_key) {
-      cta = (
-        <button className="btn" disabled={busy === plan.product_key} onClick={() => onBuy(plan.product_key!)}>
-          Upgrade to {plan.name}
-        </button>
-      );
-    } else {
-      cta = (
-        <button className="btn btn-ghost" disabled>
-          Coming soon
-        </button>
-      );
-    }
-  }
-
-  return (
-    <div className={`plan-card ${isCurrent ? "current" : ""}`}>
-      <div className="plan-card-name">{plan.name}</div>
-      <div className="plan-card-price">
-        {formatUsd(plan.price_cents)}
-        {plan.interval && <small> / {plan.interval}</small>}
-      </div>
-      <ul>
-        <li>{limitLabel(plan.limits.max_sites)} site{plan.limits.max_sites === 1 ? "" : "s"}</li>
-        <li>{limitLabel(plan.limits.max_pages_per_site)} pages per site</li>
-        <li>{limitLabel(plan.limits.max_keywords_per_page)} tracked keywords per page</li>
-        {plan.description && <li>{plan.description}</li>}
-      </ul>
-      {cta}
-    </div>
   );
 }

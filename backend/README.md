@@ -259,7 +259,25 @@ that monthly quota is used up, until either a paid SerpApi plan or
 DataForSEO (`RANK_PROVIDER=dataforseo`, already verified and working) is
 switched on.
 
-## Google Search Console / Analytics integration (step 8)
+## Google OAuth: sign-in, and the Search Console / Analytics connection
+
+One OAuth client does two separate jobs, with two redirect URIs:
+
+| | Scopes | Redirect URI | When |
+| --- | --- | --- | --- |
+| **Sign in with Google** | `openid email profile` | `GOOGLE_LOGIN_REDIRECT_URI` → `/auth/google/callback` | every login |
+| **Connect GSC/Analytics** | `webmasters.readonly`, `analytics.readonly`, … | `GOOGLE_REDIRECT_URI` → `/integrations/google/callback` | later, from Settings |
+
+They're kept apart on purpose: signing up shouldn't look like handing over
+read access to your whole Google account, and the login scopes are
+*non-sensitive*, so publishing the consent screen for them needs no Google
+review. The GSC/Analytics scopes are sensitive; an unverified published app
+shows an "unverified app" interstitial and is capped at 100 users.
+
+**The consent screen must be published** (OAuth consent screen → *Publish app*)
+before anyone but a listed test user can sign in at all. In Testing mode,
+Google refuses the login for everybody else — which looks like a broken
+sign-in button, not a permissions message.
 
 Unlike the vendor keys above, this is an OAuth client, not a static API
 key: Signal has to be registered as an app with Google, and then **each
@@ -279,11 +297,23 @@ there's no way to fully exercise this without doing the setup below.
    consent screen). While in testing mode, only Google accounts you add
    as test users can connect - fine for dev.
 4. Create an **OAuth client ID** (APIs & Services → Credentials → Create
-   Credentials → OAuth client ID → type "Web application"). Add
-   `http://localhost:8000/integrations/google/callback` as an authorized
-   redirect URI (must match `GOOGLE_REDIRECT_URI` exactly).
+   Credentials → OAuth client ID → type "Web application"). Add **both**
+   `http://localhost:8000/integrations/google/callback` and
+   `http://localhost:8000/auth/google/callback` as authorized redirect URIs
+   (they must match `GOOGLE_REDIRECT_URI` and `GOOGLE_LOGIN_REDIRECT_URI`
+   exactly), plus the production equivalents under `https://api.signal-seo.in`.
 5. Put the resulting Client ID/Secret in `.env` as `GOOGLE_CLIENT_ID` /
    `GOOGLE_CLIENT_SECRET`.
+6. **Publish the consent screen** when you want anyone other than your test
+   users to be able to sign in.
+
+Sign-in itself is `GET /auth/google/start` → Google → `GET /auth/google/callback`
+(`app/routers/auth_google.py`), which exchanges the code, reads the profile from
+Google's userinfo endpoint, finds or creates the account by *verified* email, and
+redirects to the frontend's `/login` with the Signal token in the URL **fragment**
+(never the query string, so it stays out of logs and the `Referer` header). A nonce
+in both the signed `state` and an httpOnly cookie on this API's origin has to match,
+which is what stops a forged callback signing someone into another account.
 
 Once configured: `POST /integrations/google/connect` (authenticated)
 returns a Google consent URL; the frontend navigates the browser there;
@@ -320,10 +350,16 @@ left out of this first pass to keep the OAuth surface reviewable) and
 feeding GSC query data into the Phase A opportunities list as a new
 opportunity type.
 
-## Billing & admin (Phase H)
+## Billing & admin (Phases H, I)
 
 Owner-facing admin panel, credit ledger and Dodo Payments billing. Design
-rationale and decisions live in `plan.md` Phase H.
+rationale and decisions live in `plan.md` Phases H and I.
+
+**Signal sells credits, nothing recurring.** There are no plan tiers: every account gets
+the same `ACCOUNT_LIMITS` (`app/models.py`) and buys one-time credit packs for the
+actions that cost real money. `PlanTier` and `user.plan` survive as unused columns —
+dropping a value from a Postgres enum is precisely what broke production once, and
+`payment.plan` still explains money taken before the change.
 
 **Admin access.** `ADMIN_EMAILS` (comma-separated) lists who can use `/admin/*`.
 `require_admin` (`app/deps.py`) checks it on *every* request — the JWT alone never
@@ -340,12 +376,14 @@ balance — proven on Postgres by `tests/test_postgres_concurrency.py`) and the
 ledger always sums to the balance. Every `deduct_credit(session, user, ref)` call
 site passes a `ref` (`keyword_check`, `ai_meta_description`, …).
 
-**Tables (migration `0008`).** `product` (the catalog — Pro, Agency, credit packs;
-seeded with the draft prices), `credittransaction`, `payment` (negative rows are
-refunds; `amount_cents` is USD excluding tax, `tax_cents` separate; unique on
-`(provider, provider_ref)` for webhook idempotency), `adminauditlog`, plus
+**Tables (migrations `0008`, `0009`).** `product` (the credit packs on sale — the owner
+creates as many as they like in `/admin/pricing`; a starter ladder is seeded),
+`credittransaction`, `payment` (negative rows are refunds; `amount_cents` is USD
+excluding tax, `tax_cents` separate; `product_key` records which pack it bought; unique
+on `(provider, provider_ref)` for webhook idempotency), `adminauditlog`, plus
 `user.dodo_customer_id` / `dodo_subscription_id`. `kind`/`reason`/`provider` are
 plain strings, deliberately not Postgres enums (see the enum gotcha in `CLAUDE.md`).
+Creating, moving or rebuilding the database is `docs/DATABASE.md`.
 
 **API.**
 - `GET /pricing` — public; what the landing page renders (edited from `/admin/pricing`).
@@ -357,25 +395,26 @@ plain strings, deliberately not Postgres enums (see the enum gotcha in `CLAUDE.m
   library). Idempotent (Dodo retries up to 8×), returns 5xx on a real failure so Dodo
   retries, and acknowledges (200) events it can't attribute to a user.
 - `/admin/*` — `stats`, `users` (search/filter/sort/paginate), `users/{id}`,
-  `users/{id}/credits`, `users/{id}/plan`, `users/{id}/payments` (manual payment),
-  `products` (list/edit/create credit pack), `products/{id}/verify` (compare the shown
-  price with what Dodo charges).
+  `users/{id}/credits`, `users/{id}/payments` (manual payment), `products`
+  (list/create/edit/delete), `products/reorder` (every id at once, so the order can't
+  half-apply), `products/{id}/verify` (compare the shown price with what Dodo charges).
+  A pack that has sold can't be deleted, only deactivated — a Dodo retry arriving after
+  the row vanished would record the money and grant no credits.
 
 **Webhook events handled** (field names from Dodo's official SDK types):
-`payment.succeeded` (records the payment, grants credits for packs, sets the plan for
-subscriptions), `subscription.*` (every one carries `status`: `active`/`past_due` keep
-the plan, `on_hold`/`paused`/`cancelled`/`failed`/`expired` downgrade — but only if it's
-the subscription that granted the plan), `refund.succeeded` (negative payment row; a
-full refund of a pack takes back its credits, never below zero), `dispute.*` (logged
-to the audit trail for the owner). Amounts use USD; adaptive-pricing payments use the
-USD settlement amounts.
+`payment.succeeded` (records the payment and grants the pack's credits),
+`refund.succeeded` (negative payment row; a full refund of a pack takes back its
+credits, never below zero), `dispute.*` (logged to the audit trail for the owner), and
+`subscription.*` — which Signal sells none of, so those are logged and acknowledged
+rather than acted on; money arriving with a subscription id is still recorded. Amounts
+use USD; adaptive-pricing payments use the USD settlement amounts.
 
-**Going live.** In Dodo (test mode first): create Pro/Agency as subscription products and
-the credit pack as a one-time product, priced in USD; add a webhook endpoint
-`https://<api>/webhooks/dodo` with payment, subscription and refund events. On the
-backend set `ADMIN_EMAILS`, `DODO_API_KEY`, `DODO_WEBHOOK_KEY`, `DODO_ENVIRONMENT`
-(`test_mode`/`live_mode`). Then in `/admin/pricing` paste each `pdt_…` id and press
-**Check against Dodo**. To exercise the flow without a purchase:
+**Going live.** In Dodo (test mode first): create one **one-time** product per credit
+pack, priced in USD; add a webhook endpoint `https://<api>/webhooks/dodo` with the
+payment and refund events. On the backend set `ADMIN_EMAILS`, `DODO_API_KEY`,
+`DODO_WEBHOOK_KEY`, `DODO_ENVIRONMENT` (`test_mode`/`live_mode`). Then in
+`/admin/pricing` paste each `pdt_…` id and press **Check against Dodo**. To exercise the
+flow without a purchase:
 
 ```bash
 export DODO_WEBHOOK_KEY=whsec_...   # the server's secret
@@ -434,9 +473,12 @@ Steps:
      redirect after connecting).
    - `GOOGLE_REDIRECT_URI` — `https://<this service's domain>/integrations/google/callback`
      (production: `https://api.signal-seo.in/integrations/google/callback`).
-     This must **also** be added as an authorized redirect URI on the OAuth
-     client in Google Cloud Console (see "Google Search Console / Analytics
-     integration" above) — Google rejects the callback otherwise.
+   - `GOOGLE_LOGIN_REDIRECT_URI` — `https://<this service's domain>/auth/google/callback`
+     (production: `https://api.signal-seo.in/auth/google/callback`).
+     Both must **also** be added as authorized redirect URIs on the OAuth client
+     in Google Cloud Console (see "Google OAuth" above) — Google rejects the
+     callback otherwise — and the consent screen must be published, or only your
+     listed test users can sign in.
 5. Render's free Postgres plan **expires 30 days after creation** (1 GB
    cap) — upgrade the database's plan before then, or the data is deleted.
    Free web services also spin down after 15 minutes idle (a real request

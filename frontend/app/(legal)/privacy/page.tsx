@@ -21,7 +21,9 @@ export default function PrivacyPage() {
       <h2>1. What we collect</h2>
       <ul>
         <li>
-          <b>Account data:</b> your email address and a hashed (never plain-text) password.
+          <b>Account data:</b> your email address. If you sign in with Google we receive your email address, name and
+          profile picture URL from your Google profile, and store the email address; we never see your Google password. If
+          you sign in with a password instead, we store it hashed, never in plain text.
         </li>
         <li>
           <b>Data you add:</b> the sites, pages and target keywords you enter, and the audit results, rank checks and suggestions

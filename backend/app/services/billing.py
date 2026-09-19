@@ -18,7 +18,6 @@ from app.models import (
     CreditReason,
     Payment,
     PaymentKind,
-    PlanTier,
     Product,
     User,
 )
@@ -41,15 +40,6 @@ def log_admin_action(
             payload=json.dumps(payload, default=str) if payload else None,
         )
     )
-
-
-def set_user_plan(session: Session, user: User, plan: PlanTier) -> bool:
-    """Returns True if the plan actually changed."""
-    if user.plan == plan:
-        return False
-    user.plan = plan
-    session.add(user)
-    return True
 
 
 def get_product_by_key(session: Session, key: str) -> Optional[Product]:
@@ -76,6 +66,7 @@ def record_payment(
     provider_ref: Optional[str] = None,
     tax_cents: int = 0,
     plan: Optional[str] = None,
+    product_key: Optional[str] = None,
     credits: int = 0,
     note: Optional[str] = None,
     paid_at: Optional[datetime] = None,
@@ -96,6 +87,7 @@ def record_payment(
         tax_cents=tax_cents,
         kind=kind.value,
         plan=plan,
+        product_key=product_key,
         credits_granted=credits,
         provider=provider,
         provider_ref=provider_ref,
@@ -165,6 +157,7 @@ def record_refund(
         tax_cents=-tax,
         kind=PaymentKind.refund.value,
         plan=original.plan if original else None,
+        product_key=original.product_key if original else None,
         credits_granted=0,
         provider=provider,
         provider_ref=provider_ref,
@@ -195,18 +188,18 @@ def record_refund(
     return payment, True
 
 
-# The draft catalog from docs/REQUIREMENTS.md §3.2. Migration 0008 seeds the same
-# rows for real databases; this covers databases built with create_all() (local
-# dev, which has no migration history) so /pricing is never missing its paid
-# plans. It only ever runs against an *empty* table, so it can't undo an admin's
-# edits.
+# The starter ladder of credit packs. Migration 0009 seeds the same rows for real
+# databases; this covers databases built with create_all() (local dev, which has
+# no migration history) so /pricing is never empty. It only ever runs against an
+# *empty* table, so it can't undo the owner's edits in /admin/pricing - which is
+# where prices actually get set.
 DEFAULT_PRODUCTS = [
-    dict(key="pro", name="Pro", kind="subscription", price_cents=2400, interval="month", plan="pro", sort_order=10),
-    dict(key="agency", name="Agency", kind="subscription", price_cents=8900, interval="month", plan="agency", sort_order=20),
-    dict(
-        key="credits_50", name="50 credits", kind="credit_pack", price_cents=900, credits=50,
-        description="For extra rank checks and AI fixes", sort_order=30,
-    ),
+    dict(key="credits_10", name="10 credits", kind="credit_pack", price_cents=200, credits=10,
+         description="Enough to try a few rank checks", sort_order=10),
+    dict(key="credits_50", name="50 credits", kind="credit_pack", price_cents=500, credits=50,
+         description="For a site you're actively working on", badge="Best value", sort_order=20),
+    dict(key="credits_200", name="200 credits", kind="credit_pack", price_cents=1500, credits=200,
+         description="For agencies and multiple sites", sort_order=30),
 ]
 
 

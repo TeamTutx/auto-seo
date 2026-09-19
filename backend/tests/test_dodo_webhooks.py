@@ -9,7 +9,7 @@ import pytest
 from sqlmodel import Session, select
 
 import app.services.billing as billing_service
-from app.models import AdminAuditLog, CreditTransaction, Payment, PaymentKind, PlanTier, User
+from app.models import AdminAuditLog, CreditTransaction, Payment, PaymentKind, User
 from app.services.dodo import sign_webhook
 from tests.conftest import WEBHOOK_SECRET, get_user, link_dodo_product, register_and_login
 
@@ -17,7 +17,7 @@ from tests.conftest import WEBHOOK_SECRET, get_user, link_dodo_product, register
 # --- factories ---
 
 def payment_event(payment_id="pay_1", *, user_id=None, product_key=None, customer_id="cus_1", email="buyer@test.dev",
-                  total=900, tax=0, currency="USD", cart=None, subscription_id=None, **extra):
+                  total=500, tax=0, currency="USD", cart=None, subscription_id=None, **extra):
     metadata = {}
     if user_id is not None:
         metadata["user_id"] = str(user_id)
@@ -34,7 +34,7 @@ def payment_event(payment_id="pay_1", *, user_id=None, product_key=None, custome
     return {"business_id": "bus_1", "type": "payment.succeeded", "timestamp": "2026-09-19T10:00:00Z", "data": data}
 
 
-def subscription_event(event_type="subscription.active", *, subscription_id="sub_1", status="active", product_id="pdt_pro",
+def subscription_event(event_type="subscription.active", *, subscription_id="sub_1", status="active", product_id="pdt_x",
                        user_id=None, customer_id="cus_1", email="buyer@test.dev"):
     return {
         "business_id": "bus_1", "type": event_type, "timestamp": "2026-09-19T10:00:00Z",
@@ -46,7 +46,7 @@ def subscription_event(event_type="subscription.active", *, subscription_id="sub
     }
 
 
-def refund_event(refund_id="ref_1", payment_id="pay_1", amount=900, is_partial=False, currency="USD"):
+def refund_event(refund_id="ref_1", payment_id="pay_1", amount=500, is_partial=False, currency="USD"):
     return {
         "business_id": "bus_1", "type": "refund.succeeded", "timestamp": "2026-09-19T11:00:00Z",
         "data": {"refund_id": refund_id, "payment_id": payment_id, "amount": amount, "currency": currency,
@@ -74,8 +74,7 @@ def ledger(db, user_id):
 def buyer(client, db, products, billing_on):
     register_and_login(client, "buyer@test.dev")
     link_dodo_product(db, "credits_50", "pdt_credits")
-    link_dodo_product(db, "pro", "pdt_pro")
-    link_dodo_product(db, "agency", "pdt_agency")
+    link_dodo_product(db, "credits_200", "pdt_big")
     return get_user(db, "buyer@test.dev")
 
 
@@ -92,7 +91,7 @@ def test_unsigned_forged_stale_or_tampered_webhooks_are_rejected_and_change_noth
     no_headers = client.post("/webhooks/dodo", content=body)
     wrong_secret = post(client, event, secret="whsec_" + base64.b64encode(b"z" * 24).decode())
     stale = post(client, event, timestamp=int(time.time()) - 3600)
-    tampered = client.post("/webhooks/dodo", content=body.replace(b"900", b"9000000"), headers=sign_webhook(body, WEBHOOK_SECRET))
+    tampered = client.post("/webhooks/dodo", content=body.replace(b"500", b"5000000"), headers=sign_webhook(body, WEBHOOK_SECRET))
     not_json = client.post("/webhooks/dodo", content=b"not json", headers=sign_webhook(b"not json", WEBHOOK_SECRET))
 
     assert [r.status_code for r in (no_headers, wrong_secret, stale, tampered, not_json)] == [400] * 5
@@ -107,7 +106,7 @@ def test_unknown_event_types_are_acknowledged(client, buyer):
 # --- credit pack purchase ---
 
 def test_a_credit_pack_purchase_grants_credits_and_records_the_payment(client, db, buyer):
-    event = payment_event(user_id=buyer.id, total=990, tax=90, cart=[{"product_id": "pdt_credits", "quantity": 1}])
+    event = payment_event(user_id=buyer.id, total=550, tax=50, cart=[{"product_id": "pdt_credits", "quantity": 1}])
 
     resp = post(client, event)
 
@@ -115,8 +114,8 @@ def test_a_credit_pack_purchase_grants_credits_and_records_the_payment(client, d
     user = get_user(db, "buyer@test.dev")
     assert user.credits_balance == 53 and user.dodo_customer_id == "cus_1"
     (payment,) = payments(db)
-    assert (payment.amount_cents, payment.tax_cents, payment.kind, payment.provider, payment.provider_ref) == (900, 90, "credit_pack", "dodo", "pay_1")
-    assert payment.credits_granted == 50
+    assert (payment.amount_cents, payment.tax_cents, payment.kind, payment.provider, payment.provider_ref) == (500, 50, "credit_pack", "dodo", "pay_1")
+    assert payment.credits_granted == 50 and payment.product_key == "credits_50"
     last = ledger(db, user.id)[-1]
     assert (last.delta, last.reason, last.ref, last.balance_after) == (50, "purchase", f"payment:{payment.id}", 53)
     with Session(db) as session:
@@ -135,7 +134,7 @@ def test_redelivered_webhooks_do_not_grant_credits_twice(client, db, buyer):
 
 
 def test_quantity_multiplies_the_credits(client, db, buyer):
-    post(client, payment_event(user_id=buyer.id, total=1800, cart=[{"product_id": "pdt_credits", "quantity": 2}]))
+    post(client, payment_event(user_id=buyer.id, total=1000, cart=[{"product_id": "pdt_credits", "quantity": 2}]))
     assert get_user(db, "buyer@test.dev").credits_balance == 103
 
 
@@ -144,71 +143,40 @@ def test_product_key_in_metadata_identifies_the_product_without_a_cart(client, d
     assert get_user(db, "buyer@test.dev").credits_balance == 53
 
 
-# --- subscriptions ---
+# --- subscriptions (Signal doesn't sell any) ---
 
-def test_first_subscription_payment_sets_the_plan_and_remembers_the_subscription(client, db, buyer):
-    resp = post(client, payment_event(user_id=buyer.id, product_key="pro", total=2400, subscription_id="sub_1"))
+def test_a_subscription_event_is_logged_but_grants_nothing(client, db, buyer):
+    """Signal sells one-off credit packs. A subscription event could only come
+    from something set up in Dodo directly, so it's surfaced to the owner and
+    acknowledged - never acted on."""
+    resp = post(client, subscription_event(user_id=buyer.id))
 
-    assert resp.json()["result"] == "recorded"
+    assert resp.status_code == 200 and resp.json()["result"] == "subscription_logged"
     user = get_user(db, "buyer@test.dev")
-    assert user.plan == PlanTier.pro and user.dodo_subscription_id == "sub_1"
-    (payment,) = payments(db)
-    assert (payment.kind, payment.plan, payment.amount_cents, payment.credits_granted) == ("subscription", "pro", 2400, 0)
+    assert user.credits_balance == 3 and payments(db) == []
+    assert user.dodo_customer_id == "cus_1"  # still worth remembering who they are
+    with Session(db) as session:
+        log = session.exec(select(AdminAuditLog).where(AdminAuditLog.action == "subscription_active")).one()
+        assert log.target_user_id == user.id and json.loads(log.payload)["subscription_id"] == "sub_1"
 
 
-def test_a_renewal_has_no_cart_or_metadata_but_is_attributed_by_subscription_id(client, db, buyer):
-    post(client, payment_event(user_id=buyer.id, product_key="pro", total=2400, subscription_id="sub_1"))
-
-    renewal = payment_event("pay_2", customer_id="cus_other", email="different@card.com", total=2400, subscription_id="sub_1")
-    resp = post(client, renewal)
-
-    assert resp.json()["result"] == "recorded"
-    assert [p.amount_cents for p in payments(db)] == [2400, 2400]
-    assert payments(db)[1].plan == "pro" and payments(db)[1].kind == "subscription"
-    assert get_user(db, "buyer@test.dev").plan == PlanTier.pro
-
-
-def test_subscription_active_sets_the_plan_from_the_dodo_product(client, db, buyer):
-    resp = post(client, subscription_event(product_id="pdt_agency", user_id=buyer.id))
-
-    assert resp.json()["result"] == "plan_synced"
-    user = get_user(db, "buyer@test.dev")
-    assert user.plan == PlanTier.agency and user.dodo_subscription_id == "sub_1" and user.dodo_customer_id == "cus_1"
-
-
-@pytest.mark.parametrize("status", ["expired", "cancelled", "failed", "on_hold", "paused"])
-def test_a_dead_subscription_downgrades_the_plan(client, db, buyer, status):
-    post(client, subscription_event(user_id=buyer.id))
-    assert get_user(db, "buyer@test.dev").plan == PlanTier.pro
+@pytest.mark.parametrize("status", ["expired", "cancelled", "on_hold", "past_due"])
+def test_no_subscription_status_can_take_credits_away(client, db, buyer, status):
+    post(client, payment_event(user_id=buyer.id, product_key="credits_50"))
 
     resp = post(client, subscription_event(f"subscription.{status}", status=status, user_id=buyer.id))
 
-    assert resp.json()["result"] == "downgraded"
-    assert get_user(db, "buyer@test.dev").plan == PlanTier.free
+    assert resp.json()["result"] == "subscription_logged"
+    assert get_user(db, "buyer@test.dev").credits_balance == 53  # credits are bought, not rented
 
 
-@pytest.mark.parametrize("status", ["past_due", "pending"])
-def test_past_due_keeps_the_plan_and_pending_grants_nothing(client, db, buyer, status):
-    post(client, subscription_event(user_id=buyer.id))
+def test_money_arriving_with_a_subscription_id_is_still_recorded(client, db, buyer):
+    resp = post(client, payment_event(user_id=buyer.id, total=2400, subscription_id="sub_1"))
 
-    post(client, subscription_event("subscription.past_due", status=status, user_id=buyer.id))
-
-    assert get_user(db, "buyer@test.dev").plan == PlanTier.pro
-
-
-def test_an_old_replaced_subscription_expiring_does_not_downgrade_the_new_one(client, db, buyer):
-    post(client, subscription_event(subscription_id="sub_new", user_id=buyer.id))
-
-    resp = post(client, subscription_event("subscription.expired", subscription_id="sub_old", status="expired", user_id=buyer.id))
-
-    assert resp.json()["result"] == "ignored"
-    assert get_user(db, "buyer@test.dev").plan == PlanTier.pro
-
-
-def test_a_subscription_for_an_unknown_product_grants_nothing(client, db, buyer):
-    resp = post(client, subscription_event(product_id="pdt_mystery", user_id=buyer.id))
-    assert resp.json()["result"] == "unmapped_product"
-    assert get_user(db, "buyer@test.dev").plan == PlanTier.free
+    assert resp.json()["result"] == "recorded"
+    (payment,) = payments(db)
+    assert (payment.kind, payment.amount_cents, payment.credits_granted) == ("subscription", 2400, 0)
+    assert get_user(db, "buyer@test.dev").dodo_subscription_id == "sub_1"
 
 
 # --- who does this belong to? ---
@@ -242,17 +210,17 @@ def test_unattributable_payments_are_acknowledged_but_not_recorded(client, db, b
 # --- amounts and edge cases ---
 
 def test_adaptive_pricing_uses_the_usd_settlement_amounts(client, db, buyer):
-    event = payment_event(user_id=buyer.id, product_key="credits_50", currency="EUR", total=830, tax=130,
-                          settlement_amount=990, settlement_tax=90)
+    event = payment_event(user_id=buyer.id, product_key="credits_50", currency="EUR", total=460, tax=70,
+                          settlement_amount=550, settlement_tax=50)
 
     post(client, event)
 
     (payment,) = payments(db)
-    assert (payment.amount_cents, payment.tax_cents) == (900, 90)
+    assert (payment.amount_cents, payment.tax_cents) == (500, 50)
 
 
 def test_a_payment_with_no_usd_amount_is_still_recorded_and_flagged(client, db, buyer):
-    event = payment_event(user_id=buyer.id, product_key="credits_50", currency="EUR", total=830, settlement_currency="EUR")
+    event = payment_event(user_id=buyer.id, product_key="credits_50", currency="EUR", total=460, settlement_currency="EUR")
 
     post(client, event)
 
@@ -265,13 +233,14 @@ def test_money_for_a_product_not_in_the_catalog_is_still_recorded(client, db, bu
     post(client, payment_event(user_id=buyer.id, cart=[{"product_id": "pdt_mystery", "quantity": 1}]))
 
     (payment,) = payments(db)
-    assert payment.amount_cents == 900 and payment.credits_granted == 0 and "catalog" in payment.note
+    assert payment.amount_cents == 500 and payment.credits_granted == 0 and "catalog" in payment.note
+    assert payment.product_key is None
     assert get_user(db, "buyer@test.dev").credits_balance == 3
 
 
 def test_card_update_charges_and_failed_payments_are_not_sales(client, db, buyer):
-    update = payment_event(user_id=buyer.id, product_key="pro", total=0, is_update_payment_method=True)
-    failed = {**payment_event("pay_f", user_id=buyer.id, product_key="pro"), "type": "payment.failed"}
+    update = payment_event(user_id=buyer.id, product_key="credits_50", total=0, is_update_payment_method=True)
+    failed = {**payment_event("pay_f", user_id=buyer.id, product_key="credits_50"), "type": "payment.failed"}
 
     assert post(client, update).json()["result"] == "ignored"
     assert post(client, failed).json()["result"] == "ignored"
@@ -281,17 +250,17 @@ def test_card_update_charges_and_failed_payments_are_not_sales(client, db, buyer
 # --- refunds ---
 
 def _buy_pack(client, buyer):
-    post(client, payment_event(user_id=buyer.id, total=990, tax=90, cart=[{"product_id": "pdt_credits", "quantity": 1}]))
+    post(client, payment_event(user_id=buyer.id, total=550, tax=50, cart=[{"product_id": "pdt_credits", "quantity": 1}]))
 
 
 def test_a_full_refund_reverses_the_revenue_and_takes_back_the_credits(client, db, buyer):
     _buy_pack(client, buyer)
 
-    resp = post(client, refund_event(amount=990))
+    resp = post(client, refund_event(amount=550))
 
     assert resp.json()["result"] == "refunded"
     rows = payments(db)
-    assert [(p.kind, p.amount_cents, p.tax_cents) for p in rows] == [("credit_pack", 900, 90), ("refund", -900, -90)]
+    assert [(p.kind, p.amount_cents, p.tax_cents) for p in rows] == [("credit_pack", 500, 50), ("refund", -500, -50)]
     assert sum(p.amount_cents for p in rows) == 0
     user = get_user(db, "buyer@test.dev")
     assert user.credits_balance == 3
@@ -306,7 +275,7 @@ def test_a_refund_never_takes_more_credits_than_the_user_has_left(client, db, bu
         session.add(u)
         session.commit()
 
-    post(client, refund_event(amount=990))
+    post(client, refund_event(amount=550))
 
     assert get_user(db, "buyer@test.dev").credits_balance == 0  # not negative
 
@@ -314,10 +283,10 @@ def test_a_refund_never_takes_more_credits_than_the_user_has_left(client, db, bu
 def test_a_partial_refund_is_prorated_by_tax_and_leaves_credits_alone(client, db, buyer):
     _buy_pack(client, buyer)
 
-    post(client, refund_event(amount=495, is_partial=True))  # half of the $9.90 charged
+    post(client, refund_event(amount=275, is_partial=True))  # half of the $5.50 charged
 
     refund = payments(db)[1]
-    assert (refund.amount_cents, refund.tax_cents) == (-450, -45)
+    assert (refund.amount_cents, refund.tax_cents) == (-250, -25)
     assert get_user(db, "buyer@test.dev").credits_balance == 53
 
 
@@ -345,7 +314,7 @@ def test_a_partial_refund_in_another_currency_is_flagged_not_guessed(client, db,
 
 def test_disputes_are_logged_for_the_owner(client, db, buyer):
     _buy_pack(client, buyer)
-    event = {"type": "dispute.opened", "data": {"dispute_id": "dp_1", "payment_id": "pay_1", "amount": "990"}}
+    event = {"type": "dispute.opened", "data": {"dispute_id": "dp_1", "payment_id": "pay_1", "amount": "550"}}
 
     assert post(client, event).json()["result"] == "dispute_logged"
 
@@ -377,7 +346,7 @@ def test_losing_the_insert_race_to_a_concurrent_delivery_is_treated_as_a_duplica
     user_id = buyer.id
     with Session(db) as session:
         first, created = billing_service.record_payment(
-            session, user=session.get(User, user_id), amount_cents=900, kind=PaymentKind.credit_pack,
+            session, user=session.get(User, user_id), amount_cents=500, kind=PaymentKind.credit_pack,
             provider="dodo", provider_ref="pay_race", credits=50,
         )
         first_id = first.id
@@ -394,7 +363,7 @@ def test_losing_the_insert_race_to_a_concurrent_delivery_is_treated_as_a_duplica
     monkeypatch.setattr(billing_service, "find_payment", blind_first_time)
     with Session(db) as session:
         again, created = billing_service.record_payment(
-            session, user=session.get(User, user_id), amount_cents=900, kind=PaymentKind.credit_pack,
+            session, user=session.get(User, user_id), amount_cents=500, kind=PaymentKind.credit_pack,
             provider="dodo", provider_ref="pay_race", credits=50,
         )
         again_id = again.id

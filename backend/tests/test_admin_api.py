@@ -2,7 +2,7 @@ import json
 
 from sqlmodel import Session, select
 
-from app.models import AdminAuditLog, Payment, PlanTier
+from app.models import AdminAuditLog, Payment
 from tests.conftest import ADMIN_EMAIL, get_user, grant_credits, make_page, register_and_login
 
 
@@ -26,10 +26,12 @@ def test_a_normal_user_gets_403_on_every_admin_route(client, monkeypatch):
         client.get("/admin/users", headers=headers),
         client.get("/admin/users/1", headers=headers),
         client.post("/admin/users/1/credits", json={"delta": 5, "note": "sneaky"}, headers=headers),
-        client.post("/admin/users/1/plan", json={"plan": "agency", "note": "sneaky"}, headers=headers),
         client.post("/admin/users/1/payments", json={"amount_cents": 1, "note": "sneaky"}, headers=headers),
         client.get("/admin/products", headers=headers),
         client.put("/admin/products/1", json={"price_cents": 1}, headers=headers),
+        client.post("/admin/products", json={"key": "x", "name": "X", "price_cents": 1, "credits": 1}, headers=headers),
+        client.delete("/admin/products/1", headers=headers),
+        client.post("/admin/products/reorder", json={"ids": [1]}, headers=headers),
     ]
     assert [c.status_code for c in calls] == [403] * len(calls)
 
@@ -56,7 +58,7 @@ def _seed_users(client, db, admin_headers):
     register_and_login(client, "carol@test.dev")
     client.post(
         f"/admin/users/{_user_id(db, 'bob@test.dev')}/payments",
-        json={"amount_cents": 2400, "plan": "pro", "note": "UPI"}, headers=admin_headers,
+        json={"amount_cents": 2400, "credits": 10, "note": "UPI"}, headers=admin_headers,
     )
     client.post(
         f"/admin/users/{_user_id(db, 'carol@test.dev')}/payments",
@@ -64,16 +66,16 @@ def _seed_users(client, db, admin_headers):
     )
 
 
-def test_user_list_shows_plan_credits_and_total_paid(client, db, admin_headers):
+def test_user_list_shows_credits_bought_and_total_paid(client, db, admin_headers):
     _seed_users(client, db, admin_headers)
 
     body = client.get("/admin/users", headers=admin_headers).json()
 
     assert body["total"] == 4
     rows = {r["email"]: r for r in body["items"]}
-    assert rows["bob@test.dev"]["plan"] == "pro" and rows["bob@test.dev"]["total_paid_cents"] == 2400
+    assert rows["bob@test.dev"]["credits_purchased"] == 10 and rows["bob@test.dev"]["total_paid_cents"] == 2400
     assert rows["carol@test.dev"]["credits_balance"] == 53 and rows["carol@test.dev"]["total_paid_cents"] == 900
-    assert rows["alice@test.dev"]["total_paid_cents"] == 0
+    assert rows["alice@test.dev"]["total_paid_cents"] == 0 and rows["alice@test.dev"]["credits_purchased"] == 0
     assert rows[ADMIN_EMAIL]["is_admin"] is True and rows["alice@test.dev"]["is_admin"] is False
 
 
@@ -82,7 +84,6 @@ def test_user_list_search_and_filters(client, db, admin_headers):
     get = lambda **params: client.get("/admin/users", params=params, headers=admin_headers).json()  # noqa: E731
 
     assert [r["email"] for r in get(q="ALI")["items"]] == ["alice@test.dev"]  # case-insensitive
-    assert {r["email"] for r in get(plan="pro")["items"]} == {"bob@test.dev"}
     assert {r["email"] for r in get(paid="true")["items"]} == {"bob@test.dev", "carol@test.dev"}
     assert {r["email"] for r in get(paid="false")["items"]} == {"alice@test.dev", ADMIN_EMAIL}
     assert get(paid="true")["total"] == 2
@@ -180,35 +181,32 @@ def test_credit_adjustment_validation(client, db, admin_headers):
     assert client.post("/admin/users/99999/credits", json={"delta": 5, "note": "ghost"}, headers=admin_headers).status_code == 404
 
 
-# --- plan + manual payments ---
+# --- manual payments ---
 
-def test_admin_can_change_a_plan_and_it_is_audited(client, db, admin_headers):
-    register_and_login(client, "upgrade@test.dev")
-    uid = _user_id(db, "upgrade@test.dev")
+def test_the_plan_endpoint_is_gone(client, db, admin_headers):
+    """Signal is credit-based: there are no tiers to move anyone between, so the
+    lever is credits, not plans."""
+    register_and_login(client, "noplan@test.dev")
+    uid = _user_id(db, "noplan@test.dev")
 
-    resp = client.post(f"/admin/users/{uid}/plan", json={"plan": "agency", "note": "comped"}, headers=admin_headers)
-
-    assert resp.status_code == 200 and resp.json()["plan"] == "agency"
-    assert get_user(db, "upgrade@test.dev").plan == PlanTier.agency
-    with Session(db) as session:
-        log = session.exec(select(AdminAuditLog).where(AdminAuditLog.action == "plan_changed")).one()
-        assert json.loads(log.payload) == {"from": "free", "to": "agency", "note": "comped"}
-    assert client.post(f"/admin/users/{uid}/plan", json={"plan": "platinum", "note": "nope"}, headers=admin_headers).status_code == 422
+    assert client.post(f"/admin/users/{uid}/plan", json={"plan": "agency", "note": "x"}, headers=admin_headers).status_code == 404
+    assert "plan" not in client.get(f"/admin/users/{uid}", headers=admin_headers).json()
 
 
-def test_manual_payment_records_money_grants_credits_and_switches_plan(client, db, admin_headers):
+def test_manual_payment_records_money_and_grants_credits(client, db, admin_headers):
     register_and_login(client, "paid@test.dev")
     uid = _user_id(db, "paid@test.dev")
 
     resp = client.post(
         f"/admin/users/{uid}/payments",
-        json={"amount_cents": 2400, "credits": 20, "plan": "pro", "note": "UPI ref 123"},
+        json={"amount_cents": 2400, "credits": 20, "note": "UPI ref 123"},
         headers=admin_headers,
     )
 
     assert resp.status_code == 201
     body = resp.json()
-    assert body["total_paid_cents"] == 2400 and body["plan"] == "pro" and body["credits_balance"] == 23
+    assert body["total_paid_cents"] == 2400 and body["credits_balance"] == 23
+    assert body["credits_purchased"] == 20
     assert body["payments"][0]["credits_granted"] == 20 and body["payments"][0]["kind"] == "manual"
     assert body["ledger"][0]["reason"] == "admin" and body["ledger"][0]["delta"] == 20
 
@@ -234,12 +232,34 @@ def test_stats_summarise_users_revenue_and_credits(client, db, products, admin_h
     stats = client.get("/admin/stats", headers=admin_headers).json()
 
     assert stats["total_users"] == 4 and stats["signups_7d"] == 4 and stats["signups_30d"] == 4
-    assert stats["users_by_plan"] == {"free": 3, "pro": 1, "agency": 0}
     assert stats["paying_users"] == 3
     assert stats["revenue_all_cents"] == 2400 + 900 + 500 and stats["revenue_30d_cents"] == 3800
-    assert stats["estimated_mrr_cents"] == 2400  # one Pro user x the $24 catalog price
-    assert stats["credits_outstanding"] == 4 * 3 + 50
+    assert stats["credits_sold_all"] == 60 and stats["credits_sold_30d"] == 60
+    assert stats["credits_outstanding"] == 4 * 3 + 60
     assert len(stats["recent_signups"]) == 4 and stats["recent_actions"][0]["action"] == "payment_recorded"
+
+
+def test_stats_break_revenue_down_by_credit_pack(client, db, products, admin_headers):
+    """Which price point actually sells - the reason a payment records the pack
+    key it bought."""
+    register_and_login(client, "buyer@test.dev")
+    uid = _user_id(db, "buyer@test.dev")
+    with Session(db) as session:
+        session.add(Payment(user_id=uid, amount_cents=500, kind="credit_pack", product_key="credits_50",
+                            credits_granted=50, provider="dodo", provider_ref="pay_1"))
+        session.add(Payment(user_id=uid, amount_cents=1500, kind="credit_pack", product_key="credits_200",
+                            credits_granted=200, provider="dodo", provider_ref="pay_2"))
+        session.add(Payment(user_id=uid, amount_cents=500, kind="credit_pack", product_key="credits_50",
+                            credits_granted=50, provider="dodo", provider_ref="pay_3"))
+        session.commit()
+
+    packs = client.get("/admin/stats", headers=admin_headers).json()["top_packs"]
+
+    assert [(p["product_key"], p["sales"], p["revenue_cents"]) for p in packs] == [
+        ("credits_200", 1, 1500),
+        ("credits_50", 2, 1000),
+    ]
+    assert packs[0]["name"] == "200 credits"
 
 
 def test_credits_spent_counts_only_usage_over_the_last_30_days(client, db, admin_headers, monkeypatch):
@@ -258,48 +278,73 @@ def test_credits_spent_counts_only_usage_over_the_last_30_days(client, db, admin
 
 # --- product catalog ---
 
-def test_admin_can_list_and_edit_products(client, db, products, admin_headers):
+def test_admin_can_list_and_edit_packs(client, db, products, admin_headers):
     listed = client.get("/admin/products", headers=admin_headers).json()
-    assert [p["key"] for p in listed] == ["pro", "agency", "credits_50"]
+    assert [p["key"] for p in listed] == ["credits_10", "credits_50", "credits_200"]
 
-    pro = listed[0]
+    pack = listed[0]
     resp = client.put(
-        f"/admin/products/{pro['id']}",
-        json={"price_cents": 1900, "name": "Pro+", "dodo_product_id": " pdt_pro_1 ", "description": "Best value"},
+        f"/admin/products/{pack['id']}",
+        json={"price_cents": 300, "name": "10 credits+", "credits": 12,
+              "dodo_product_id": " pdt_ten ", "description": "Starter", "badge": " New "},
         headers=admin_headers,
     )
 
     assert resp.status_code == 200
     body = resp.json()
-    assert (body["price_cents"], body["name"], body["dodo_product_id"]) == (1900, "Pro+", "pdt_pro_1")
+    assert (body["price_cents"], body["name"], body["credits"]) == (300, "10 credits+", 12)
+    assert (body["dodo_product_id"], body["badge"]) == ("pdt_ten", "New")  # both trimmed
     with Session(db) as session:
         log = session.exec(select(AdminAuditLog).where(AdminAuditLog.action == "product_updated")).one()
-        assert json.loads(log.payload)["before"]["price_cents"] == 2400
+        assert json.loads(log.payload)["before"]["price_cents"] == 200
 
 
 def test_clearing_the_dodo_link_and_validation_rules(client, db, products, admin_headers):
     ids = {p["key"]: p["id"] for p in client.get("/admin/products", headers=admin_headers).json()}
-    client.put(f"/admin/products/{ids['pro']}", json={"dodo_product_id": "pdt_1"}, headers=admin_headers)
+    client.put(f"/admin/products/{ids['credits_10']}", json={"dodo_product_id": "pdt_1"}, headers=admin_headers)
 
-    cleared = client.put(f"/admin/products/{ids['pro']}", json={"dodo_product_id": ""}, headers=admin_headers)
+    cleared = client.put(f"/admin/products/{ids['credits_10']}", json={"dodo_product_id": ""}, headers=admin_headers)
     assert cleared.json()["dodo_product_id"] is None
 
-    client.put(f"/admin/products/{ids['pro']}", json={"dodo_product_id": "pdt_1"}, headers=admin_headers)
-    clash = client.put(f"/admin/products/{ids['agency']}", json={"dodo_product_id": "pdt_1"}, headers=admin_headers)
+    client.put(f"/admin/products/{ids['credits_10']}", json={"dodo_product_id": "pdt_1"}, headers=admin_headers)
+    clash = client.put(f"/admin/products/{ids['credits_50']}", json={"dodo_product_id": "pdt_1"}, headers=admin_headers)
     assert clash.status_code == 409  # one Dodo product can't back two catalog entries
 
-    assert client.put(f"/admin/products/{ids['pro']}", json={"price_cents": -1}, headers=admin_headers).status_code == 422
-    assert client.put(f"/admin/products/{ids['pro']}", json={"credits": 5}, headers=admin_headers).status_code == 422  # subscriptions have no credits
+    put = lambda body: client.put(f"/admin/products/{ids['credits_10']}", json=body, headers=admin_headers).status_code  # noqa: E731
+    assert put({"price_cents": -1}) == 422
+    assert put({"credits": 0}) == 422  # a pack that grants nothing isn't a pack
     assert client.put("/admin/products/9999", json={"name": "x"}, headers=admin_headers).status_code == 404
 
 
 def test_admin_can_add_a_credit_pack_but_not_duplicate_keys(client, db, products, admin_headers):
-    body = {"key": "credits_200", "name": "200 credits", "price_cents": 2900, "credits": 200}
+    body = {"key": "credits_500", "name": "500 credits", "price_cents": 2900, "credits": 500}
 
     created = client.post("/admin/products", json=body, headers=admin_headers)
 
     assert created.status_code == 201
     assert created.json()["kind"] == "credit_pack" and created.json()["sort_order"] > 30
+    assert created.json()["sales"] == 0
     assert client.post("/admin/products", json=body, headers=admin_headers).status_code == 409
     assert client.post("/admin/products", json={**body, "key": "Bad Key!"}, headers=admin_headers).status_code == 422
     assert client.post("/admin/products", json={**body, "key": "zero", "credits": 0}, headers=admin_headers).status_code == 422
+
+
+def test_a_pack_that_has_sold_cannot_be_deleted(client, db, products, admin_headers):
+    """Dodo retries a webhook for hours. If the pack were gone by the time a
+    retry landed, the money would be recorded with no credits attached."""
+    register_and_login(client, "bought@test.dev")
+    uid = _user_id(db, "bought@test.dev")
+    ids = {p["key"]: p["id"] for p in client.get("/admin/products", headers=admin_headers).json()}
+    with Session(db) as session:
+        session.add(Payment(user_id=uid, amount_cents=500, kind="credit_pack", product_key="credits_50",
+                            credits_granted=50, provider="dodo", provider_ref="pay_9"))
+        session.commit()
+
+    refused = client.delete(f"/admin/products/{ids['credits_50']}", headers=admin_headers)
+
+    assert refused.status_code == 409 and "Turn it off instead" in refused.json()["detail"]
+    assert client.get("/admin/products", headers=admin_headers).json()[1]["sales"] == 1
+    # deactivating does take it off the pricing page
+    client.put(f"/admin/products/{ids['credits_50']}", json={"active": False}, headers=admin_headers)
+    assert "credits_50" not in [p["key"] for p in client.get("/pricing").json()["credit_packs"]]
+    assert client.delete("/admin/products/9999", headers=admin_headers).status_code == 404

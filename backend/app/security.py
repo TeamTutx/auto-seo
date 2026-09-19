@@ -14,6 +14,11 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    # Accounts created through "Sign in with Google" store an empty hash, which
+    # is not a valid bcrypt digest - passlib raises on it rather than returning
+    # False, so no password can ever match one.
+    if not hashed_password:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 

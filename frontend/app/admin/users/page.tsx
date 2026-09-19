@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { AdminUserList } from "@/lib/types";
-import { Money, PlanTag } from "@/components/admin/AdminBits";
+import { Money } from "@/components/admin/AdminBits";
 
-type SortKey = "created_at" | "email" | "credits" | "total_paid" | "sites" | "last_scan";
+type SortKey = "created_at" | "email" | "credits" | "credits_purchased" | "total_paid" | "sites" | "last_scan";
 
 const COLUMNS: { key: SortKey; label: string; num?: boolean }[] = [
   { key: "email", label: "Email" },
-  { key: "credits", label: "Credits", num: true },
+  { key: "credits", label: "Credits left", num: true },
+  { key: "credits_purchased", label: "Bought", num: true },
   { key: "sites", label: "Sites", num: true },
   { key: "total_paid", label: "Paid", num: true },
   { key: "last_scan", label: "Last scan" },
@@ -24,7 +25,6 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
-  const [plan, setPlan] = useState("");
   const [paid, setPaid] = useState<"" | "paid" | "unpaid">("");
   const [sort, setSort] = useState<SortKey>("created_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
@@ -47,7 +47,6 @@ export default function AdminUsersPage() {
     api
       .adminUsers({
         q: q || undefined,
-        plan: plan || undefined,
         paid: paid === "" ? undefined : paid === "paid",
         sort,
         order,
@@ -59,7 +58,7 @@ export default function AdminUsersPage() {
     return () => {
       cancelled = true;
     };
-  }, [q, plan, paid, sort, order, page]);
+  }, [q, paid, sort, order, page]);
 
   function toggleSort(key: SortKey) {
     if (sort === key) setOrder(order === "asc" ? "desc" : "asc");
@@ -89,19 +88,6 @@ export default function AdminUsersPage() {
           />
           <select
             className="admin-select"
-            value={plan}
-            onChange={(e) => {
-              setPlan(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">All plans</option>
-            <option value="free">Free</option>
-            <option value="pro">Pro</option>
-            <option value="agency">Agency</option>
-          </select>
-          <select
-            className="admin-select"
             value={paid}
             onChange={(e) => {
               setPaid(e.target.value as "" | "paid" | "unpaid");
@@ -124,13 +110,7 @@ export default function AdminUsersPage() {
           <table className="admin-table">
             <thead>
               <tr>
-                {COLUMNS.slice(0, 1).map((c) => (
-                  <th key={c.key} className="sortable" onClick={() => toggleSort(c.key)}>
-                    {c.label} {sort === c.key ? (order === "asc" ? "↑" : "↓") : ""}
-                  </th>
-                ))}
-                <th>Plan</th>
-                {COLUMNS.slice(1).map((c) => (
+                {COLUMNS.map((c) => (
                   <th
                     key={c.key}
                     className={`sortable ${c.num ? "num" : ""}`}
@@ -149,10 +129,8 @@ export default function AdminUsersPage() {
                     {u.email}
                     {u.is_admin && <span className="admin-tag">ADMIN</span>}
                   </td>
-                  <td>
-                    <PlanTag plan={u.plan} />
-                  </td>
                   <td className="num">{u.credits_balance}</td>
+                  <td className="num">{u.credits_purchased}</td>
                   <td className="num">{u.sites_count}</td>
                   <td className="num">
                     <Money cents={u.total_paid_cents} />

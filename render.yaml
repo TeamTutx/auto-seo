@@ -50,6 +50,11 @@ services:
         sync: false
       - key: GOOGLE_REDIRECT_URI
         sync: false
+      # "Sign in with Google": <this API>/auth/google/callback. Must also be
+      # registered on the OAuth client, and the consent screen must be
+      # published or only test users can sign in.
+      - key: GOOGLE_LOGIN_REDIRECT_URI
+        sync: false
 
       # Rank checks / competitor comparison - pick one provider and fill in
       # its credentials; the other pair can stay blank.

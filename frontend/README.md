@@ -44,9 +44,11 @@ with CORS already configured for `http://localhost:3000` in
   or deleting a site on the overview page left the sidebar showing stale
   data until a full reload — any component that mutates a site must call
   `refreshSites()` afterward.
-- `app/login/` — combined login/register form.
+- `app/login/` — "Continue with Google" (a whole-tab navigation to the API's
+  `/auth/google/start`), which comes back here with the token in the URL fragment.
+  The email/password form is the fallback, at `/login?password=1`.
 - `app/(dashboard)/layout.tsx` + `components/Sidebar.tsx` — auth-gated shell:
-  sites list, plan/credits widget, add-site form.
+  sites list, credits widget, add-site form.
 - `app/(dashboard)/sites/[siteId]/page.tsx` — site overview: score gauge
   (average of pages' latest audit scores), stat row, pages table, add-page
   form, "Run full scan" (re-audits every page on the site), inline domain
@@ -75,10 +77,10 @@ with CORS already configured for `http://localhost:3000` in
   two tabs: **History** (`components/RankHistoryChart.tsx`, a small inline
   SVG line chart from the `/keywords/history` endpoint) and **Competitors**
   (top organic results excluding your own domain, from the new
-  `/keywords/competitors` endpoint). Surfaces the backend's plan-limit and
+  `/keywords/competitors` endpoint). Surfaces the backend's account-limit and
   credit-exhaustion errors inline the same way the rest of the dashboard
   does.
-- `components/AlertsBell.tsx` — in the sidebar's plan widget: a badge with
+- `components/AlertsBell.tsx` — in the sidebar's credits widget: a badge with
   the unread count from `GET /alerts`, polled every 60s so a scheduled-audit
   alert (see `backend/README.md`) shows up without a manual refresh.
   Clicking an alert marks it read and navigates straight to the page it's

@@ -1,6 +1,8 @@
-from sqlmodel import Session, select
+from datetime import datetime, timedelta
 
-from app.models import Audit, Check, CheckStatus, PlanTier, User
+from sqlmodel import Session
+
+from app.models import Audit, Check, CheckStatus
 from tests.conftest import register_and_login
 
 
@@ -10,19 +12,9 @@ def _make_site_and_page(client, headers, domain="example.com"):
     return site["id"], page["id"]
 
 
-def _set_pro_plan(db, email):
-    # bypasses the free plan's 1x/day rescan throttle so this test can rescan
-    # immediately after seeding a same-day baseline audit
+def _insert_audit(db, page_id, checks, minutes_ago=0):
     with Session(db) as session:
-        user = session.exec(select(User).where(User.email == email)).first()
-        user.plan = PlanTier.pro
-        session.add(user)
-        session.commit()
-
-
-def _insert_audit(db, page_id, checks):
-    with Session(db) as session:
-        audit = Audit(page_id=page_id, score=50)
+        audit = Audit(page_id=page_id, score=50, created_at=datetime.utcnow() - timedelta(minutes=minutes_ago))
         session.add(audit)
         session.commit()
         session.refresh(audit)
@@ -86,9 +78,12 @@ def test_rescan_resolves_the_applied_fix_and_opportunity_disappears(client, db, 
     import app.services.audit_runner as audit_runner
 
     headers = register_and_login(client, "apply5@test.dev")
-    _set_pro_plan(db, "apply5@test.dev")
     site_id, page_id = _make_site_and_page(client, headers)
-    _insert_audit(db, page_id, [("meta_description", CheckStatus.fail, "Missing meta description.")])
+    # Older than RESCAN_THROTTLE, as a real baseline would be by the time
+    # someone has edited their page and come back to verify the fix.
+    _insert_audit(
+        db, page_id, [("meta_description", CheckStatus.fail, "Missing meta description.")], minutes_ago=10
+    )
 
     client.post(
         f"/pages/{page_id}/opportunities/apply",

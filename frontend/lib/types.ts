@@ -1,11 +1,9 @@
-export type PlanTier = "free" | "pro" | "agency";
 export type CheckStatus = "pass" | "warning" | "fail";
 export type VerificationMethod = "dns_txt" | "meta_tag" | "file_upload";
 
 export interface User {
   id: number;
   email: string;
-  plan: PlanTier;
   credits_balance: number;
   created_at: string;
   is_admin: boolean;
@@ -236,29 +234,22 @@ export interface PlanLimits {
   max_keywords_per_page: number | null;
 }
 
-export interface PricingPlan {
-  key: PlanTier;
-  name: string;
-  price_cents: number;
-  interval: string | null;
-  description: string | null;
-  limits: PlanLimits;
-  product_key: string | null;
-  purchasable: boolean;
-}
-
 export interface PricingCreditPack {
   key: string;
   name: string;
   price_cents: number;
   credits: number;
   description: string | null;
+  badge: string | null;
+  price_per_credit_cents: number | null;
   purchasable: boolean;
 }
 
+/** Signal sells credits and nothing else: no tiers, one set of limits. */
 export interface Pricing {
   billing_enabled: boolean;
-  plans: PricingPlan[];
+  signup_credits: number;
+  limits: PlanLimits;
   credit_packs: PricingCreditPack[];
 }
 
@@ -266,17 +257,17 @@ export interface BillingPayment {
   id: number;
   amount_cents: number;
   kind: string;
-  plan: string | null;
+  product_key: string | null;
   credits_granted: number;
   paid_at: string;
 }
 
 export interface BillingSummary {
-  plan: PlanTier;
   credits_balance: number;
+  credits_purchased: number;
   billing_enabled: boolean;
-  has_subscription: boolean;
   can_manage_billing: boolean;
+  packs: PricingCreditPack[];
   payments: BillingPayment[];
 }
 
@@ -285,8 +276,8 @@ export interface BillingSummary {
 export interface AdminUserRow {
   id: number;
   email: string;
-  plan: PlanTier;
   credits_balance: number;
+  credits_purchased: number;
   created_at: string;
   sites_count: number;
   total_paid_cents: number;
@@ -306,7 +297,7 @@ export interface AdminPaymentRow {
   amount_cents: number;
   tax_cents: number;
   kind: string;
-  plan: string | null;
+  product_key: string | null;
   credits_granted: number;
   provider: string;
   provider_ref: string | null;
@@ -337,8 +328,8 @@ export interface AdminAuditRow {
 export interface AdminUserDetail {
   id: number;
   email: string;
-  plan: PlanTier;
   credits_balance: number;
+  credits_purchased: number;
   created_at: string;
   is_admin: boolean;
   google_connected: boolean;
@@ -352,17 +343,26 @@ export interface AdminUserDetail {
   audit: AdminAuditRow[];
 }
 
+export interface AdminPackSales {
+  product_key: string;
+  name: string;
+  sales: number;
+  revenue_cents: number;
+  credits_granted: number;
+}
+
 export interface AdminStats {
   total_users: number;
   signups_7d: number;
   signups_30d: number;
-  users_by_plan: Record<string, number>;
   paying_users: number;
   revenue_all_cents: number;
   revenue_30d_cents: number;
-  estimated_mrr_cents: number;
+  credits_sold_all: number;
+  credits_sold_30d: number;
   credits_outstanding: number;
   credits_spent_30d: number;
+  top_packs: AdminPackSales[];
   recent_signups: AdminUserRow[];
   recent_actions: AdminAuditRow[];
 }
@@ -373,13 +373,13 @@ export interface AdminProduct {
   name: string;
   kind: "subscription" | "credit_pack";
   price_cents: number;
-  interval: string | null;
-  plan: string | null;
   credits: number;
   dodo_product_id: string | null;
   description: string | null;
+  badge: string | null;
   active: boolean;
   sort_order: number;
+  sales: number;
   updated_at: string;
 }
 

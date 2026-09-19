@@ -6,7 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { formatDate, formatDateTime, parseUsdToCents } from "@/lib/format";
 import type { AdminUserDetail } from "@/lib/types";
-import { describeAudit, Money, PlanTag } from "@/components/admin/AdminBits";
+import { describeAudit, Money } from "@/components/admin/AdminBits";
 
 export default function AdminUserPage() {
   const params = useParams<{ id: string }>();
@@ -50,7 +50,7 @@ export default function AdminUserPage() {
             / #{detail.id}
           </div>
           <div className="detail-title">
-            {detail.email} <PlanTag plan={detail.plan} />
+            {detail.email}
             {detail.is_admin && <span className="admin-tag">ADMIN</span>}
           </div>
           <div className="admin-hint" style={{ marginTop: 4 }}>
@@ -64,8 +64,9 @@ export default function AdminUserPage() {
 
       <div className="stat-row stat-row-4">
         <div className="stat-cell">
-          <div className="stat-label">Credits</div>
+          <div className="stat-label">Credits left</div>
           <div className="stat-value">{detail.credits_balance}</div>
+          <div className="admin-hint">{detail.credits_purchased} bought or granted in total</div>
         </div>
         <div className="stat-cell">
           <div className="stat-label">Total paid</div>
@@ -89,12 +90,6 @@ export default function AdminUserPage() {
         <CreditsForm onSubmit={(delta, note) => run(() => api.adminAdjustCredits(userId, delta, note), "Credits updated.")} />
         <PaymentForm
           onSubmit={(data) => run(() => api.adminRecordPayment(userId, data), "Payment recorded.")}
-        />
-      </div>
-      <div className="admin-section">
-        <PlanForm
-          current={detail.plan}
-          onSubmit={(plan, note) => run(() => api.adminChangePlan(userId, plan, note), "Plan updated.")}
         />
       </div>
 
@@ -123,7 +118,7 @@ export default function AdminUserPage() {
                     <td className="muted">{formatDateTime(p.paid_at)}</td>
                     <td>
                       {p.kind.replace("_", " ")}
-                      {p.plan ? ` · ${p.plan}` : ""}
+                      {p.product_key ? <span className="muted"> · {p.product_key}</span> : null}
                     </td>
                     <td className="num">
                       <Money cents={p.amount_cents} />
@@ -293,11 +288,10 @@ function CreditsForm({ onSubmit }: { onSubmit: (delta: number, note: string) => 
 function PaymentForm({
   onSubmit,
 }: {
-  onSubmit: (data: { amount_cents: number; credits: number; plan: string | null; note: string }) => Promise<boolean>;
+  onSubmit: (data: { amount_cents: number; credits: number; note: string }) => Promise<boolean>;
 }) {
   const [amount, setAmount] = useState("");
   const [credits, setCredits] = useState("");
-  const [plan, setPlan] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const cents = parseUsdToCents(amount || "0");
@@ -308,11 +302,10 @@ function PaymentForm({
     e.preventDefault();
     if (!valid || cents === null) return;
     setBusy(true);
-    const ok = await onSubmit({ amount_cents: cents, credits: creditsN, plan: plan || null, note: note.trim() });
+    const ok = await onSubmit({ amount_cents: cents, credits: creditsN, note: note.trim() });
     if (ok) {
       setAmount("");
       setCredits("");
-      setPlan("");
       setNote("");
     }
     setBusy(false);
@@ -326,20 +319,11 @@ function PaymentForm({
       <div className="admin-form-row">
         <label>
           Amount (USD)
-          <input className="admin-input" placeholder="24.00" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 100 }} />
+          <input className="admin-input" placeholder="5.00" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 100 }} />
         </label>
         <label>
           Credits to grant
           <input className="admin-input" type="number" min={0} placeholder="0" value={credits} onChange={(e) => setCredits(e.target.value)} style={{ width: 100 }} />
-        </label>
-        <label>
-          Also set plan
-          <select className="admin-select" value={plan} onChange={(e) => setPlan(e.target.value)}>
-            <option value="">No change</option>
-            <option value="pro">Pro</option>
-            <option value="agency">Agency</option>
-            <option value="free">Free</option>
-          </select>
         </label>
         <label className="grow">
           Note (e.g. UPI ref)
@@ -347,47 +331,6 @@ function PaymentForm({
         </label>
         <button className="btn" disabled={!valid || busy}>
           Record
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function PlanForm({ current, onSubmit }: { current: string; onSubmit: (plan: string, note: string) => Promise<boolean> }) {
-  const [plan, setPlan] = useState(current);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => setPlan(current), [current]);
-  const valid = plan !== current && note.trim().length >= 3;
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    setBusy(true);
-    if (await onSubmit(plan, note.trim())) setNote("");
-    setBusy(false);
-  }
-
-  return (
-    <form className="panel" onSubmit={submit}>
-      <div className="section-title" style={{ marginBottom: 12 }}>
-        Change plan (no payment)
-      </div>
-      <div className="admin-form-row">
-        <label>
-          Plan
-          <select className="admin-select" value={plan} onChange={(e) => setPlan(e.target.value)}>
-            <option value="free">Free</option>
-            <option value="pro">Pro</option>
-            <option value="agency">Agency</option>
-          </select>
-        </label>
-        <label className="grow">
-          Reason (recorded)
-          <input className="admin-input" placeholder="e.g. comped for launch feedback" value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-        <button className="btn" disabled={!valid || busy}>
-          Change plan
         </button>
       </div>
     </form>

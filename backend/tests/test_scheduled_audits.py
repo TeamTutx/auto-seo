@@ -1,7 +1,7 @@
 from sqlmodel import Session, select
 
 import app.services.scheduled_audits as scheduled_audits
-from app.models import Alert, Audit, Check, CheckStatus, PlanTier, User
+from app.models import Alert, Audit, Check, CheckStatus
 from app.services.scheduled_audits import run_scheduled_audits
 from tests.conftest import register_and_login
 
@@ -37,17 +37,8 @@ def _new_audit_factory(score, failed_check_types):
     return _fake
 
 
-def _set_plan(db, email, plan):
-    with Session(db) as session:
-        user = session.exec(select(User).where(User.email == email)).first()
-        user.plan = plan
-        session.add(user)
-        session.commit()
-
-
-def _setup_page(client, db, email, plan=PlanTier.pro):
+def _setup_page(client, db, email):
     headers = register_and_login(client, email)
-    _set_plan(db, email, plan)
     site = client.post("/sites", json={"domain": "example.com"}, headers=headers).json()
     page = client.post(f"/sites/{site['id']}/pages", json={"url": "https://example.com/"}, headers=headers).json()
     return headers, page["id"]
@@ -102,18 +93,21 @@ def test_newly_failing_check_creates_an_alert(client, db, monkeypatch):
     assert "meta_description" not in alerts[0].message  # already failing before, not new
 
 
-def test_free_plan_pages_are_skipped(client, db, monkeypatch):
-    headers, page_id = _setup_page(client, db, "sched4@test.dev", plan=PlanTier.free)
-    _insert_audit(db, page_id, score=80, failed_check_types=[])
+def test_every_account_is_re_audited(client, db, monkeypatch):
+    """Scheduled re-audits used to be a Pro/Agency perk. Signal is credit-based
+    now, so there is no tier to be excluded from - every tracked page is
+    re-audited (audits cost no credits, only Signal's own bandwidth)."""
+    _, page_id_1 = _setup_page(client, db, "sched4a@test.dev")
+    _, page_id_2 = _setup_page(client, db, "sched4b@test.dev")
+    _insert_audit(db, page_id_1, score=80, failed_check_types=[])
+    _insert_audit(db, page_id_2, score=80, failed_check_types=[])
 
-    calls = []
-    monkeypatch.setattr(scheduled_audits, "audit_page", lambda session, pid: calls.append(pid))
+    monkeypatch.setattr(scheduled_audits, "audit_page", _new_audit_factory(score=60, failed_check_types=[]))
 
     with Session(db) as session:
         count = run_scheduled_audits(session)
 
-    assert count == 0
-    assert calls == []  # audit_page never called for a free-plan page
+    assert count == 2  # a 20-point drop on each page
 
 
 def test_a_failing_page_fetch_does_not_abort_the_whole_run(client, db, monkeypatch):

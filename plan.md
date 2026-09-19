@@ -188,15 +188,17 @@ dashboard" link instead, everywhere a CTA appears.
 
 **Convention going forward:** the landing page is expected to track the
 product, not drift from it - see the "Landing page parity" section in
-`CLAUDE.md` for exactly what to update and when. Plan limits shown there
-mirror `PLAN_LIMITS` in `backend/app/models.py`; Pro/Agency show "Contact us
-to upgrade" (inert, not a link) rather than a real checkout, since Stripe
-billing isn't built yet - see below.
+`CLAUDE.md` for exactly what to update and when. The limits shown there come
+from `ACCOUNT_LIMITS` in `backend/app/models.py` and the packs from
+`GET /pricing`. (Historical note: this section originally described three plan
+tiers with an inert "Contact us to upgrade" button; Phase I below replaced that
+with credit packs and a real checkout.)
 
 ## Phase H — Admin panel (users, payments, credits)
 
-**Status: built and tested locally (2026-09-19); not yet deployed, and not yet run
-against a real Dodo account** (verification in progress on Dodo's side).
+**Status: built, tested and deployed (2026-09-19, commit `8f8d82f`); not yet run against a
+real Dodo account.** Phase I below then replaced the subscription tiers with credit packs,
+so some of the specifics here (plans, MRR, the plan-change endpoint) no longer exist.
 
 **What was built** (all three phases plus the prerequisites):
 - *Phase 0 - approval prerequisites:* `/terms`, `/privacy`, `/refunds` (drafts - the owner
@@ -220,12 +222,7 @@ against a real Dodo account** (verification in progress on Dodo's side).
   driven in a real browser against a mock Dodo (purchase, subscription, portal, expiry,
   refund).
 
-**To go live** (in order): (1) deploy - migration `0008` runs automatically on Render's
-start command; set `ADMIN_EMAILS` on Render first. (2) Once Dodo approves the account: create
-the products (test mode), add the webhook endpoint, set `DODO_API_KEY`, `DODO_WEBHOOK_KEY`,
-`DODO_ENVIRONMENT`, paste the `pdt_...` ids into `/admin/pricing`, "Check against Dodo".
-(3) Make one test-mode purchase and confirm the plan/credits arrive. (4) Switch to
-`live_mode` keys.
+**To go live** — superseded by Phase I's checklist below.
 
 Goal: the owner can see who the users are, how much each has paid, and add
 credits to any of them, without SQL against the production database.
@@ -357,16 +354,82 @@ on a bad signature, no `hashed_password` in any admin response, and a
 real-Postgres migration run (throwaway `postgres:16`) since SQLite won't catch
 enum/type mismatches.
 
+## Phase I — Credit-only pricing + Google sign-in
+
+**Status: built and tested (2026-09-19).** Two changes the owner asked for, plus a
+database runbook.
+
+**Pricing is now credits only.** The Pro ($24/mo) and Agency ($89/mo) subscriptions are
+gone; there is one tier, the same limits for everyone, and the only thing for sale is a
+one-time pack of credits. Why: everything that costs Signal real money (SerpApi rank
+lookups, OpenAI calls) was already metered in credits, so tier gating was charging for
+storage rather than for cost, and "free to use, pay for what you use" is a simpler promise
+to keep. Nobody was subscribed, so nothing was lost.
+
+- Migration `0009`: deletes the subscription products, adds `product.badge` and
+  `payment.product_key`, and seeds a starter ladder (10 credits $2, 50 $5, 200 $15). It
+  reprices the old `credits_50` row from $9 only if it is still exactly the value `0008`
+  seeded — a price the owner has actually edited is left alone.
+- `PLAN_LIMITS` → `ACCOUNT_LIMITS` (5 sites, 50 pages/site, 25 keywords/page, for
+  everyone). The rescan throttle was "1/day for free, unlimited for paid"; with no tiers
+  it is 5 minutes for everyone, short enough for the apply-a-fix-then-verify loop.
+- `/admin/pricing` does full CRUD: create any number of packs, reprice, rename, badge,
+  reorder (`POST /admin/products/reorder`, all ids at once so it can't half-apply),
+  deactivate, delete. A pack that has **sold** can't be deleted, only deactivated — Dodo
+  retries a webhook for ~10 hours and a delivery arriving after the row vanished would
+  record the money and grant no credits.
+- `payment.product_key` gives the overview a revenue-per-pack table, so the owner can see
+  which price point actually sells.
+- The `PlanTier` enum and `user.plan` column **stay** (they're unused, but dropping a value
+  from a Postgres enum is exactly what broke production once; `payment.plan` still explains
+  historical money). `/admin/users/{id}/plan` and `set_user_plan()` are gone. Subscription
+  webhooks are logged to the audit trail and acknowledged rather than acted on — Signal
+  sells nothing recurring, so one could only come from something set up in Dodo directly.
+
+**Sign in with Google** is now the advertised way in (`/auth/google/start` →
+`/auth/google/callback`). Email + password is kept as a deliberate fallback at
+`/login?password=1`, so a misconfigured OAuth client can't lock the owner out of
+production.
+
+- Login asks for `openid email profile` **only**. Search Console/Analytics is a separate,
+  later consent from Settings with its own redirect URI — signing up shouldn't look like
+  handing over your whole Google account, and those three scopes are non-sensitive, so the
+  consent screen needs no Google review to work for the public.
+- CSRF: a nonce lives in both the signed `state` and an httpOnly cookie on the API's own
+  origin; they must match, or a forged callback URL could sign a victim into the attacker's
+  account.
+- The Signal token comes back in the URL **fragment**, never the query string, so it stays
+  out of access logs, proxies and the `Referer` header.
+- Accounts match on *verified* email, so Google sign-in lands in an existing password
+  account instead of silently creating a second one. An unverified Google email is refused.
+- Google-created accounts store an empty password hash; `verify_password` returns False for
+  an empty hash rather than raising, so no password can ever match one.
+
+**`docs/DATABASE.md`** is the new runbook for creating, moving or rebuilding the database
+from scratch, and for verifying the result (`alembic check` now passes clean — migration
+`0010` fixed a pre-existing index/constraint drift on `googleconnection.user_id` that had
+always made that check report a false difference).
+
+**Verification:** 266 backend tests on real Postgres 16 (264 on SQLite; 2 are Postgres-only
+concurrency tests), `alembic upgrade head` proven from empty *and* from a production-like
+0008 database with users and a payment in it, both directions, plus the edited-price guard.
+
+**Still the owner's to do, once Dodo approves the account:** create one **one-time** USD
+product per pack in Dodo (test mode), add the webhook endpoint `/webhooks/dodo` with the
+payment and refund events, set `DODO_API_KEY` / `DODO_WEBHOOK_KEY` / `DODO_ENVIRONMENT`,
+paste the `pdt_…` ids into `/admin/pricing` and press "Check against Dodo", then make one
+test-mode purchase before switching to `live_mode`. **And in Google Cloud Console:** add
+`https://api.signal-seo.in/auth/google/callback` as a redirect URI on the OAuth client and
+**publish the consent screen** — while it is in Testing, only listed test users can sign
+in at all.
+
 ## Not yet scheduled
 
 - **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
-- **Billing (Dodo Payments)** — deliberately deferred per earlier decision
-  (amounts in USD; provider chosen 2026-09-19). It is Phase 3 of the admin
-  panel (Phase H above): the payments ledger comes first, then a Dodo webhook
-  feeds it. The landing page's Pro/Agency plan
-  cards are ready for a real checkout link once this exists.
 - **Scheduled audits + alerts on Render** (also: the landing page no longer advertises them
-  - re-add "daily scheduled audits" to the Pro card and the strip once this is provisioned) — the feature itself is built and
+  - re-add "daily scheduled audits" to the "also included" strip once this is provisioned;
+  `run_scheduled_audits` now covers every account, since there are no tiers to gate it on) —
+  the feature itself is built and
   works anywhere Celery+Redis run (see "Scheduled audits + alerts" in
   `backend/README.md`), but isn't provisioned on the production Render
   deployment (`render.yaml`, 2026-09-18 decision) — Render has no free tier

@@ -23,7 +23,6 @@ from app.models import (
     Page,
     Payment,
     PaymentKind,
-    PlanTier,
     Product,
     Site,
     User,
@@ -31,6 +30,7 @@ from app.models import (
 from app.schemas import (
     AdminAuditRow,
     AdminLedgerRow,
+    AdminPackSales,
     AdminPaymentRow,
     AdminSiteRow,
     AdminStats,
@@ -39,14 +39,14 @@ from app.schemas import (
     AdminUserRow,
     CreditAdjustRequest,
     ManualPaymentRequest,
-    PlanChangeRequest,
     ProductCreate,
     ProductRead,
+    ProductReorderRequest,
     ProductUpdate,
     ProductVerifyResult,
 )
 from app.services import dodo
-from app.services.billing import log_admin_action, record_payment, set_user_plan
+from app.services.billing import log_admin_action, record_payment
 from app.services.credits import InsufficientCredits, apply_credit_delta
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -57,6 +57,12 @@ _total_paid = (
     select(func.coalesce(func.sum(Payment.amount_cents), 0)).where(Payment.user_id == User.id).correlate(User).scalar_subquery()
 )
 _sites_count = select(func.count(Site.id)).where(Site.user_id == User.id).correlate(User).scalar_subquery()
+_credits_bought = (
+    select(func.coalesce(func.sum(Payment.credits_granted), 0))
+    .where(Payment.user_id == User.id)
+    .correlate(User)
+    .scalar_subquery()
+)
 _last_scan = (
     select(func.max(Audit.created_at))
     .select_from(Audit)
@@ -71,18 +77,21 @@ _SORTS = {
     "created_at": User.created_at,
     "email": User.email,
     "credits": User.credits_balance,
+    "credits_purchased": _credits_bought,
     "total_paid": _total_paid,
     "sites": _sites_count,
     "last_scan": _last_scan,
 }
 
 
-def _row(user: User, total_paid: int, sites_count: int, last_scan: Optional[datetime]) -> AdminUserRow:
+def _row(
+    user: User, total_paid: int, sites_count: int, last_scan: Optional[datetime], credits_bought: int = 0
+) -> AdminUserRow:
     return AdminUserRow(
         id=user.id,
         email=user.email,
-        plan=user.plan,
         credits_balance=user.credits_balance,
+        credits_purchased=int(credits_bought or 0),
         created_at=user.created_at,
         sites_count=sites_count or 0,
         total_paid_cents=int(total_paid or 0),
@@ -121,7 +130,9 @@ def _audit_rows(session: Session, logs: List[AdminAuditLog]) -> List[AdminAuditR
 
 
 def _detail(session: Session, user: User) -> AdminUserDetail:
-    total_paid, last_scan = session.exec(select(_total_paid, _last_scan).where(User.id == user.id)).one()
+    total_paid, last_scan, credits_bought = session.exec(
+        select(_total_paid, _last_scan, _credits_bought).where(User.id == user.id)
+    ).one()
 
     site_rows = []
     for site in session.exec(select(Site).where(Site.user_id == user.id).order_by(Site.id)).all():
@@ -142,8 +153,8 @@ def _detail(session: Session, user: User) -> AdminUserDetail:
     return AdminUserDetail(
         id=user.id,
         email=user.email,
-        plan=user.plan,
         credits_balance=user.credits_balance,
+        credits_purchased=int(credits_bought or 0),
         created_at=user.created_at,
         is_admin=is_admin_user(user),
         google_connected=session.exec(select(GoogleConnection).where(GoogleConnection.user_id == user.id)).first() is not None,
@@ -154,7 +165,8 @@ def _detail(session: Session, user: User) -> AdminUserDetail:
         sites=site_rows,
         payments=[
             AdminPaymentRow(
-                id=p.id, amount_cents=p.amount_cents, tax_cents=p.tax_cents, kind=p.kind, plan=p.plan,
+                id=p.id, amount_cents=p.amount_cents, tax_cents=p.tax_cents, kind=p.kind,
+                product_key=p.product_key,
                 credits_granted=p.credits_granted, provider=p.provider, provider_ref=p.provider_ref,
                 note=p.note, paid_at=p.paid_at,
             )
@@ -178,11 +190,6 @@ def stats(session: Session = Depends(get_session)):
     now = datetime.utcnow()
     d7, d30 = now - timedelta(days=7), now - timedelta(days=30)
 
-    total_users = session.exec(select(func.count(User.id))).one()
-    by_plan = {p.value: 0 for p in PlanTier}
-    for plan, count in session.exec(select(User.plan, func.count(User.id)).group_by(User.plan)).all():
-        by_plan[plan.value if isinstance(plan, PlanTier) else str(plan)] = count
-
     paying_users = len(
         session.exec(select(Payment.user_id).group_by(Payment.user_id).having(func.sum(Payment.amount_cents) > 0)).all()
     )
@@ -190,11 +197,10 @@ def stats(session: Session = Depends(get_session)):
     revenue_30d = session.exec(
         select(func.coalesce(func.sum(Payment.amount_cents), 0)).where(Payment.paid_at >= d30)
     ).one()
-
-    # Estimate: users currently on each paid plan x that plan's catalog price.
-    mrr = 0
-    for product in session.exec(select(Product).where(Product.kind == "subscription", Product.active == True)).all():  # noqa: E712
-        mrr += by_plan.get(product.plan or "", 0) * product.price_cents
+    credits_sold_all = session.exec(select(func.coalesce(func.sum(Payment.credits_granted), 0))).one()
+    credits_sold_30d = session.exec(
+        select(func.coalesce(func.sum(Payment.credits_granted), 0)).where(Payment.paid_at >= d30)
+    ).one()
 
     spent = session.exec(
         select(func.coalesce(func.sum(CreditTransaction.delta), 0)).where(
@@ -202,22 +208,50 @@ def stats(session: Session = Depends(get_session)):
         )
     ).one()
 
+    # Which price point actually sells. Payments carry the pack key they bought,
+    # so this survives a pack being renamed or retired.
+    names = {p.key: p.name for p in session.exec(select(Product)).all()}
+    pack_rows = session.exec(
+        select(
+            Payment.product_key,
+            func.count(Payment.id),
+            func.coalesce(func.sum(Payment.amount_cents), 0),
+            func.coalesce(func.sum(Payment.credits_granted), 0),
+        )
+        .where(Payment.product_key.is_not(None))
+        .group_by(Payment.product_key)
+    ).all()
+    top_packs = sorted(
+        (
+            AdminPackSales(
+                product_key=key, name=names.get(key, key), sales=int(count),
+                revenue_cents=int(revenue), credits_granted=int(credits),
+            )
+            for key, count, revenue, credits in pack_rows
+        ),
+        key=lambda r: r.revenue_cents,
+        reverse=True,
+    )
+
     recent = session.exec(
-        select(User, _total_paid, _sites_count, _last_scan).order_by(User.created_at.desc(), User.id.desc()).limit(5)
+        select(User, _total_paid, _sites_count, _last_scan, _credits_bought)
+        .order_by(User.created_at.desc(), User.id.desc())
+        .limit(5)
     ).all()
     logs = session.exec(select(AdminAuditLog).order_by(AdminAuditLog.id.desc()).limit(10)).all()
 
     return AdminStats(
-        total_users=total_users,
+        total_users=session.exec(select(func.count(User.id))).one(),
         signups_7d=session.exec(select(func.count(User.id)).where(User.created_at >= d7)).one(),
         signups_30d=session.exec(select(func.count(User.id)).where(User.created_at >= d30)).one(),
-        users_by_plan=by_plan,
         paying_users=paying_users,
         revenue_all_cents=int(revenue_all),
         revenue_30d_cents=int(revenue_30d),
-        estimated_mrr_cents=int(mrr),
+        credits_sold_all=int(credits_sold_all),
+        credits_sold_30d=int(credits_sold_30d),
         credits_outstanding=int(session.exec(select(func.coalesce(func.sum(User.credits_balance), 0))).one()),
         credits_spent_30d=-int(spent),
+        top_packs=top_packs,
         recent_signups=[_row(*r) for r in recent],
         recent_actions=_audit_rows(session, logs),
     )
@@ -228,7 +262,6 @@ def stats(session: Session = Depends(get_session)):
 @router.get("/users", response_model=AdminUserList)
 def list_users(
     q: Optional[str] = Query(default=None, max_length=100),
-    plan: Optional[PlanTier] = None,
     paid: Optional[bool] = Query(default=None, description="true = has paid anything; false = never paid"),
     sort: str = Query(default="created_at"),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
@@ -242,8 +275,6 @@ def list_users(
     conditions = []
     if q and q.strip():
         conditions.append(User.email.ilike(f"%{q.strip()}%"))
-    if plan is not None:
-        conditions.append(User.plan == plan)
     if paid is True:
         conditions.append(_total_paid > 0)
     elif paid is False:
@@ -254,7 +285,7 @@ def list_users(
     column = _SORTS[sort]
     ordering = column.asc() if order == "asc" else column.desc()
     rows = session.exec(
-        select(User, _total_paid, _sites_count, _last_scan)
+        select(User, _total_paid, _sites_count, _last_scan, _credits_bought)
         .where(*conditions)
         .order_by(ordering, User.id.desc())
         .offset((page - 1) * page_size)
@@ -292,24 +323,6 @@ def adjust_credits(
     return _detail(session, user)
 
 
-@router.post("/users/{user_id}/plan", response_model=AdminUserDetail)
-def change_plan(
-    user_id: int,
-    payload: PlanChangeRequest,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_session),
-):
-    user = _get_user_or_404(session, user_id)
-    before = user.plan.value
-    set_user_plan(session, user, payload.plan)
-    log_admin_action(
-        session, admin.id, "plan_changed", user.id, {"from": before, "to": payload.plan.value, "note": payload.note}
-    )
-    session.commit()
-    session.refresh(user)
-    return _detail(session, user)
-
-
 @router.post("/users/{user_id}/payments", response_model=AdminUserDetail, status_code=status.HTTP_201_CREATED)
 def record_manual_payment(
     user_id: int,
@@ -317,8 +330,8 @@ def record_manual_payment(
     admin: User = Depends(require_admin),
     session: Session = Depends(get_session),
 ):
-    """A payment received outside Dodo (UPI, bank transfer, invoice). Can grant
-    credits and/or switch the plan in the same step."""
+    """A payment received outside Dodo (UPI, bank transfer, invoice), granting
+    credits in the same step."""
     user = _get_user_or_404(session, user_id)
     payment, _ = record_payment(
         session,
@@ -326,18 +339,15 @@ def record_manual_payment(
         amount_cents=payload.amount_cents,
         kind=PaymentKind.manual,
         provider="manual",
-        plan=payload.plan.value if payload.plan else None,
         credits=payload.credits,
         note=payload.note,
         paid_at=payload.paid_at,
         actor_id=admin.id,
     )
-    if payload.plan is not None:
-        set_user_plan(session, user, payload.plan)
     log_admin_action(
         session, admin.id, "payment_recorded", user.id,
         {"payment_id": payment.id, "amount_cents": payload.amount_cents, "credits": payload.credits,
-         "plan": payload.plan.value if payload.plan else None, "note": payload.note},
+         "note": payload.note},
     )
     session.commit()
     session.refresh(user)
@@ -345,12 +355,25 @@ def record_manual_payment(
 
 
 # --- pricing catalog ---
+#
+# Signal sells credit packs and nothing else. The owner can have as many as they
+# want: create, reprice, reorder, hide, delete. GET /pricing renders whatever is
+# active here, so an edit changes the public page without a deploy.
 
-def _product_read(p: Product) -> ProductRead:
+def _sales_by_key(session: Session) -> Dict[str, int]:
+    rows = session.exec(
+        select(Payment.product_key, func.count(Payment.id))
+        .where(Payment.product_key.is_not(None))
+        .group_by(Payment.product_key)
+    ).all()
+    return {key: int(count) for key, count in rows}
+
+
+def _product_read(p: Product, sales: int = 0) -> ProductRead:
     return ProductRead(
-        id=p.id, key=p.key, name=p.name, kind=p.kind, price_cents=p.price_cents, interval=p.interval,
-        plan=p.plan, credits=p.credits, dodo_product_id=p.dodo_product_id, description=p.description,
-        active=p.active, sort_order=p.sort_order, updated_at=p.updated_at,
+        id=p.id, key=p.key, name=p.name, kind=p.kind, price_cents=p.price_cents,
+        credits=p.credits, dodo_product_id=p.dodo_product_id, description=p.description,
+        badge=p.badge, active=p.active, sort_order=p.sort_order, sales=sales, updated_at=p.updated_at,
     )
 
 
@@ -367,38 +390,11 @@ def _ensure_dodo_id_free(session: Session, dodo_product_id: Optional[str], own_i
 
 @router.get("/products", response_model=List[ProductRead])
 def list_products(session: Session = Depends(get_session)):
-    return [_product_read(p) for p in session.exec(select(Product).order_by(Product.sort_order, Product.id)).all()]
-
-
-@router.put("/products/{product_id}", response_model=ProductRead)
-def update_product(
-    product_id: int,
-    payload: ProductUpdate,
-    admin: User = Depends(require_admin),
-    session: Session = Depends(get_session),
-):
-    product = session.get(Product, product_id)
-    if product is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-
-    changes = payload.model_dump(exclude_unset=True)
-    if "credits" in changes and product.kind != "credit_pack":
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only credit packs have credits.")
-    if "dodo_product_id" in changes:
-        changes["dodo_product_id"] = (changes["dodo_product_id"] or "").strip() or None
-        _ensure_dodo_id_free(session, changes["dodo_product_id"], product.id)
-    if "name" in changes:
-        changes["name"] = changes["name"].strip()
-
-    before = {k: getattr(product, k) for k in changes}
-    for key, value in changes.items():
-        setattr(product, key, value)
-    product.updated_at = datetime.utcnow()
-    session.add(product)
-    log_admin_action(session, admin.id, "product_updated", None, {"product": product.key, "before": before, "after": changes})
-    session.commit()
-    session.refresh(product)
-    return _product_read(product)
+    sales = _sales_by_key(session)
+    return [
+        _product_read(p, sales.get(p.key, 0))
+        for p in session.exec(select(Product).order_by(Product.sort_order, Product.id)).all()
+    ]
 
 
 @router.post("/products", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -414,13 +410,104 @@ def create_credit_pack(
     next_order = (session.exec(select(func.coalesce(func.max(Product.sort_order), 0))).one()) + 10
     product = Product(
         key=payload.key, name=payload.name.strip(), kind="credit_pack", price_cents=payload.price_cents,
-        credits=payload.credits, dodo_product_id=dodo_id, description=payload.description, sort_order=next_order,
+        credits=payload.credits, dodo_product_id=dodo_id, description=payload.description,
+        badge=(payload.badge or "").strip() or None, sort_order=next_order,
     )
     session.add(product)
-    log_admin_action(session, admin.id, "product_created", None, {"product": payload.key})
+    log_admin_action(
+        session, admin.id, "product_created", None,
+        {"product": payload.key, "price_cents": payload.price_cents, "credits": payload.credits},
+    )
     session.commit()
     session.refresh(product)
     return _product_read(product)
+
+
+@router.put("/products/{product_id}", response_model=ProductRead)
+def update_product(
+    product_id: int,
+    payload: ProductUpdate,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    product = session.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    changes = payload.model_dump(exclude_unset=True)
+    if "dodo_product_id" in changes:
+        changes["dodo_product_id"] = (changes["dodo_product_id"] or "").strip() or None
+        _ensure_dodo_id_free(session, changes["dodo_product_id"], product.id)
+    if "name" in changes:
+        changes["name"] = changes["name"].strip()
+    if "badge" in changes:
+        changes["badge"] = (changes["badge"] or "").strip() or None
+
+    before = {k: getattr(product, k) for k in changes}
+    for key, value in changes.items():
+        setattr(product, key, value)
+    product.updated_at = datetime.utcnow()
+    session.add(product)
+    log_admin_action(session, admin.id, "product_updated", None, {"product": product.key, "before": before, "after": changes})
+    session.commit()
+    session.refresh(product)
+    return _product_read(product, _sales_by_key(session).get(product.key, 0))
+
+
+@router.delete("/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product(
+    product_id: int,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """Permanently remove a pack nobody has bought. Once there are sales the row
+    has to stay: Dodo retries a webhook for up to ~10 hours, and a delivery that
+    arrives after the pack is gone would record the money but grant no credits.
+    Deactivate those instead - it takes them off the pricing page just the same."""
+    product = session.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    sales = _sales_by_key(session).get(product.key, 0)
+    if sales:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'"{product.name}" has {sales} sale(s), so it can\'t be deleted. Turn it off instead.',
+        )
+    session.delete(product)
+    log_admin_action(session, admin.id, "product_deleted", None, {"product": product.key, "name": product.name})
+    session.commit()
+
+
+@router.post("/products/reorder", response_model=List[ProductRead])
+def reorder_products(
+    payload: ProductReorderRequest,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """Set the order packs appear in on the pricing page. Takes every id at once
+    so the result can't end up half-applied."""
+    products = {p.id: p for p in session.exec(select(Product)).all()}
+    missing = [i for i in payload.ids if i not in products]
+    if missing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown product id(s): {missing}")
+    if len(set(payload.ids)) != len(payload.ids):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Duplicate product ids")
+    if set(payload.ids) != set(products):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Send every product id - a partial order would leave the rest ambiguous.",
+        )
+
+    for position, product_id in enumerate(payload.ids, start=1):
+        products[product_id].sort_order = position * 10
+        session.add(products[product_id])
+    log_admin_action(session, admin.id, "products_reordered", None, {"ids": payload.ids})
+    session.commit()
+    sales = _sales_by_key(session)
+    return [
+        _product_read(p, sales.get(p.key, 0))
+        for p in session.exec(select(Product).order_by(Product.sort_order, Product.id)).all()
+    ]
 
 
 @router.post("/products/{product_id}/verify", response_model=ProductVerifyResult)

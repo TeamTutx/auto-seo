@@ -11,6 +11,13 @@ export function formatUsd(cents: number, { signed = false }: { signed?: boolean 
   return `${signed && cents > 0 ? "+" : ""}$${body}`;
 }
 
+// A per-credit rate is a few cents, where formatUsd's "$0.08" rounds away the
+// difference between packs - so show it in cents until it reaches a dollar.
+export function formatRate(cents: number): string {
+  if (cents >= 100) return formatUsd(cents);
+  return `${Math.round(cents * 10) / 10}\u00A2`;
+}
+
 // "24" or "24.50" typed by a human -> integer cents, or null if not a valid amount.
 export function parseUsdToCents(input: string): number | null {
   const cleaned = input.trim().replace(/^\$/, "");

@@ -3,7 +3,7 @@ import { SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Refund & Cancellation Policy — Signal",
-  description: "How to cancel a Signal subscription and when we refund plans and credit packs.",
+  description: "When Signal refunds a credit pack, and how to ask for one.",
   alternates: { canonical: "/refunds" },
 };
 
@@ -14,30 +14,27 @@ export default function RefundsPage() {
       <p className="updated">Last updated: 19 September 2026</p>
 
       <p>
-        We want you to be happy with Signal. This page explains how to cancel and when we’ll give your money back. Payments are
-        processed by Dodo Payments, our merchant of record, and refunds are issued through them.
+        We want you to be happy with Signal. This page explains when we’ll give your money back. Payments are processed by Dodo
+        Payments, our merchant of record, and refunds are issued through them.
       </p>
 
-      <h2>Cancelling a subscription</h2>
-      <ul>
-        <li>Cancel any time in Signal under Billing → Manage billing (this opens your Dodo customer portal).</li>
-        <li>You keep your paid plan until the end of the period you’ve already paid for, then your account returns to the Free plan.</li>
-        <li>Cancelling stops future renewals. It doesn’t automatically refund the current period.</li>
-      </ul>
+      <h2>There is nothing to cancel</h2>
+      <p>
+        Signal has no subscription. Using the app is free, and you buy credits one pack at a time when you want them. Nothing
+        renews, nothing is charged automatically, and credits you’ve bought don’t expire. If you simply stop buying credits,
+        you’re not billed again.
+      </p>
 
       <h2>Refunds</h2>
       <ul>
         <li>
-          <b>New subscriptions:</b> if you’re not satisfied, email us within <b>7 days</b> of your first payment for a plan and
-          we’ll refund it in full.
+          <b>Unused credit packs:</b> refundable in full within <b>7 days</b> of purchase, as long as none of that pack’s credits
+          have been used.
         </li>
         <li>
-          <b>Renewals:</b> if you were charged for a renewal you didn’t intend, email us within <b>3 days</b> of the charge and
-          we’ll refund it, provided you cancel the subscription.
-        </li>
-        <li>
-          <b>Credit packs:</b> refundable within <b>7 days</b> of purchase if none of that pack’s credits have been used. Credits
-          that have already been used (each triggers a paid third-party search or AI call) can’t be refunded.
+          <b>Partly used packs:</b> email us within <b>7 days</b> and we’ll refund the unused portion at the price you paid per
+          credit, at our discretion. Credits you’ve already spent can’t be refunded — each one triggers a paid third-party search
+          or AI call that we’ve been charged for.
         </li>
         <li>
           <b>Free credits</b> have no cash value.
@@ -52,8 +49,8 @@ export default function RefundsPage() {
       <p>
         Email <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> from the address on your Signal account, saying which charge
         you’d like refunded. We aim to reply within 2 business days. Approved refunds go back to your original payment method;
-        depending on your bank they typically appear within 5–10 business days. When a refund is issued, any credits or plan that
-        purchase gave you are removed.
+        depending on your bank they typically appear within 5–10 business days. When a pack is refunded in full, the credits it
+        gave you are removed from your balance.
       </p>
 
       <h2>Disputes</h2>

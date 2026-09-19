@@ -3,11 +3,10 @@
 Event and field names come from Dodo's official SDK types (dodopayments 1.117):
 - payment.succeeded  -> data is a Payment (payment_id, total_amount incl. tax,
   tax, currency, settlement_*, customer, metadata, subscription_id, product_cart).
-  product_cart is only filled for one-time purchases, NOT subscription payments.
-- subscription.* -> data is a Subscription (subscription_id, product_id,
-  status, customer, metadata). Every subscription event carries the current
-  `status`, so they're all handled by one function keyed on status.
+  product_cart is only filled for one-time purchases.
 - refund.succeeded -> data is a Refund (refund_id, payment_id, amount, is_partial).
+- subscription.* -> Signal sells one-off credit packs, so these should never
+  arrive. They're logged rather than acted on (see _on_subscription).
 
 Design rules:
 - Idempotent. Dodo retries up to 8 times over ~10 hours, so every handler must
@@ -23,7 +22,7 @@ from typing import Optional, Tuple
 
 from sqlmodel import Session, func, select
 
-from app.models import Payment, PaymentKind, PlanTier, Product, User
+from app.models import PaymentKind, Product, User
 from app.services.billing import (
     find_payment,
     get_product_by_dodo_id,
@@ -31,28 +30,9 @@ from app.services.billing import (
     log_admin_action,
     record_payment,
     record_refund,
-    set_user_plan,
 )
 
 logger = logging.getLogger("signal.billing")
-
-SUBSCRIPTION_EVENTS = {
-    "subscription.active",
-    "subscription.renewed",
-    "subscription.plan_changed",
-    "subscription.updated",
-    "subscription.on_hold",
-    "subscription.paused",
-    "subscription.unpaused",
-    "subscription.cancelled",
-    "subscription.failed",
-    "subscription.expired",
-    "subscription.past_due",
-}
-# past_due is Dodo retrying a failed renewal - keep the plan through the grace
-# period. "pending" (checkout not yet paid) grants nothing.
-KEEPS_PLAN = {"active", "past_due"}
-LOSES_PLAN = {"on_hold", "paused", "cancelled", "failed", "expired"}
 
 
 def handle_event(session: Session, event: dict) -> str:
@@ -61,10 +41,10 @@ def handle_event(session: Session, event: dict) -> str:
     data = event.get("data") or {}
     if event_type == "payment.succeeded":
         return _on_payment_succeeded(session, data)
-    if event_type in SUBSCRIPTION_EVENTS:
-        return _on_subscription(session, data)
     if event_type == "refund.succeeded":
         return _on_refund(session, data)
+    if event_type.startswith("subscription."):
+        return _on_subscription(session, event_type, data)
     if event_type.startswith("dispute."):
         return _on_dispute(session, event_type, data)
     return "ignored"
@@ -136,12 +116,6 @@ def _resolve_product(session: Session, data: dict, user: User) -> Optional[Produ
         product = get_product_by_dodo_id(session, item.get("product_id", ""))
         if product:
             return product
-    # A subscription *renewal*: no cart and no metadata - it's whatever this
-    # user's paid plan is.
-    if data.get("subscription_id") and user.plan != PlanTier.free:
-        return session.exec(
-            select(Product).where(Product.kind == "subscription", Product.plan == user.plan.value)
-        ).first()
     return None
 
 
@@ -171,7 +145,6 @@ def _on_payment_succeeded(session: Session, data: dict) -> str:
         note = "Dodo product not in the catalog"
 
     credits = 0
-    plan_value = None
     if product is not None and product.kind == "credit_pack":
         quantity = sum(
             item.get("quantity", 1)
@@ -179,10 +152,10 @@ def _on_payment_succeeded(session: Session, data: dict) -> str:
             if item.get("product_id") == product.dodo_product_id
         ) or 1
         credits = product.credits * quantity
-    if product is not None and product.kind == "subscription":
-        plan_value = product.plan
 
-    kind = PaymentKind.subscription if (is_subscription or (product and product.kind == "subscription")) else PaymentKind.credit_pack
+    # Signal only sells credit packs; a payment carrying a subscription id would
+    # be something set up in Dodo directly. The money is still recorded as such.
+    kind = PaymentKind.subscription if is_subscription else PaymentKind.credit_pack
     payment, created = record_payment(
         session,
         user=user,
@@ -191,7 +164,7 @@ def _on_payment_succeeded(session: Session, data: dict) -> str:
         kind=kind,
         provider="dodo",
         provider_ref=payment_id,
-        plan=plan_value,
+        product_key=product.key if product else None,
         credits=credits,
         note=note,
     )
@@ -199,50 +172,32 @@ def _on_payment_succeeded(session: Session, data: dict) -> str:
         return "duplicate"
 
     _remember_customer(user, data)
-    if plan_value:
-        set_user_plan(session, user, PlanTier(plan_value))
-        if data.get("subscription_id"):
-            user.dodo_subscription_id = data["subscription_id"]
-        session.add(user)
+    if data.get("subscription_id"):
+        user.dodo_subscription_id = data["subscription_id"]
+    session.add(user)
     log_admin_action(
         session, None, "payment_received", user.id,
-        {"payment_id": payment_id, "amount_cents": amounts[0], "kind": kind.value, "credits": credits, "plan": plan_value},
+        {"payment_id": payment_id, "amount_cents": amounts[0], "kind": kind.value, "credits": credits},
     )
     return "recorded"
 
 
-def _on_subscription(session: Session, data: dict) -> str:
+def _on_subscription(session: Session, event_type: str, data: dict) -> str:
+    """Signal has no recurring products, so there is no plan to grant or revoke.
+    Anything that arrives here was created in Dodo outside Signal - record it in
+    the audit log so the owner can see it, and acknowledge it so Dodo stops
+    retrying. The money itself still arrives as payment.succeeded."""
     user = _resolve_user(session, data)
-    if user is None:
-        logger.warning("Dodo subscription %s could not be matched to a user", data.get("subscription_id"))
-        return "unmatched"
-
-    subscription_id = data.get("subscription_id")
-    status = data.get("status")
-    _remember_customer(user, data)
-
-    if status in KEEPS_PLAN:
-        product = get_product_by_dodo_id(session, data.get("product_id", ""))
-        if product is None or product.kind != "subscription" or not product.plan:
-            logger.warning("Dodo subscription %s is for a product not in the catalog", subscription_id)
-            return "unmapped_product"
-        changed = set_user_plan(session, user, PlanTier(product.plan))
-        user.dodo_subscription_id = subscription_id
+    if user is not None:
+        _remember_customer(user, data)
         session.add(user)
-        if changed:
-            log_admin_action(session, None, "plan_synced", user.id, {"plan": product.plan, "subscription_id": subscription_id})
-        return "plan_synced"
-
-    if status in LOSES_PLAN:
-        # Only if this is the subscription that gave them their plan - an old,
-        # replaced subscription expiring must not downgrade a newer one.
-        if user.dodo_subscription_id == subscription_id:
-            changed = set_user_plan(session, user, PlanTier.free)
-            session.add(user)
-            if changed:
-                log_admin_action(session, None, "plan_downgraded", user.id, {"status": status, "subscription_id": subscription_id})
-            return "downgraded"
-    return "ignored"
+    log_admin_action(
+        session, None, event_type.replace(".", "_"), user.id if user else None,
+        {"subscription_id": data.get("subscription_id"), "status": data.get("status"),
+         "product_id": data.get("product_id")},
+    )
+    logger.info("Dodo %s for subscription %s - Signal sells no subscriptions", event_type, data.get("subscription_id"))
+    return "subscription_logged"
 
 
 def _on_refund(session: Session, data: dict) -> str:

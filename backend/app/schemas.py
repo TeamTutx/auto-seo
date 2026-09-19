@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.models import AlertType, CheckStatus, OpportunityType, PlanTier, VerificationMethod
+from app.models import AlertType, CheckStatus, OpportunityType, VerificationMethod
 
 _DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
@@ -35,7 +35,6 @@ class UserCreate(BaseModel):
 class UserRead(BaseModel):
     id: int
     email: EmailStr
-    plan: PlanTier
     credits_balance: int
     created_at: datetime
     # Computed from ADMIN_EMAILS on every request, never stored - so it can't be
@@ -335,35 +334,29 @@ class AlertRead(BaseModel):
 
 # --- pricing (public) / billing (signed-in user) ---
 
-class PlanLimitsRead(BaseModel):
+class AccountLimitsRead(BaseModel):
     max_sites: Optional[int] = None  # None = unlimited
     max_pages_per_site: Optional[int] = None
     max_keywords_per_page: Optional[int] = None
 
 
-class PricingPlan(BaseModel):
-    key: str  # "free" | "pro" | "agency"
-    name: str
-    price_cents: int
-    interval: Optional[str] = None
-    description: Optional[str] = None
-    limits: PlanLimitsRead
-    product_key: Optional[str] = None  # what to pass to POST /billing/checkout
-    purchasable: bool = False  # billing configured AND a Dodo product linked
-
-
 class PricingCreditPack(BaseModel):
-    key: str
+    key: str  # what to pass to POST /billing/checkout
     name: str
     price_cents: int
     credits: int
     description: Optional[str] = None
-    purchasable: bool = False
+    badge: Optional[str] = None
+    price_per_credit_cents: Optional[float] = None
+    purchasable: bool = False  # billing configured AND a Dodo product linked
 
 
 class PricingResponse(BaseModel):
+    """Signal is credit-based: there are no tiers, so the same limits apply to
+    every account and the only thing to buy is a pack of credits."""
     billing_enabled: bool
-    plans: List[PricingPlan]
+    signup_credits: int
+    limits: AccountLimitsRead
     credit_packs: List[PricingCreditPack]
 
 
@@ -383,17 +376,17 @@ class BillingPaymentRead(BaseModel):
     id: int
     amount_cents: int
     kind: str
-    plan: Optional[str] = None
+    product_key: Optional[str] = None
     credits_granted: int
     paid_at: datetime
 
 
 class BillingSummary(BaseModel):
-    plan: PlanTier
     credits_balance: int
+    credits_purchased: int  # lifetime, so the page can show more than a balance
     billing_enabled: bool
-    has_subscription: bool
     can_manage_billing: bool
+    packs: List[PricingCreditPack]
     payments: List[BillingPaymentRead]
 
 
@@ -402,8 +395,8 @@ class BillingSummary(BaseModel):
 class AdminUserRow(BaseModel):
     id: int
     email: str
-    plan: PlanTier
     credits_balance: int
+    credits_purchased: int
     created_at: datetime
     sites_count: int
     total_paid_cents: int
@@ -430,7 +423,7 @@ class AdminPaymentRow(BaseModel):
     amount_cents: int
     tax_cents: int
     kind: str
-    plan: Optional[str] = None
+    product_key: Optional[str] = None
     credits_granted: int
     provider: str
     provider_ref: Optional[str] = None
@@ -461,8 +454,8 @@ class AdminAuditRow(BaseModel):
 class AdminUserDetail(BaseModel):
     id: int
     email: str
-    plan: PlanTier
     credits_balance: int
+    credits_purchased: int
     created_at: datetime
     is_admin: bool
     google_connected: bool
@@ -480,15 +473,25 @@ class AdminStats(BaseModel):
     total_users: int
     signups_7d: int
     signups_30d: int
-    users_by_plan: dict
     paying_users: int
     revenue_all_cents: int
     revenue_30d_cents: int
-    estimated_mrr_cents: int
-    credits_outstanding: int
+    credits_sold_all: int
+    credits_sold_30d: int
+    credits_outstanding: int  # bought or granted but not yet spent - a liability
     credits_spent_30d: int
+    top_packs: List["AdminPackSales"]
     recent_signups: List[AdminUserRow]
     recent_actions: List[AdminAuditRow]
+
+
+class AdminPackSales(BaseModel):
+    """Revenue per credit pack, so the owner can see which price point sells."""
+    product_key: str
+    name: str
+    sales: int
+    revenue_cents: int
+    credits_granted: int
 
 
 class CreditAdjustRequest(BaseModel):
@@ -505,15 +508,10 @@ class CreditAdjustRequest(BaseModel):
         return v
 
 
-class PlanChangeRequest(BaseModel):
-    plan: PlanTier
-    note: str = Field(min_length=3, max_length=500)
-
-
 class ManualPaymentRequest(BaseModel):
+    """Money that arrived outside Dodo (UPI, bank transfer, an invoice)."""
     amount_cents: int = Field(ge=0, le=10_000_000)
     credits: int = Field(default=0, ge=0, le=100_000)
-    plan: Optional[PlanTier] = None  # also switch the user to this plan
     note: str = Field(min_length=3, max_length=500)
     paid_at: Optional[datetime] = None
 
@@ -524,35 +522,40 @@ class ProductRead(BaseModel):
     name: str
     kind: str
     price_cents: int
-    interval: Optional[str] = None
-    plan: Optional[str] = None
     credits: int
     dodo_product_id: Optional[str] = None
     description: Optional[str] = None
+    badge: Optional[str] = None
     active: bool
     sort_order: int
+    sales: int = 0  # how many have been bought - a pack with sales can't be deleted
     updated_at: datetime
 
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     price_cents: Optional[int] = Field(default=None, ge=0, le=10_000_000)
-    credits: Optional[int] = Field(default=None, ge=0, le=100_000)
+    credits: Optional[int] = Field(default=None, gt=0, le=100_000)
     dodo_product_id: Optional[str] = Field(default=None, max_length=120)  # "" clears the link
     description: Optional[str] = Field(default=None, max_length=300)
+    badge: Optional[str] = Field(default=None, max_length=24)
     active: Optional[bool] = None
     sort_order: Optional[int] = None
 
 
 class ProductCreate(BaseModel):
-    """Only credit packs can be created - the subscription tiers (Pro, Agency)
-    are fixed by PLAN_LIMITS and are seeded by the migration."""
     key: str = Field(pattern=r"^[a-z0-9_]{2,40}$")
     name: str = Field(min_length=1, max_length=80)
     price_cents: int = Field(ge=0, le=10_000_000)
     credits: int = Field(gt=0, le=100_000)
     dodo_product_id: Optional[str] = Field(default=None, max_length=120)
     description: Optional[str] = Field(default=None, max_length=300)
+    badge: Optional[str] = Field(default=None, max_length=24)
+
+
+class ProductReorderRequest(BaseModel):
+    """Every pack id, in the order they should appear on the pricing page."""
+    ids: List[int] = Field(min_length=1, max_length=50)
 
 
 class ProductVerifyResult(BaseModel):

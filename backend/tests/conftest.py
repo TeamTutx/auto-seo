@@ -84,12 +84,14 @@ def admin_headers(client, monkeypatch):
 
 @pytest.fixture
 def products(db):
-    """The default catalog the 0008 migration seeds (create_all doesn't run it)."""
+    """The starter pack ladder migration 0009 seeds (create_all doesn't run it)."""
     with Session(db) as session:
         session.add_all([
-            Product(key="pro", name="Pro", kind="subscription", price_cents=2400, interval="month", plan="pro", sort_order=10),
-            Product(key="agency", name="Agency", kind="subscription", price_cents=8900, interval="month", plan="agency", sort_order=20),
-            Product(key="credits_50", name="50 credits", kind="credit_pack", price_cents=900, credits=50, sort_order=30),
+            Product(key="credits_10", name="10 credits", kind="credit_pack", price_cents=200, credits=10, sort_order=10),
+            Product(key="credits_50", name="50 credits", kind="credit_pack", price_cents=500, credits=50,
+                    badge="Best value", sort_order=20),
+            Product(key="credits_200", name="200 credits", kind="credit_pack", price_cents=1500, credits=200,
+                    sort_order=30),
         ])
         session.commit()
 
