@@ -23,6 +23,25 @@ class SerpResult:
     url: str
 
 
+@dataclass
+class AIOverview:
+    """Google's AI answer box, when the SERP had one. `sources` are the pages it
+    cited, already normalize_domain()'d, which is how we tell whether a site is
+    being used as a source rather than merely ranking below the box."""
+    present: bool
+    sources: List[str]
+    text: str = ""
+
+
+@dataclass
+class SerpSnapshot:
+    """Everything one search told us. Fetching organic results and the AI
+    Overview together matters: they come back in a single vendor response, so
+    splitting them into two calls would double what a visibility check costs."""
+    results: List[SerpResult]
+    ai_overview: Optional[AIOverview] = None
+
+
 class RankProvider(ABC):
     name: str
 
@@ -45,6 +64,22 @@ class RankProvider(ABC):
         top few results (competitor comparison) should pass a much smaller
         value - asking for 100 when 15 would do is most of why those lookups
         were slow enough to time out."""
+
+    def fetch_snapshot(
+        self,
+        keyword: str,
+        location_code: int,
+        language_code: str,
+        device: str,
+        num_results: int = 100,
+    ) -> "SerpSnapshot":
+        """Organic results plus any SERP features this vendor exposes. The
+        default is organic only, so a vendor that can't report AI Overviews
+        simply reports nothing rather than needing to fake it."""
+        return SerpSnapshot(
+            results=self.fetch_serp(keyword, location_code, language_code, device, num_results),
+            ai_overview=None,
+        )
 
     def fetch_rank(
         self,

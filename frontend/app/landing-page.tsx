@@ -15,6 +15,8 @@ const CREDIT_COSTS: { label: string; credits: number }[] = [
   { label: "Any AI fix: title, meta, headings, alt text, internal links", credits: 1 },
   { label: "Keyword opportunities for a page", credits: 2 },
   { label: "A full ranking action plan", credits: 2 },
+  { label: "Find keyword ideas for a site", credits: 2 },
+  { label: "Check one keyword in Google and in AI answers", credits: 2 },
 ];
 
 export default function LandingPage({ pricing }: { pricing: Pricing }) {
@@ -582,6 +584,36 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
         <div className="lp-strip-item">
           <div className="lp-strip-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" />
+            </svg>
+          </div>
+          <div>
+            <h4>Give it your domain, not a list of URLs</h4>
+            <p>
+              Signal reads your sitemap — or follows your own links when there isn’t one — and tells you which
+              pages Google has actually indexed. A page that isn’t indexed can’t rank, whatever its score says.
+            </p>
+          </div>
+        </div>
+        <div className="lp-strip-item">
+          <div className="lp-strip-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
+              <path d="M18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z" />
+            </svg>
+          </div>
+          <div>
+            <h4>Visibility in AI answers, not just Google</h4>
+            <p>
+              For every keyword you target, see where you rank in Google, whether its AI Overview cites you — and
+              who it cited instead — and whether an AI assistant names you when asked.
+            </p>
+          </div>
+        </div>
+        <div className="lp-strip-item">
+          <div className="lp-strip-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="4" width="18" height="16" rx="2" />
               <path d="M3 9h18" />
             </svg>
@@ -667,6 +699,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
                 <b>{limitLabel(pricing.limits.max_keywords_per_page)}</b> tracked keywords per page
               </li>
               <li>Unlimited audits, scores and opportunity lists</li>
+              <li>Finding your pages, and checking which Google has indexed</li>
               <li>Google Search Console + Analytics, connected free</li>
             </ul>
           </div>

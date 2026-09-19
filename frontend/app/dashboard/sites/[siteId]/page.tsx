@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { useSiteJobs } from "@/lib/use-site-jobs";
+import JobProgress from "@/components/JobProgress";
 import { scoreBucket } from "@/lib/score";
 import { useSites } from "@/lib/sites-context";
 import OpportunitiesPanel from "@/components/OpportunitiesPanel";
 import ScoreGauge from "@/components/ScoreGauge";
 import SiteHealthPanel from "@/components/SiteHealthPanel";
 import SiteVerification from "@/components/SiteVerification";
-import type { Audit, Page, Site } from "@/lib/types";
+import type { Audit, IndexSummary, Page, Site } from "@/lib/types";
 
 interface PageRow {
   page: Page;
@@ -27,6 +30,8 @@ export default function SiteOverviewPage() {
   const [notFound, setNotFound] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [indexSummary, setIndexSummary] = useState<IndexSummary | null>(null);
+  const [crawling, setCrawling] = useState(false);
 
   const [adding, setAdding] = useState(false);
   const [url, setUrl] = useState("");
@@ -41,10 +46,15 @@ export default function SiteOverviewPage() {
   const [deletingSite, setDeletingSite] = useState(false);
   const [deletingPageId, setDeletingPageId] = useState<number | null>(null);
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     try {
-      const [siteData, pages] = await Promise.all([api.getSite(siteId), api.listPages(siteId)]);
+      const [siteData, pages, summary] = await Promise.all([
+        api.getSite(siteId),
+        api.listPages(siteId),
+        api.indexSummary(siteId).catch(() => null),
+      ]);
       setSite(siteData);
+      setIndexSummary(summary);
       const withAudits = await Promise.all(
         pages.map(async (page) => {
           const audits = await api.listAudits(page.id);
@@ -55,14 +65,35 @@ export default function SiteOverviewPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) setNotFound(true);
     }
-  }
+  }, [siteId]);
+
+  // Refetch as soon as a crawl finishes rather than waiting for the next poll —
+  // the pages it found are the whole point of having pressed the button.
+  const onJobFinish = useCallback(
+    (kind: string) => {
+      if (kind === "crawl") loadAll();
+    },
+    [loadAll]
+  );
+  const { jobs } = useSiteJobs(siteId, onJobFinish);
 
   useEffect(() => {
     setRows(null);
     setNotFound(false);
     loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId]);
+  }, [siteId, loadAll]);
+
+  async function handleCrawl() {
+    setCrawling(true);
+    setBanner(null);
+    try {
+      await api.startCrawl(siteId);
+    } catch (err) {
+      setBanner(err instanceof ApiError ? err.message : "Could not start the crawl.");
+    } finally {
+      setCrawling(false);
+    }
+  }
 
   async function handleAddPage(e: FormEvent) {
     e.preventDefault();
@@ -149,6 +180,7 @@ export default function SiteOverviewPage() {
     return <div className="loading-state">Loading…</div>;
   }
 
+  const crawlJob = jobs?.crawl ?? null;
   const scored = rows.map((r) => r.latestAudit?.score).filter((s): s is number => typeof s === "number");
   const overallScore = scored.length > 0 ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null;
   const unscanned = rows.filter((r) => !r.latestAudit).length;
@@ -211,7 +243,16 @@ export default function SiteOverviewPage() {
             {!site.verified && " · domain not verified"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/keywords`}>
+            Keywords
+          </Link>
+          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/visibility`}>
+            Visibility
+          </Link>
+          <button className="btn btn-ghost" onClick={handleCrawl} disabled={crawling || crawlJob?.status === "running"}>
+            {crawlJob?.status === "running" ? "Finding pages…" : "Find pages"}
+          </button>
           <button className="btn" onClick={handleRunFullScan} disabled={scanning || rows.length === 0}>
             {scanning ? "Scanning…" : "Run full scan"}
           </button>
@@ -227,6 +268,8 @@ export default function SiteOverviewPage() {
         </div>
       )}
 
+      <JobProgress job={crawlJob} />
+
       <div style={{ marginBottom: 20 }}>
         <SiteVerification site={site} onVerified={loadAll} />
       </div>
@@ -237,7 +280,7 @@ export default function SiteOverviewPage() {
           <ScoreGauge score={overallScore} />
         </div>
 
-        <div className="stat-row">
+        <div className="stat-row stat-row-2x2">
           <div className="stat-cell">
             <div className="stat-label">Pages tracked</div>
             <div className="stat-value">{rows.length}</div>
@@ -249,6 +292,23 @@ export default function SiteOverviewPage() {
           <div className="stat-cell">
             <div className="stat-label">Needs attention</div>
             <div className="stat-value">{needsAttention}</div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-label">Indexed by Google</div>
+            <div className="stat-value">
+              {indexSummary && indexSummary.total_pages > 0 && indexSummary.unchecked < indexSummary.total_pages
+                ? indexSummary.indexed
+                : "—"}
+            </div>
+            <div className="admin-hint">
+              {!indexSummary || indexSummary.total_pages === 0
+                ? "Find your pages first"
+                : indexSummary.unchecked === indexSummary.total_pages
+                ? "Connect Google to check"
+                : indexSummary.not_indexed > 0
+                ? `${indexSummary.not_indexed} not indexed`
+                : "all indexed"}
+            </div>
           </div>
         </div>
       </div>
@@ -335,6 +395,18 @@ export default function SiteOverviewPage() {
                 <div className="page-kw-row">
                   <span>Target keyword</span>
                   <span>{page.target_keyword || "—"}</span>
+                </div>
+                <div className="page-kw-row">
+                  <span>Google index</span>
+                  <span title={page.index_detail ?? undefined}>
+                    {page.index_status === "indexed" ? (
+                      <span className="index-pill indexed">Indexed</span>
+                    ) : page.index_status === "not_indexed" ? (
+                      <span className="index-pill missing">Not indexed</span>
+                    ) : (
+                      <span className="muted">not checked</span>
+                    )}
+                  </span>
                 </div>
                 <div className="page-card-actions">
                   <button

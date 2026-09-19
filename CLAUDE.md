@@ -20,6 +20,10 @@ don't leave it stale.** Concretely:
 - New feature shipped in the dashboard → decide whether it earns its own
   `lp-feature-row` (or a full-width "deep dive" `lp-feature-row full`) or
   just a line in the `lp-strip` "also included" row, and add it.
+- Anything the site page shows about crawling, index status, keyword ideas or visibility
+  is fed by `app/routers/discovery.py`. What each action costs is listed in two places
+  the user reads — `CREDIT_COSTS` on the landing page and the "What a credit buys" panel
+  on `/dashboard/billing` — so a new metered action means editing both.
 - Pricing: **Signal sells credits and nothing else** — there are no tiers and nothing
   recurring. The pricing section renders `GET /pricing`, which returns the active rows of
   the `Product` table (credit packs the owner creates, prices, reorders and retires in
@@ -71,6 +75,9 @@ writing copy for it.
   making a second one.
 - `/dashboard/*` — the actual product (sites, pages, settings), gated by
   `app/dashboard/layout.tsx` (redirects to `/login` if unauthenticated).
+  `/dashboard/sites/[siteId]/keywords` (keyword ideas + which ones to target) and
+  `/dashboard/sites/[siteId]/visibility` (Google / AI Overview / ChatGPT) are the two
+  pages driven by background jobs — see the gotcha below.
   This used to be a route group living at `/` before the landing page
   existed — if you ever run across old links to `/sites/...` or `/settings`
   (missing the `/dashboard` prefix), they're stale and need fixing.
@@ -95,6 +102,17 @@ writing copy for it.
   adding a column to an existing model, either apply it manually
   (`ALTER TABLE ... ADD COLUMN ...`) against the dev DB or rebuild it — don't
   assume writing the Alembic migration alone fixes the running dev DB.
+- **Background jobs run in the API process**, not a worker: crawling, keyword discovery
+  and visibility checks all go through `app/services/site_jobs.py` via FastAPI's
+  `BackgroundTasks` (Render's free tier has no worker). Consequences that bite:
+  a job needs its *own* session — `site_jobs.session_factory()`, because the request's
+  session is closed by the time it runs, and `tests/conftest.py` repoints that factory
+  at the test engine or jobs would write to the real database. Progress must be
+  committed as it happens or the polling UI sees nothing. A job killed by a restart
+  stays `running` forever, so `is_stale()` reports it as failed after 15 minutes and
+  lets the owner start another. Credits are spent one unit at a time, after the work
+  succeeds. TestClient runs BackgroundTasks inline, so in tests a POST returns with the
+  job already finished.
 - **Never write `User.credits_balance` directly.** All credit changes go through
   `apply_credit_delta()` (`backend/app/services/credits.py`): an atomic conditional
   `UPDATE` plus a `CreditTransaction` row in the same transaction, so the balance can't go

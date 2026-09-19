@@ -6,10 +6,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import app.services.site_jobs as site_jobs
 from app.database import get_session
 from app.config import settings
 from app.main import app
 from app.models import Product, User
+
+_real_session_factory = site_jobs.session_factory
 
 
 # Set TEST_DATABASE_URL (e.g. postgresql://...) to run the whole suite against a
@@ -33,8 +36,14 @@ def db():
             yield session
 
     app.dependency_overrides[get_session] = get_session_override
+    # Background jobs open their own session (they outlive the request), so they
+    # need pointing at the test engine too or they'd write to the real database.
+    site_jobs.session_factory = lambda: Session(engine)
+
     yield engine
+
     app.dependency_overrides.clear()
+    site_jobs.session_factory = _real_session_factory
     if TEST_DATABASE_URL:
         engine.dispose()
 

@@ -13,6 +13,7 @@ from app.routers import (
     auth,
     auth_google,
     billing,
+    discovery,
     google_data,
     google_integration,
     keywords,
@@ -58,6 +59,7 @@ app.include_router(suggestions.router)
 app.include_router(alerts.router)
 app.include_router(opportunities.router)
 app.include_router(site_health.router)
+app.include_router(discovery.router)
 app.include_router(google_integration.router)
 app.include_router(google_data.router)
 app.include_router(pricing.router)

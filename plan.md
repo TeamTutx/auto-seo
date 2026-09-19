@@ -423,9 +423,81 @@ test-mode purchase before switching to `live_mode`. **And in Google Cloud Consol
 **publish the consent screen** — while it is in Testing, only listed test users can sign
 in at all.
 
+## Phase J — Crawling, keyword discovery, and search + AI visibility
+
+**Status: built and tested (2026-09-20).** Three features aimed squarely at the gaps in
+`docs/COMPETITORS.md`: no crawler, no keyword discovery, and nothing at all for AI search.
+
+**1. Crawl a site instead of typing its pages in.** `POST /sites/{id}/crawl` finds pages
+from the sitemap (robots.txt first, then /sitemap.xml), falling back to a shallow
+breadth-first link walk when a sitemap yields almost nothing. robots.txt Disallow is
+honoured either way. Free — Signal does the fetching itself.
+
+- Query-string variants collapse to one page: a link to `/login?mode=register` is the
+  same template as `/login`, and auditing both would spend two of the owner's fifty page
+  slots on one page. Sitemap entries are exempt, since listing both means the owner meant
+  both. utm/gclid-style tracking params are stripped outright.
+- Sitemaps are parsed with a regex over `<loc>` rather than an XML parser: real sitemaps
+  are routinely malformed, and a strict parse that throws returns nothing where a person
+  can plainly see the URLs.
+
+**2. Index status.** A page that isn't indexed cannot rank whatever its audit score says,
+so the crawl checks each page against Search Console's URL Inspection API (free,
+authoritative, and it gives Google's own wording for *why*). That needs the owner
+connected *and* an owner of the property, which plenty of people aren't — so
+`POST /pages/{id}/index-check` falls back to a `site:` lookup for 1 credit. Every row
+records which source answered, because inference and Google-said-so deserve different
+confidence.
+
+**3. Keyword discovery.** `POST /sites/{id}/keywords/discover` merges three sources and
+labels each idea with where it came from:
+- **Search Console** — real impressions, clicks and position. Free. Sorted so near-misses
+  come first: position 12 with 400 impressions is worth far more attention than position 2.
+- **The page's own content** — an LLM reads the home page by default. 1 credit.
+- **Google's related searches** — 1 credit.
+
+Signal has **no search-volume database and does not pretend to have one**: only Search
+Console ideas carry numbers, and the UI says so. Real volumes would come from DataForSEO's
+Labs API, whose credentials slot already exists in config. The owner marks ideas as
+targeted, which is both the input to a visibility run and the lever on what it costs.
+
+**4. Search + AI visibility.** `POST /sites/{id}/visibility/check` asks, per targeted
+keyword: does the domain rank in Google, does Google's AI Overview cite it, and does an
+LLM name it when asked the keyword as a question? Google organic and the AI Overview come
+out of *one* SerpApi response, so together they are one credit; the model question is a
+second. 2 credits per keyword.
+
+- "Google showed no AI Overview" and "it showed one and picked someone else" are
+  different results and are reported differently — the second names who won instead,
+  which is the actionable half.
+- The ChatGPT reading is honest about what it is: the completion API answers from what the
+  model already knows, so it measures whether a brand is in the model's picture of a topic.
+  It is not a claim about what live browsing would cite, and the UI says that rather than
+  letting the number imply more than it means.
+- Brand matching deliberately won't match the first word of a hyphenated name — otherwise
+  a site called signal-seo.in matches every sentence containing "signal".
+
+**Background jobs.** All three run through `app/services/site_jobs.py` on FastAPI's
+`BackgroundTasks`, not a worker queue: Render's free tier has no worker and a monthly bill
+isn't worth it pre-revenue (the decision from Phase H stands). The consequences are
+handled explicitly — own session, commit-as-you-go, stale-job detection, credits spent one
+unit at a time — and are written up in `CLAUDE.md`. If a worker is ever provisioned only
+`site_jobs.start` changes.
+
+**Verification:** 317 backend tests on real Postgres 16, migration `0011` proven up and
+down with `alembic check` clean, and the crawler run against the real signal-seo.in (which
+is how the `/login?mode=register` duplicate was found and fixed).
+
+**Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
+index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
+will earn for years.
+
 ## Not yet scheduled
 
 - **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
+- **Real keyword search volumes** — would come from DataForSEO's Labs API (its credential
+  slots already exist in config). Deliberately deferred: it costs per lookup, and labelled
+  ideas without volumes are more honest than invented estimates. See Phase J.
 - **Scheduled audits + alerts on Render** (also: the landing page no longer advertises them
   - re-add "daily scheduled audits" to the "also included" strip once this is provisioned;
   `run_scheduled_audits` now covers every account, since there are no tiers to gate it on) —

@@ -167,9 +167,12 @@ function BillingContent() {
           <li>Any AI fix (title, meta description, headings, alt text, internal links) — 1</li>
           <li>Keyword opportunities for a page — 2</li>
           <li>A full ranking action plan — 2</li>
+          <li>Finding keyword ideas for a site — up to 2</li>
+          <li>Checking one keyword in Google and in AI answers — 2</li>
         </ul>
         <div className="admin-hint" style={{ marginTop: 12 }}>
-          Audits, scores, the opportunities list and your Search Console and Analytics data are free and unlimited.
+          Audits, scores, the opportunities list, finding your pages, checking which are indexed, and your Search
+          Console and Analytics data are all free and unlimited.
         </div>
       </div>
 

@@ -111,6 +111,11 @@ class PageRead(BaseModel):
     url: str
     target_keyword: Optional[str]
     created_at: datetime
+    discovered_via: str = "manual"
+    index_status: Optional[str] = None  # "indexed" | "not_indexed" | "unknown" | None = unchecked
+    index_detail: Optional[str] = None
+    index_source: Optional[str] = None  # "gsc" (authoritative) | "serp" (inferred)
+    index_checked_at: Optional[datetime] = None
 
 
 # --- audits ---
@@ -388,6 +393,77 @@ class BillingSummary(BaseModel):
     can_manage_billing: bool
     packs: List[PricingCreditPack]
     payments: List[BillingPaymentRead]
+
+
+# --- crawling, keyword discovery, visibility ---
+
+class SiteJobRead(BaseModel):
+    """What the UI polls while a background run is in flight."""
+    id: int
+    kind: str
+    status: str  # queued | running | done | failed
+    progress: int
+    total: int
+    message: Optional[str] = None
+    error: Optional[str] = None
+    credits_spent: int
+    created_at: datetime
+    finished_at: Optional[datetime] = None
+
+
+class SiteJobs(BaseModel):
+    """The latest run of each kind, so the UI polls one endpoint, not three."""
+    crawl: Optional[SiteJobRead] = None
+    keywords: Optional[SiteJobRead] = None
+    visibility: Optional[SiteJobRead] = None
+
+
+class KeywordIdeaRead(BaseModel):
+    id: int
+    keyword: str
+    source: str  # "gsc" (measured) | "ai" | "serp"
+    rationale: Optional[str] = None
+    impressions: Optional[int] = None
+    clicks: Optional[int] = None
+    position: Optional[float] = None
+    targeted: bool
+
+
+class KeywordTargetRequest(BaseModel):
+    """Which ideas the owner actually wants to rank for."""
+    ids: List[int] = Field(min_length=1, max_length=200)
+    targeted: bool = True
+
+
+class VisibilityEngineRead(BaseModel):
+    engine: str  # "google" | "google_ai_overview" | "chatgpt"
+    present: bool
+    position: Optional[int] = None
+    detail: Optional[str] = None
+    checked_at: datetime
+
+
+class VisibilityKeywordRead(BaseModel):
+    keyword: str
+    engines: List[VisibilityEngineRead]
+
+
+class VisibilityReport(BaseModel):
+    """One row per targeted keyword, newest reading per engine."""
+    checked_at: Optional[datetime] = None
+    targeted_keywords: int
+    google_visible: int
+    ai_overview_cited: int
+    chatgpt_mentions: int
+    keywords: List[VisibilityKeywordRead]
+
+
+class IndexSummary(BaseModel):
+    total_pages: int
+    indexed: int
+    not_indexed: int
+    unchecked: int
+    source: Optional[str] = None  # what answered most recently
 
 
 # --- admin ---

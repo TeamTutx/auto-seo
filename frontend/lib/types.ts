@@ -20,12 +20,20 @@ export interface Site {
   ga_property_id: string | null;
 }
 
+export type IndexStatus = "indexed" | "not_indexed" | "unknown";
+
 export interface Page {
   id: number;
   site_id: number;
   url: string;
   target_keyword: string | null;
   created_at: string;
+  discovered_via: "manual" | "sitemap" | "link";
+  index_status: IndexStatus | null;
+  index_detail: string | null;
+  /** "gsc" = Google told us directly; "serp" = inferred from a site: search. */
+  index_source: "gsc" | "serp" | null;
+  index_checked_at: string | null;
 }
 
 export interface Check {
@@ -269,6 +277,70 @@ export interface BillingSummary {
   can_manage_billing: boolean;
   packs: PricingCreditPack[];
   payments: BillingPayment[];
+}
+
+// --- crawl, keyword discovery, visibility ---
+
+export type JobStatus = "queued" | "running" | "done" | "failed";
+export type JobKind = "crawl" | "keywords" | "visibility";
+
+export interface SiteJob {
+  id: number;
+  kind: JobKind;
+  status: JobStatus;
+  progress: number;
+  total: number;
+  message: string | null;
+  error: string | null;
+  credits_spent: number;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export type SiteJobs = Record<JobKind, SiteJob | null>;
+
+export interface IndexSummary {
+  total_pages: number;
+  indexed: number;
+  not_indexed: number;
+  unchecked: number;
+  source: "gsc" | "serp" | null;
+}
+
+export interface KeywordIdea {
+  id: number;
+  keyword: string;
+  /** "gsc" ideas carry real measured numbers; "ai" and "serp" are suggestions. */
+  source: "gsc" | "ai" | "serp";
+  rationale: string | null;
+  impressions: number | null;
+  clicks: number | null;
+  position: number | null;
+  targeted: boolean;
+}
+
+export type VisibilityEngine = "google" | "google_ai_overview" | "chatgpt";
+
+export interface VisibilityEngineResult {
+  engine: VisibilityEngine;
+  present: boolean;
+  position: number | null;
+  detail: string | null;
+  checked_at: string;
+}
+
+export interface VisibilityKeyword {
+  keyword: string;
+  engines: VisibilityEngineResult[];
+}
+
+export interface VisibilityReport {
+  checked_at: string | null;
+  targeted_keywords: number;
+  google_visible: number;
+  ai_overview_cited: number;
+  chatgpt_mentions: number;
+  keywords: VisibilityKeyword[];
 }
 
 // --- admin ---

@@ -45,6 +45,9 @@ credit-pack catalog. Then verify it (§4) before sending traffic at it.
 | `credittransaction` | the credit ledger; it always sums to `user.credits_balance` |
 | `payment` | money in and out, including refunds as negative rows |
 | `adminauditlog` | every admin action and payment webhook |
+| `sitejob` | progress of a crawl, keyword discovery or visibility run |
+| `keywordidea` | suggested keywords and which source proposed them |
+| `visibilitycheck` | one row per keyword per engine per visibility run |
 
 The migration seeds three credit packs (10 for $2, 50 for $5, 200 for $15). They
 are a starting point — change them in `/admin/pricing`, which is also where you
@@ -133,7 +136,7 @@ Run these against the new database before you trust it.
 export DATABASE_URL="postgresql://…"   # the new one
 
 # a) Alembic is at the newest revision
-.venv/bin/alembic current                 # → "0010 (head)"
+.venv/bin/alembic current                 # → "0011 (head)"
 
 # b) The schema matches the SQLModel models exactly.
 #    This is the real check: it diffs live tables against app/models.py.

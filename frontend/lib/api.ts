@@ -15,6 +15,8 @@ import type {
   GoogleConnectionStatus,
   GSCIndexStatus,
   GSCQueryRow,
+  IndexSummary,
+  KeywordIdea,
   KeywordOpportunity,
   KeywordRank,
   MetaDescriptionSuggestion,
@@ -26,11 +28,14 @@ import type {
   RankingActionPlan,
   Site,
   SiteHealth,
+  SiteJob,
+  SiteJobs,
   SiteVerificationResult,
   TextSuggestion,
   TitleTagSuggestion,
   User,
   VerificationMethod,
+  VisibilityReport,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -166,6 +171,28 @@ export const api = {
 
   listAlerts: () => request<Alert[]>("/alerts"),
   markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
+
+  // crawl, keyword discovery, visibility - all three start a background run and
+  // return a job the caller polls with siteJobs()
+  siteJobs: (siteId: number) => request<SiteJobs>(`/sites/${siteId}/jobs`),
+  startCrawl: (siteId: number) => request<SiteJob>(`/sites/${siteId}/crawl`, { method: "POST" }),
+  indexSummary: (siteId: number) => request<IndexSummary>(`/sites/${siteId}/index-summary`),
+  checkPageIndex: (pageId: number) => request<Page>(`/pages/${pageId}/index-check`, { method: "POST" }),
+
+  discoverKeywords: (siteId: number) =>
+    request<SiteJob>(`/sites/${siteId}/keywords/discover`, { method: "POST" }),
+  keywordIdeas: (siteId: number) => request<KeywordIdea[]>(`/sites/${siteId}/keywords/ideas`),
+  targetKeywords: (siteId: number, ids: number[], targeted: boolean) =>
+    request<KeywordIdea[]>(`/sites/${siteId}/keywords/target`, {
+      method: "POST",
+      body: JSON.stringify({ ids, targeted }),
+    }),
+  deleteKeywordIdea: (siteId: number, ideaId: number) =>
+    request<void>(`/sites/${siteId}/keywords/ideas/${ideaId}`, { method: "DELETE" }),
+
+  startVisibilityCheck: (siteId: number) =>
+    request<SiteJob>(`/sites/${siteId}/visibility/check`, { method: "POST" }),
+  visibilityReport: (siteId: number) => request<VisibilityReport>(`/sites/${siteId}/visibility`),
 
   getOpportunities: (siteId: number) => request<Opportunity[]>(`/sites/${siteId}/opportunities`),
   getSiteHealth: (siteId: number) => request<SiteHealth>(`/sites/${siteId}/health`),

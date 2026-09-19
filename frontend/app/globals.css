@@ -360,6 +360,11 @@ input {
 .stat-row-4 {
   grid-template-columns: repeat(4, 1fr);
 }
+/* Four stats beside the score gauge: 2x2 fills the column, where 3+1 leaves a
+   hole. The full-width .stat-row-4 above stays four across. */
+.stat-row-2x2 {
+  grid-template-columns: repeat(2, 1fr);
+}
 @media (max-width: 560px) {
   .stat-row-4 {
     grid-template-columns: repeat(2, 1fr);
@@ -1771,4 +1776,53 @@ tbody tr.clickable:hover {
 .legal-footer a {
   color: var(--text-muted);
   margin: 0 10px;
+}
+
+
+/* ===== Background jobs: crawl, keyword discovery, visibility ===== */
+.job-banner {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: var(--text-muted);
+  background: var(--surface);
+}
+.job-banner.idle { border-style: dashed; }
+.job-banner.active { border-color: var(--accent-dim); background: var(--accent-dim); color: var(--text); }
+.job-banner.done { border-color: var(--good); }
+.job-banner.failed { border-color: var(--bad); color: var(--bad); background: var(--bad-dim); }
+.job-banner-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.job-credits {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap;
+}
+.job-bar { height: 4px; border-radius: 3px; background: var(--border); margin-top: 10px; overflow: hidden; }
+.job-bar-fill {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width .4s ease;
+}
+
+/* ===== Index status ===== */
+.index-pill {
+  font-size: 11px; padding: 2px 7px; border-radius: 10px; border: 1px solid var(--border);
+}
+.index-pill.indexed { color: var(--good); border-color: var(--good); }
+.index-pill.missing { color: var(--bad); border-color: var(--bad); }
+
+/* ===== Keyword ideas ===== */
+.keyword-table td { vertical-align: top; }
+.keyword-table tr.targeted { background: var(--accent-dim); }
+.keyword-name { font-weight: 500; color: var(--text); }
+.keyword-why { font-size: 12px; color: var(--text-muted); margin-top: 3px; max-width: 460px; line-height: 1.5; }
+.source-tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+  border: 1px solid var(--border); color: var(--text-muted);
+}
+/* Measured data earns the accent colour; guesses don't. */
+.source-tag.gsc { color: var(--accent); border-color: var(--accent); }
+
+/* ===== Visibility report ===== */
+.visibility-table td { vertical-align: top; }
+.vis-yes { color: var(--good); font-family: var(--font-mono); font-size: 12.5px; }
+.vis-no { color: var(--text-muted); font-size: 12.5px; }
+.vis-instead {
+  display: block; font-size: 11px; color: var(--text-muted); margin-top: 3px;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

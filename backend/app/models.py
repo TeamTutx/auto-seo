@@ -96,6 +96,16 @@ class Page(SQLModel, table=True):
     url: str
     target_keyword: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # How this page got here: "manual" (typed in), "sitemap" or "link" (found by
+    # the crawler - app/services/crawler.py).
+    discovered_via: str = Field(default="manual")
+    # Whether Google has this page in its index. "indexed" / "not_indexed" /
+    # None = never checked. `index_source` is "gsc" (free, authoritative, needs
+    # the user's Search Console) or "serp" (a paid site: lookup fallback).
+    index_status: Optional[str] = Field(default=None)
+    index_detail: Optional[str] = Field(default=None)  # Google's coverage wording
+    index_source: Optional[str] = Field(default=None)
+    index_checked_at: Optional[datetime] = Field(default=None)
 
     site: Optional[Site] = Relationship(back_populates="pages")
     audits: List["Audit"] = Relationship(back_populates="page")
@@ -278,6 +288,85 @@ class Payment(SQLModel, table=True):
     actor_id: Optional[int] = Field(default=None, foreign_key="user.id")
     paid_at: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# --- crawling, keyword discovery, visibility (Phase J in plan.md) ---
+#
+# These three all run as background jobs: crawling a site, asking Google and an
+# LLM about a list of keywords, and reading Search Console take minutes, not the
+# milliseconds a request should last. SiteJob is what the UI polls.
+
+
+class JobKind(str, Enum):
+    crawl = "crawl"
+    keywords = "keywords"
+    visibility = "visibility"
+
+
+class JobStatus(str, Enum):
+    queued = "queued"
+    running = "running"
+    done = "done"
+    failed = "failed"
+
+
+class SiteJob(SQLModel, table=True):
+    """One background run. `progress`/`total` drive the progress bar; `message`
+    is the human sentence under it. Stored as plain strings, not DB enums, for
+    the reason in the block comment above Product."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True)
+    kind: str
+    status: str = Field(default=JobStatus.queued.value)
+    progress: int = 0
+    total: int = 0
+    message: Optional[str] = None
+    error: Optional[str] = None
+    credits_spent: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+class KeywordIdea(SQLModel, table=True):
+    """A keyword Signal suggests the site could target, and where the idea came
+    from. `source` is "gsc" (queries the site already gets impressions for -
+    real data), "ai" (read off the page's own content) or "serp" (Google's
+    related searches). Only gsc ideas carry impression/click/position numbers;
+    Signal has no search-volume database, so the rest are ideas, not estimates.
+    """
+    __table_args__ = (UniqueConstraint("site_id", "keyword", name="uq_keywordidea_site_keyword"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True)
+    keyword: str
+    source: str
+    rationale: Optional[str] = None  # why the AI thinks it fits
+    impressions: Optional[int] = None
+    clicks: Optional[int] = None
+    position: Optional[float] = None
+    # Set when the owner says "yes, I want to rank for this" - targeted ideas
+    # are what a visibility run checks.
+    targeted: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VisibilityCheck(SQLModel, table=True):
+    """Whether a site showed up for a keyword, per engine, at a point in time.
+
+    `engine` is "google" (classic organic results), "google_ai_overview" (the AI
+    answer box above them) or "chatgpt". `present` means ranked, cited, or
+    mentioned respectively - deliberately one column, because the question the
+    owner is asking is the same for all three: "did we show up?"
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True)
+    keyword: str
+    engine: str
+    present: bool = False
+    position: Optional[int] = None  # organic rank, google engine only
+    detail: Optional[str] = None  # citing URL, or the sentence that mentioned us
+    checked_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AdminAuditLog(SQLModel, table=True):

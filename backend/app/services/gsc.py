@@ -16,6 +16,9 @@ SEARCH_ANALYTICS_URL = "https://searchconsole.googleapis.com/webmasters/v3/sites
 INSPECT_URL = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
 
 MAX_QUERY_ROWS = 25
+# Keyword discovery wants a wide net, unlike the per-page table above which is
+# capped at what a person will actually read.
+MAX_SITE_QUERY_ROWS = 200
 
 
 class GSCError(Exception):
@@ -62,6 +65,33 @@ def get_page_search_analytics(access_token: str, property_url: str, page_url: st
             {"filters": [{"dimension": "page", "operator": "equals", "expression": page_url}]}
         ],
         "rowLimit": MAX_QUERY_ROWS,
+    }
+    url = SEARCH_ANALYTICS_URL.format(site=quote(property_url, safe=""))
+    data = _request("POST", url, access_token, json=payload)
+    return [
+        {
+            "query": row["keys"][0],
+            "clicks": row.get("clicks", 0),
+            "impressions": row.get("impressions", 0),
+            "ctr": round(row.get("ctr", 0) * 100, 2),
+            "position": round(row.get("position", 0), 1),
+        }
+        for row in data.get("rows", [])
+    ]
+
+
+def get_site_search_analytics(access_token: str, property_url: str, days: int = 28, limit: int = 100) -> List[dict]:
+    """The site's top search queries, across every page. This is the only
+    keyword source Signal has that is real measured data rather than a guess -
+    these are terms Google already shows the site for, so they are the best
+    place to look for something worth targeting properly."""
+    end = date.today()
+    start = end - timedelta(days=days)
+    payload = {
+        "startDate": start.isoformat(),
+        "endDate": end.isoformat(),
+        "dimensions": ["query"],
+        "rowLimit": min(limit, MAX_SITE_QUERY_ROWS),
     }
     url = SEARCH_ANALYTICS_URL.format(site=quote(property_url, safe=""))
     data = _request("POST", url, access_token, json=payload)
