@@ -1,9 +1,14 @@
 import type {
+  AdminProduct,
+  AdminStats,
+  AdminUserDetail,
+  AdminUserList,
   Alert,
   AltTextSuggestion,
   AppliedFix,
   Audit,
   AuditDetail,
+  BillingSummary,
   CompetitorResult,
   GAPageMetrics,
   GoogleAuthorizeResponse,
@@ -16,6 +21,8 @@ import type {
   Opportunity,
   OpportunityType,
   Page,
+  Pricing,
+  ProductVerifyResult,
   RankingActionPlan,
   Site,
   SiteHealth,
@@ -193,4 +200,72 @@ export const api = {
   getPageIndexStatus: (pageId: number) => request<GSCIndexStatus>(`/pages/${pageId}/gsc/index-status`),
   getPageGAMetrics: (pageId: number, days?: number) =>
     request<GAPageMetrics>(`/pages/${pageId}/ga/metrics${days ? `?days=${days}` : ""}`),
+
+  // pricing is public (the landing page uses it); billing needs a session
+  getPricing: () => request<Pricing>("/pricing"),
+  // billing (signed-in user)
+  getBilling: () => request<BillingSummary>("/billing"),
+  startCheckout: (productKey: string) =>
+    request<{ checkout_url: string }>("/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify({ product_key: productKey }),
+    }),
+  openBillingPortal: () => request<{ url: string }>("/billing/portal", { method: "POST" }),
+
+  // admin (owner only - the API enforces it; the UI just hides the link)
+  adminStats: () => request<AdminStats>("/admin/stats"),
+  adminUsers: (params: {
+    q?: string;
+    plan?: string;
+    paid?: boolean;
+    sort?: string;
+    order?: "asc" | "desc";
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.plan) qs.set("plan", params.plan);
+    if (params.paid !== undefined) qs.set("paid", String(params.paid));
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.order) qs.set("order", params.order);
+    if (params.page) qs.set("page", String(params.page));
+    if (params.pageSize) qs.set("page_size", String(params.pageSize));
+    return request<AdminUserList>(`/admin/users?${qs.toString()}`);
+  },
+  adminUser: (id: number) => request<AdminUserDetail>(`/admin/users/${id}`),
+  adminAdjustCredits: (id: number, delta: number, note: string) =>
+    request<AdminUserDetail>(`/admin/users/${id}/credits`, { method: "POST", body: JSON.stringify({ delta, note }) }),
+  adminChangePlan: (id: number, plan: string, note: string) =>
+    request<AdminUserDetail>(`/admin/users/${id}/plan`, { method: "POST", body: JSON.stringify({ plan, note }) }),
+  adminRecordPayment: (
+    id: number,
+    data: { amount_cents: number; credits: number; plan: string | null; note: string }
+  ) => request<AdminUserDetail>(`/admin/users/${id}/payments`, { method: "POST", body: JSON.stringify(data) }),
+  adminProducts: () => request<AdminProduct[]>("/admin/products"),
+  adminUpdateProduct: (
+    id: number,
+    data: Partial<
+      Pick<AdminProduct, "name" | "price_cents" | "credits" | "dodo_product_id" | "description" | "active" | "sort_order">
+    >
+  ) => request<AdminProduct>(`/admin/products/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  // Ask the Next.js server to refresh the cached landing page after a pricing
+  // change. Best-effort: if it fails the page just refreshes itself within 5 minutes.
+  revalidatePublicPricing: async () => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      await fetch("/api/revalidate-pricing", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    } catch {
+      // ignore
+    }
+  },
+  adminCreateCreditPack: (data: {
+    key: string;
+    name: string;
+    price_cents: number;
+    credits: number;
+    dodo_product_id?: string | null;
+  }) => request<AdminProduct>("/admin/products", { method: "POST", body: JSON.stringify(data) }),
+  adminVerifyProduct: (id: number) => request<ProductVerifyResult>(`/admin/products/${id}/verify`, { method: "POST" }),
 };

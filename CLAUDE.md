@@ -20,9 +20,17 @@ don't leave it stale.** Concretely:
 - New feature shipped in the dashboard → decide whether it earns its own
   `lp-feature-row` (or a full-width "deep dive" `lp-feature-row full`) or
   just a line in the `lp-strip` "also included" row, and add it.
-- Plan limits changed (`backend/app/models.py` `PLAN_LIMITS`) → update the
-  numbers in the Plans section of `landing-page.tsx` (search for the comment above
-  `lp-plans-grid` that points back at `PLAN_LIMITS`).
+- Plans/pricing: prices and the numeric limits are **not** hard-coded any more —
+  the Plans section renders `GET /pricing`, which reads the `Product` table (edited
+  by the owner in `/admin/pricing`) and `PLAN_LIMITS` in `backend/app/models.py`. So a
+  limit change needs no landing edit; a *new plan tier or credit pack behaviour* does
+  (`PLAN_EXTRAS` in `landing-page.tsx` holds each plan's non-numeric bullets, and
+  `lib/default-pricing.ts` is the fallback shown when the API is unreachable — keep it
+  in step with the migration's seeded catalog).
+- Never list a plan benefit that isn't running in production. Scheduled audits + alerts
+  are built but not deployed (see plan.md "Not yet scheduled"), so they are deliberately
+  *not* on the Pro card or in the "also included" strip — re-add them only once the
+  Celery/cron job is actually provisioned. Customers now pay for these plans.
 - A concept gets renamed or removed (e.g. "Opportunities" becomes something
   else) → update the matching `lp-feature-tag` and copy.
 - Auth/routing changes → the landing page's CTAs branch on `useAuth()`'s
@@ -42,6 +50,9 @@ writing copy for it.
 - `/` — public landing page (`app/landing-page.tsx` via `app/page.tsx`), not auth-gated.
   `app/robots.ts` / `app/sitemap.ts` serve `/robots.txt` and `/sitemap.xml`
   (public origin from `lib/site.ts`; `/dashboard` is disallowed).
+  Also public: `/terms`, `/privacy`, `/refunds` (route group `app/(legal)/`, required by
+  the payment provider — Dodo won't approve an account without them, pricing and a
+  contact address; the contact is `SUPPORT_EMAIL` in `lib/site.ts`).
 - `/login` — single page, handles both sign-in and sign-up (`?mode=register`
   defaults the toggle to registration). Redirects to `/dashboard` if already
   authenticated.
@@ -50,6 +61,12 @@ writing copy for it.
   This used to be a route group living at `/` before the landing page
   existed — if you ever run across old links to `/sites/...` or `/settings`
   (missing the `/dashboard` prefix), they're stale and need fixing.
+  `/dashboard/billing` is the customer's plan/credits/payment page.
+- `/admin/*` — the owner-only panel (users, payments, credits, pricing), client-gated by
+  `app/admin/layout.tsx` and **really** gated by the API: every `/admin/*` route needs the
+  caller's email in `ADMIN_EMAILS`. `/admin` is disallowed in `robots.ts`.
+- `app/api/revalidate-pricing` — admin-only Next route that refreshes the landing page's
+  cached pricing right after an edit in `/admin/pricing`.
 
 ## Dev gotchas
 
@@ -65,6 +82,17 @@ writing copy for it.
   adding a column to an existing model, either apply it manually
   (`ALTER TABLE ... ADD COLUMN ...`) against the dev DB or rebuild it — don't
   assume writing the Alembic migration alone fixes the running dev DB.
+- **Never write `User.credits_balance` directly.** All credit changes go through
+  `apply_credit_delta()` (`backend/app/services/credits.py`): an atomic conditional
+  `UPDATE` plus a `CreditTransaction` row in the same transaction, so the balance can't go
+  negative under concurrent requests and the ledger always sums to it. A plain
+  `user.credits_balance -= 1` reintroduces a race (12 parallel requests spent a 3-credit
+  balance) and leaves the admin panel's ledger inconsistent.
+- The pytest suite runs on SQLite by default; run it against Postgres with
+  `TEST_DATABASE_URL=postgresql://... pytest` (see `backend/README.md`) before shipping a
+  schema/migration/billing change — that mode also enables the Postgres-only concurrency
+  tests. The app seeds the default product catalog on startup when the `product` table is
+  empty, so a `create_all` dev DB isn't missing its paid plans.
 - SQLite (dev + the whole pytest suite) does **not** enforce enum labels;
   Postgres (production) does. SQLAlchemy stores an `Enum` column by member
   *name*, so a Python enum whose name differs from its value (e.g.

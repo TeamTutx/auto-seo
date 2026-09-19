@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Optional
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.models import AlertType, CheckStatus, OpportunityType, PlanTier, VerificationMethod
 
@@ -38,6 +38,10 @@ class UserRead(BaseModel):
     plan: PlanTier
     credits_balance: int
     created_at: datetime
+    # Computed from ADMIN_EMAILS on every request, never stored - so it can't be
+    # granted through the API. The UI uses it only to show the admin link; the
+    # /admin/* endpoints enforce it themselves.
+    is_admin: bool = False
 
 
 class Token(BaseModel):
@@ -327,3 +331,232 @@ class AlertRead(BaseModel):
     message: str
     read: bool
     created_at: datetime
+
+
+# --- pricing (public) / billing (signed-in user) ---
+
+class PlanLimitsRead(BaseModel):
+    max_sites: Optional[int] = None  # None = unlimited
+    max_pages_per_site: Optional[int] = None
+    max_keywords_per_page: Optional[int] = None
+
+
+class PricingPlan(BaseModel):
+    key: str  # "free" | "pro" | "agency"
+    name: str
+    price_cents: int
+    interval: Optional[str] = None
+    description: Optional[str] = None
+    limits: PlanLimitsRead
+    product_key: Optional[str] = None  # what to pass to POST /billing/checkout
+    purchasable: bool = False  # billing configured AND a Dodo product linked
+
+
+class PricingCreditPack(BaseModel):
+    key: str
+    name: str
+    price_cents: int
+    credits: int
+    description: Optional[str] = None
+    purchasable: bool = False
+
+
+class PricingResponse(BaseModel):
+    billing_enabled: bool
+    plans: List[PricingPlan]
+    credit_packs: List[PricingCreditPack]
+
+
+class CheckoutRequest(BaseModel):
+    product_key: str
+
+
+class CheckoutResponse(BaseModel):
+    checkout_url: str
+
+
+class PortalResponse(BaseModel):
+    url: str
+
+
+class BillingPaymentRead(BaseModel):
+    id: int
+    amount_cents: int
+    kind: str
+    plan: Optional[str] = None
+    credits_granted: int
+    paid_at: datetime
+
+
+class BillingSummary(BaseModel):
+    plan: PlanTier
+    credits_balance: int
+    billing_enabled: bool
+    has_subscription: bool
+    can_manage_billing: bool
+    payments: List[BillingPaymentRead]
+
+
+# --- admin ---
+
+class AdminUserRow(BaseModel):
+    id: int
+    email: str
+    plan: PlanTier
+    credits_balance: int
+    created_at: datetime
+    sites_count: int
+    total_paid_cents: int
+    last_active_at: Optional[datetime] = None
+    is_admin: bool = False
+
+
+class AdminUserList(BaseModel):
+    items: List[AdminUserRow]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminSiteRow(BaseModel):
+    id: int
+    domain: str
+    verified: bool
+    pages_count: int
+
+
+class AdminPaymentRow(BaseModel):
+    id: int
+    amount_cents: int
+    tax_cents: int
+    kind: str
+    plan: Optional[str] = None
+    credits_granted: int
+    provider: str
+    provider_ref: Optional[str] = None
+    note: Optional[str] = None
+    paid_at: datetime
+
+
+class AdminLedgerRow(BaseModel):
+    id: int
+    delta: int
+    balance_after: int
+    reason: str
+    ref: Optional[str] = None
+    note: Optional[str] = None
+    actor_email: Optional[str] = None
+    created_at: datetime
+
+
+class AdminAuditRow(BaseModel):
+    id: int
+    action: str
+    actor_email: Optional[str] = None
+    target_user_id: Optional[int] = None
+    payload: Optional[str] = None
+    created_at: datetime
+
+
+class AdminUserDetail(BaseModel):
+    id: int
+    email: str
+    plan: PlanTier
+    credits_balance: int
+    created_at: datetime
+    is_admin: bool
+    google_connected: bool
+    dodo_customer_id: Optional[str] = None
+    dodo_subscription_id: Optional[str] = None
+    total_paid_cents: int
+    last_active_at: Optional[datetime] = None
+    sites: List[AdminSiteRow]
+    payments: List[AdminPaymentRow]
+    ledger: List[AdminLedgerRow]
+    audit: List[AdminAuditRow]
+
+
+class AdminStats(BaseModel):
+    total_users: int
+    signups_7d: int
+    signups_30d: int
+    users_by_plan: dict
+    paying_users: int
+    revenue_all_cents: int
+    revenue_30d_cents: int
+    estimated_mrr_cents: int
+    credits_outstanding: int
+    credits_spent_30d: int
+    recent_signups: List[AdminUserRow]
+    recent_actions: List[AdminAuditRow]
+
+
+class CreditAdjustRequest(BaseModel):
+    delta: int
+    note: str = Field(min_length=3, max_length=500)
+
+    @field_validator("delta")
+    @classmethod
+    def validate_delta(cls, v: int) -> int:
+        if v == 0:
+            raise ValueError("delta must not be zero")
+        if abs(v) > 10_000:
+            raise ValueError("delta must be between -10000 and 10000")
+        return v
+
+
+class PlanChangeRequest(BaseModel):
+    plan: PlanTier
+    note: str = Field(min_length=3, max_length=500)
+
+
+class ManualPaymentRequest(BaseModel):
+    amount_cents: int = Field(ge=0, le=10_000_000)
+    credits: int = Field(default=0, ge=0, le=100_000)
+    plan: Optional[PlanTier] = None  # also switch the user to this plan
+    note: str = Field(min_length=3, max_length=500)
+    paid_at: Optional[datetime] = None
+
+
+class ProductRead(BaseModel):
+    id: int
+    key: str
+    name: str
+    kind: str
+    price_cents: int
+    interval: Optional[str] = None
+    plan: Optional[str] = None
+    credits: int
+    dodo_product_id: Optional[str] = None
+    description: Optional[str] = None
+    active: bool
+    sort_order: int
+    updated_at: datetime
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    price_cents: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    credits: Optional[int] = Field(default=None, ge=0, le=100_000)
+    dodo_product_id: Optional[str] = Field(default=None, max_length=120)  # "" clears the link
+    description: Optional[str] = Field(default=None, max_length=300)
+    active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class ProductCreate(BaseModel):
+    """Only credit packs can be created - the subscription tiers (Pro, Agency)
+    are fixed by PLAN_LIMITS and are seeded by the migration."""
+    key: str = Field(pattern=r"^[a-z0-9_]{2,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    price_cents: int = Field(ge=0, le=10_000_000)
+    credits: int = Field(gt=0, le=100_000)
+    dodo_product_id: Optional[str] = Field(default=None, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=300)
+
+
+class ProductVerifyResult(BaseModel):
+    ok: bool
+    message: str
+    dodo_price_cents: Optional[int] = None
+    dodo_currency: Optional[str] = None

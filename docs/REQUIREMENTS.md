@@ -110,6 +110,11 @@ mirroring how Signal itself is billed by its own data providers.
 - 1 credit = 1 AI suggestion generation
 
 ### 3.3 Billing implementation
+
+> **Update (2026-09-19):** payments are collected through **Dodo Payments** (a merchant of
+> record, chosen because Stripe accounts are invite-only in India), not Stripe. The rest of
+> this section describes intent; what's built is documented in `plan.md` Phase H and
+> `backend/README.md` "Billing & admin".
 - **Stripe** — Billing for subscriptions, Checkout for credit packs, Customer
   Portal for self-serve plan management/cancellation
 - Required keys: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,

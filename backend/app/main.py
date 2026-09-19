@@ -2,27 +2,35 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlmodel import Session
 
 from app.config import settings
-from app.database import create_db_and_tables
+from app.database import create_db_and_tables, engine
 from app.routers import (
+    admin,
     alerts,
     audits,
     auth,
+    billing,
     google_data,
     google_integration,
     keywords,
     opportunities,
     pages,
+    pricing,
     site_health,
     sites,
     suggestions,
+    webhooks,
 )
+from app.services.billing import seed_default_products
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    with Session(engine) as session:
+        seed_default_products(session)
     yield
 
 
@@ -50,6 +58,10 @@ app.include_router(opportunities.router)
 app.include_router(site_health.router)
 app.include_router(google_integration.router)
 app.include_router(google_data.router)
+app.include_router(pricing.router)
+app.include_router(billing.router)
+app.include_router(webhooks.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

@@ -3,7 +3,7 @@
 FastAPI service covering steps 1-4, 6, and most of 7 of the build order in
 [`../docs/REQUIREMENTS.md`](../docs/REQUIREMENTS.md#8-suggested-build-order),
 plus site verification (§2.1) and competitor comparison (§2.4). Step 5
-(Stripe) is deliberately skipped for now — see "Known gaps" below.
+(billing) is now built on Dodo Payments — see "Billing & admin" below.
 
 ## Setup
 
@@ -320,6 +320,77 @@ left out of this first pass to keep the OAuth surface reviewable) and
 feeding GSC query data into the Phase A opportunities list as a new
 opportunity type.
 
+## Billing & admin (Phase H)
+
+Owner-facing admin panel, credit ledger and Dodo Payments billing. Design
+rationale and decisions live in `plan.md` Phase H.
+
+**Admin access.** `ADMIN_EMAILS` (comma-separated) lists who can use `/admin/*`.
+`require_admin` (`app/deps.py`) checks it on *every* request — the JWT alone never
+confers admin, so removing an email revokes access immediately, and nothing in the
+API can grant it. `/auth/me` returns a computed `is_admin` so the UI can show the
+link.
+
+**Credits are a ledger.** Never write `User.credits_balance` directly: use
+`apply_credit_delta()` (`app/services/credits.py`). It does an atomic
+`UPDATE ... WHERE credits_balance + :delta >= 0` and inserts a `CreditTransaction`
+in the same transaction, so the balance can't go negative under concurrent
+requests (the previous read-modify-write let 12 parallel requests spend a 3-credit
+balance — proven on Postgres by `tests/test_postgres_concurrency.py`) and the
+ledger always sums to the balance. Every `deduct_credit(session, user, ref)` call
+site passes a `ref` (`keyword_check`, `ai_meta_description`, …).
+
+**Tables (migration `0008`).** `product` (the catalog — Pro, Agency, credit packs;
+seeded with the draft prices), `credittransaction`, `payment` (negative rows are
+refunds; `amount_cents` is USD excluding tax, `tax_cents` separate; unique on
+`(provider, provider_ref)` for webhook idempotency), `adminauditlog`, plus
+`user.dodo_customer_id` / `dodo_subscription_id`. `kind`/`reason`/`provider` are
+plain strings, deliberately not Postgres enums (see the enum gotcha in `CLAUDE.md`).
+
+**API.**
+- `GET /pricing` — public; what the landing page renders (edited from `/admin/pricing`).
+- `GET /billing`, `POST /billing/checkout {product_key}`, `POST /billing/portal` —
+  signed-in user. Checkout returns a hosted Dodo URL carrying `metadata.user_id` and
+  `product_key`; the redirect back proves nothing — only the webhook grants anything.
+- `POST /webhooks/dodo` — no login; authenticated only by its Standard Webhooks
+  signature (`app/services/dodo.py`, verified against the reference `standardwebhooks`
+  library). Idempotent (Dodo retries up to 8×), returns 5xx on a real failure so Dodo
+  retries, and acknowledges (200) events it can't attribute to a user.
+- `/admin/*` — `stats`, `users` (search/filter/sort/paginate), `users/{id}`,
+  `users/{id}/credits`, `users/{id}/plan`, `users/{id}/payments` (manual payment),
+  `products` (list/edit/create credit pack), `products/{id}/verify` (compare the shown
+  price with what Dodo charges).
+
+**Webhook events handled** (field names from Dodo's official SDK types):
+`payment.succeeded` (records the payment, grants credits for packs, sets the plan for
+subscriptions), `subscription.*` (every one carries `status`: `active`/`past_due` keep
+the plan, `on_hold`/`paused`/`cancelled`/`failed`/`expired` downgrade — but only if it's
+the subscription that granted the plan), `refund.succeeded` (negative payment row; a
+full refund of a pack takes back its credits, never below zero), `dispute.*` (logged
+to the audit trail for the owner). Amounts use USD; adaptive-pricing payments use the
+USD settlement amounts.
+
+**Going live.** In Dodo (test mode first): create Pro/Agency as subscription products and
+the credit pack as a one-time product, priced in USD; add a webhook endpoint
+`https://<api>/webhooks/dodo` with payment, subscription and refund events. On the
+backend set `ADMIN_EMAILS`, `DODO_API_KEY`, `DODO_WEBHOOK_KEY`, `DODO_ENVIRONMENT`
+(`test_mode`/`live_mode`). Then in `/admin/pricing` paste each `pdt_…` id and press
+**Check against Dodo**. To exercise the flow without a purchase:
+
+```bash
+export DODO_WEBHOOK_KEY=whsec_...   # the server's secret
+python scripts/dodo_test_webhook.py https://<api> payment --user-id 1 --product-key credits_50
+```
+
+**Testing on Postgres.** The suite runs on in-memory SQLite by default. Point it at a
+real database to catch what SQLite can't (enum labels, unique constraints, row locks) —
+this also enables the Postgres-only concurrency tests:
+
+```bash
+docker run -d --rm --name pgtest -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=signal_test -p 55432:5432 postgres:16
+TEST_DATABASE_URL=postgresql://postgres:pw@localhost:55432/signal_test pytest
+```
+
 ## Deploying (Render)
 
 `render.yaml` at the repo root is a Render Blueprint that deploys this
@@ -379,11 +450,12 @@ Steps:
 
 - Auth is homegrown JWT, not Clerk/NextAuth as REQUIREMENTS.md's stack
   table suggests — swap later if you want hosted auth.
-- Stripe is deliberately not integrated yet (step 5, skipped per user
-  request) — `credits_balance` is a fixed starting balance (3, from
-  registration) with no way to top up or renew monthly. The credit-gating
-  logic itself (check balance → decrement → 402 when empty) is already
-  built the same way it'll work once Stripe adds a way to refill it.
+- Billing is built but unproven against a *real* Dodo account: everything is tested with
+  signed fake webhooks and a mocked API. Do one test-mode purchase end to end before going
+  live — in particular confirm that the checkout `metadata` reaches renewal payments (if it
+  doesn't, renewals are attributed by subscription id, which is implemented and tested).
+- Credits never expire and free signups get 3 each, so throwaway accounts are cheap; there
+  is no "disable user" yet (see plan.md Phase H, optional items).
 - AI suggestions cover meta descriptions and title tags only - no content
   briefs yet (§2.7, v2).
 - GSC/GA integration (step 8) is built but unverified against real Google

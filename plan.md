@@ -193,13 +193,180 @@ mirror `PLAN_LIMITS` in `backend/app/models.py`; Pro/Agency show "Contact us
 to upgrade" (inert, not a link) rather than a real checkout, since Stripe
 billing isn't built yet - see below.
 
+## Phase H — Admin panel (users, payments, credits)
+
+**Status: built and tested locally (2026-09-19); not yet deployed, and not yet run
+against a real Dodo account** (verification in progress on Dodo's side).
+
+**What was built** (all three phases plus the prerequisites):
+- *Phase 0 - approval prerequisites:* `/terms`, `/privacy`, `/refunds` (drafts - the owner
+  should review them, and the refund terms are the builder's defaults: 7 days on new plans and
+  unused credit packs, 3 days on renewals), the support address `gharshit1237@gmail.com`
+  (`SUPPORT_EMAIL`) in the footer and legal pages, and real prices on the landing Plans
+  section. Per the owner's request, **pricing is configurable from the admin panel**
+  (`/admin/pricing`, backed by the `Product` table and the public `GET /pricing`), with
+  on-demand revalidation so edits show immediately. The Pro card and the "also included"
+  strip no longer promise scheduled audits, which aren't running in production.
+- *Phase 1:* migration `0008`, the credit ledger + atomic `apply_credit_delta` (fixing a real
+  race: 12 parallel requests could spend a 3-credit balance), `ADMIN_EMAILS`/`require_admin`,
+  `/admin` overview, users list and user detail with add/remove credits.
+- *Phase 2:* payments ledger, manual payment recording, plan changes, revenue/MRR on the
+  overview and user pages, audit log.
+- *Phase 3:* Dodo checkout (`POST /billing/checkout`), signed `POST /webhooks/dodo` handling
+  payments, subscriptions, refunds and disputes, customer portal, `/dashboard/billing`.
+- Verification: 255 backend tests on real Postgres 16 (253 on SQLite; 2 are Postgres-only
+  concurrency tests), migration up/down proven on Postgres from the 0007 state, webhook
+  signing cross-checked against the reference `standardwebhooks` library, and the whole flow
+  driven in a real browser against a mock Dodo (purchase, subscription, portal, expiry,
+  refund).
+
+**To go live** (in order): (1) deploy - migration `0008` runs automatically on Render's
+start command; set `ADMIN_EMAILS` on Render first. (2) Once Dodo approves the account: create
+the products (test mode), add the webhook endpoint, set `DODO_API_KEY`, `DODO_WEBHOOK_KEY`,
+`DODO_ENVIRONMENT`, paste the `pdt_...` ids into `/admin/pricing`, "Check against Dodo".
+(3) Make one test-mode purchase and confirm the plan/credits arrive. (4) Switch to
+`live_mode` keys.
+
+Goal: the owner can see who the users are, how much each has paid, and add
+credits to any of them, without SQL against the production database.
+
+**What existed before:** `User` had only `email`, `plan`, `credits_balance`,
+`created_at` - no admin flag, no payment record of any kind (billing is
+deferred, so "how much they paid" is $0 for everyone), and no credit history.
+`deduct_credit` (`backend/app/services/credits.py`) is a Python
+read-modify-write that logs nothing, so two concurrent requests can lose an
+update and nothing records who spent what (REQUIREMENTS.md §3.3 already asks
+for that log).
+
+**Decisions made:**
+- Amounts are in **USD** (2026-09-19), matching the draft pricing in
+  REQUIREMENTS.md §3.2. One currency: totals are a plain sum, stored as integer
+  cents (`amount_cents`), no `currency` column. If a second currency ever
+  appears, add the column then (backfill `'usd'`).
+- Payments are collected through **Dodo Payments** (chosen 2026-09-19), a
+  Merchant of Record: no monthly/setup fee, 4% + 40¢ per sale (+1.5% for
+  non-US cards, +0.5% for subscriptions), and Dodo collects/remits VAT, GST
+  and sales tax on our behalf. Stripe direct is invite-only in India and
+  Razorpay would leave global tax filing to us. Individuals (no registered
+  company) can onboard. Chosen for the lowest per-sale MoR fee and India
+  support; India payout details (INR vs USD, timing) are still to be confirmed
+  during Dodo's sign-up.
+
+**Defaults taken when building (the owner asked to build it all without changing them):**
+- Admin = an email listed in an `ADMIN_EMAILS` env var, checked on every
+  request by a `require_admin` dependency (403 otherwise). No DB flag, so no
+  API can grant admin; revoking = editing the env. `/auth/me` returns a computed
+  `is_admin` so the UI can show the link - the API is the real gate.
+- Built inside this app (`/admin/*` API + Next.js pages), not an off-the-shelf
+  tool like SQLAdmin (quick, but no ledger/payment workflow).
+
+**Prerequisite for Dodo - done (see "What was built"); kept for reference.** Dodo only
+approves an account (1-3 business days after submitting) once the live site
+publicly shows: pricing with billing intervals, Terms of Service, Privacy
+Policy, a refund/cancellation policy, and a monitored contact address, linked
+from the footer. None of these exist on signal-seo.in yet. So "Phase 0" is:
+- Add `/terms`, `/privacy`, `/refunds` pages (drafted from templates; the owner
+  should review them - they're not legal advice) and a support address (e.g.
+  forward `support@signal-seo.in` to the owner's inbox), linked from the landing
+  footer.
+- Put real prices on the landing Plans section (draft: Pro $24/mo, Agency
+  $89/mo, 50-credit pack $9 - confirm before publishing). This is a landing
+  page change, so the "Landing page parity" rule in `CLAUDE.md` applies.
+- Owner signs up at Dodo (submitted 2026-09-19, verification in progress; government ID + selfie via Persona, bank details -
+  the bank account name must match the verified identity) and submits the
+  product form. Phases 1-2 can be built while Dodo reviews.
+
+**Data model (migration 0008)** - plain string columns, *not* Postgres enums
+(see the enum gotcha in `CLAUDE.md`):
+- `credit_transaction`: `user_id`, `delta`, `balance_after`, `reason`
+  (`signup`/`usage`/`admin`/`purchase`/`refund`), `ref` (e.g. `keyword_check`),
+  `note`, `actor_id` (the admin, if any), `created_at`.
+- `payment`: `user_id`, `amount_cents`, `kind`
+  (`credit_pack`/`subscription`/`manual`/`refund`), `plan`, `credits_granted`,
+  `provider` (`manual`/`dodo`), `provider_ref` (unique - webhook
+  idempotency), `note`, `paid_at`.
+- `admin_audit_log`: `actor_id`, `action`, `target_user_id`, `payload`,
+  `created_at`.
+
+**Credit service:** one `apply_credit_delta()` performs an atomic
+`UPDATE ... SET credits_balance = credits_balance + :d` (with
+`WHERE credits_balance >= cost` when spending) and inserts the ledger row in the
+same transaction. `deduct_credit` becomes a wrapper; its ~dozen call sites
+(keywords, suggestions) gain a `reason`. This fixes the race and produces the
+usage log.
+
+**Admin API (`/admin/*`, all `require_admin`):** stats (signups, revenue,
+credits outstanding/spent); users list (search, filter by plan/paid, sort,
+paginate); user detail (sites, payments, ledger, Google connected yes/no -
+never tokens or password hashes, via explicit response schemas); `POST
+credits {delta, note}` (note required, floor 0, capped); `POST plan`; `POST
+payments` (manual; can grant credits/plan in the same transaction).
+
+**UI:** `/admin` (summary), `/admin/users` (table), `/admin/users/[id]` (add
+credits, record payment, change plan, ledger + payments tables). Reuses the app
+shell and design tokens; `/admin` goes in `app/robots.ts`'s disallow list.
+Internal-only, so no landing-page change.
+
+**Phases:**
+1. Users + credits: list, detail, add/remove credits, ledger, atomic spend.
+2. Payments: manual recording, revenue on list/detail/stats, plan changes.
+3. Real billing with Dodo (needs Dodo approval + test-mode products):
+   - Owner creates the products in Dodo (Pro, Agency, 50-credit pack), test
+     mode first, and pastes `DODO_API_KEY`, `DODO_WEBHOOK_KEY` and
+     `DODO_ENVIRONMENT` (`test_mode`/`live_mode`) into Render; a small config
+     maps each Dodo product id to `{kind, plan, credits}`.
+   - `POST /billing/checkout {product}` (authenticated) creates a Dodo checkout
+     session with the user's email and `metadata.user_id`, returns the hosted
+     checkout URL; the frontend redirects there. Card data never touches Signal.
+   - `POST /webhooks/dodo` (no login; authenticated only by the signature, via
+     the official SDK's `webhooks.unwrap`, which implements the Standard
+     Webhooks headers `webhook-id`/`webhook-timestamp`/`webhook-signature`).
+     `payment.succeeded` calls `record_payment()` (idempotent on Dodo's payment
+     id, since Dodo retries up to 8 times over ~10 hours) and grants the plan or
+     credits; subscription-renewed/cancelled/expired and `payment.failed` move
+     the plan; refund events add a refund row (and revoke credits if we decide
+     to); dispute events flag the user. Return 2xx fast.
+   - Credits stay in our own DB as the single source of truth - we sell packs as
+     one-time products and grant on the webhook, rather than using Dodo's own
+     credit-entitlement feature.
+   - Store `dodo_customer_id` on the user and add `POST /billing/portal` so
+     customers manage/cancel subscriptions and cards in Dodo's hosted portal.
+   - Replace the "top-ups aren't available yet" 402 message in `credits.py` with
+     a buy-credits link; make the landing Plans cards real checkout CTAs
+     (landing parity rule); swap the unused `stripe_*` settings in `config.py`
+     for the Dodo ones.
+   - Optional: disable user (free signups get 3 credits per email, so throwaway
+     accounts are cheap), CSV export, vendor-cost vs revenue.
+
+**Open items to settle while building Phase 3** (not verified yet): the exact
+subscription/refund event names (only `payment.succeeded`, `payment.failed` and
+`subscription.active` were confirmed in Dodo's docs); which payload fields give
+the customer charge vs tax vs our net settlement (decide what "paid" means in
+the admin panel - gross charge excluding tax is the intent - by inspecting a
+test-mode payload); INR vs USD payout and settlement timing for India.
+
+**Still open:** optional extras (disable user, CSV export, vendor-cost vs revenue), scheduled
+audits (see below), and the real-account verification above - in particular confirming that
+checkout `metadata` reaches *renewal* payments (renewals are attributed by subscription id
+either way), INR-vs-USD payout to India, and Dodo's exact tax/settlement fields on a real
+payload.
+
+**Tests written:** 401/403 for anonymous/non-admin, ledger sums to balance,
+concurrent-spend test, payment idempotency on `provider_ref`, webhook rejected
+on a bad signature, no `hashed_password` in any admin response, and a
+real-Postgres migration run (throwaway `postgres:16`) since SQLite won't catch
+enum/type mismatches.
+
 ## Not yet scheduled
 
 - **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
-- **Stripe billing** — deliberately deferred per earlier decision. The
-  landing page's Pro/Agency plan cards are ready for a real checkout link
-  once this exists.
-- **Scheduled audits + alerts on Render** — the feature itself is built and
+- **Billing (Dodo Payments)** — deliberately deferred per earlier decision
+  (amounts in USD; provider chosen 2026-09-19). It is Phase 3 of the admin
+  panel (Phase H above): the payments ledger comes first, then a Dodo webhook
+  feeds it. The landing page's Pro/Agency plan
+  cards are ready for a real checkout link once this exists.
+- **Scheduled audits + alerts on Render** (also: the landing page no longer advertises them
+  - re-add "daily scheduled audits" to the Pro card and the strip once this is provisioned) — the feature itself is built and
   works anywhere Celery+Redis run (see "Scheduled audits + alerts" in
   `backend/README.md`), but isn't provisioned on the production Render
   deployment (`render.yaml`, 2026-09-18 decision) — Render has no free tier

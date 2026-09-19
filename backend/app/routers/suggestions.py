@@ -35,6 +35,7 @@ def _fetch_and_suggest(
     current_user: User,
     session: Session,
     generate: Callable[[str, str, str], str],
+    ref: str,
 ) -> str:
     page = get_owned_page(session, page_id, current_user)
     require_credits(current_user)
@@ -49,7 +50,7 @@ def _fetch_and_suggest(
     except AIProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, ref)
     return suggestion
 
 
@@ -59,7 +60,7 @@ def suggest_meta_description(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_meta_description)
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_meta_description, "ai_meta_description")
     return MetaDescriptionSuggestion(suggestion=suggestion)
 
 
@@ -69,7 +70,7 @@ def suggest_title_tag(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_title_tag)
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_title_tag, "ai_title_tag")
     return TitleTagSuggestion(suggestion=suggestion)
 
 
@@ -79,7 +80,7 @@ def suggest_heading(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_heading_suggestion)
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_heading_suggestion, "ai_heading")
     return HeadingSuggestion(suggestion=suggestion)
 
 
@@ -89,7 +90,7 @@ def suggest_readability(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_readability_suggestion)
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_readability_suggestion, "ai_readability")
     return ReadabilitySuggestion(suggestion=suggestion)
 
 
@@ -115,7 +116,7 @@ def suggest_alt_text(
     if not suggestions:
         return []
 
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "ai_alt_text")
     return [AltTextSuggestion(**s) for s in suggestions]
 
 
@@ -148,5 +149,5 @@ def suggest_internal_links(
     except AIProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "ai_internal_links")
     return InternalLinkSuggestion(suggestion=suggestion)

@@ -113,12 +113,28 @@ export default function Sidebar() {
       </div>
 
       <Link
+        href="/dashboard/billing"
+        className="add-site-btn"
+        style={{ textDecoration: "none", justifyContent: "flex-start" }}
+      >
+        Billing
+      </Link>
+      <Link
         href="/dashboard/settings"
         className="add-site-btn"
         style={{ textDecoration: "none", justifyContent: "flex-start" }}
       >
         Settings
       </Link>
+      {user?.is_admin && (
+        <Link
+          href="/admin"
+          className="add-site-btn"
+          style={{ textDecoration: "none", justifyContent: "flex-start", color: "var(--warn)" }}
+        >
+          Admin panel
+        </Link>
+      )}
 
       {user && (
         <div className="plan-widget">
@@ -127,6 +143,9 @@ export default function Sidebar() {
             <AlertsBell />
           </div>
           <div className="plan-credits">{user.credits_balance} credits remaining</div>
+          <Link href="/dashboard/billing" className="footer-text" style={{ color: "var(--accent)", textDecoration: "none" }}>
+            {user.plan === "free" ? "Upgrade or buy credits" : "Buy credits"}
+          </Link>
         </div>
       )}
 

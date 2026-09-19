@@ -180,3 +180,24 @@ options.
   see `backend/README.md`.
 - No dedicated alerts page - `AlertsBell` is a quick list, not a full
   history/filter view.
+
+## Admin, billing and legal pages
+
+- `app/admin/*` — owner-only panel: **Overview** (users, revenue, paying users, estimated
+  MRR, credits outstanding/spent), **Users** (search, plan/paid filters, sortable, paginated)
+  and **user detail** (add/remove credits with a required reason, record a manual payment,
+  change plan, payments / credit history / audit trail), and **Pricing & plans** (edit
+  prices, names, credit-pack sizes, link Dodo product ids, "Check against Dodo"). The layout
+  bounces non-admins, but the API is the real gate (`ADMIN_EMAILS`). Saving pricing calls
+  `app/api/revalidate-pricing` so the public page updates immediately.
+- `app/dashboard/billing` — a customer's plan, credits, upgrade/buy buttons (hosted Dodo
+  checkout), "Manage billing" (Dodo customer portal) and payment history. After checkout it
+  polls briefly, because the webhook that grants the plan can land a few seconds after the
+  redirect.
+- `app/page.tsx` fetches `GET /pricing` on the server (5-minute cache + on-demand
+  revalidation) and hands it to `app/landing-page.tsx`; `lib/default-pricing.ts` is the
+  fallback if the API is down.
+- `app/(legal)/` — `/terms`, `/privacy`, `/refunds`. Required by Dodo before it approves an
+  account; they're drafts written to match what the product does, so have them reviewed.
+- Optional env: `NEXT_PUBLIC_SUPPORT_EMAIL` (defaults to the owner's address; shown on the
+  legal pages and footer).

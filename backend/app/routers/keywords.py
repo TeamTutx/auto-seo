@@ -69,7 +69,7 @@ def add_keyword(
     result = check_keyword_rank(
         session, page, payload.keyword, payload.location_code, payload.language_code, payload.device
     )
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "keyword_check")
     return result
 
 
@@ -131,7 +131,7 @@ def recheck_keywords(
             )
         except HTTPException:
             continue
-        deduct_credit(session, current_user)
+        deduct_credit(session, current_user, "keyword_recheck")
         results.append(result)
     return results
 
@@ -153,7 +153,7 @@ def keyword_competitors(
     except RankProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "competitor_lookup")
     return [
         CompetitorResult(position=c.position, title=c.title, domain=c.domain, url=c.url) for c in competitors
     ]
@@ -178,7 +178,7 @@ def keyword_opportunities(
         )
     except RankProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "keyword_opportunities_serp")
 
     try:
         html = fetch_html(page.url)
@@ -190,7 +190,7 @@ def keyword_opportunities(
     except AIProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "keyword_opportunities_ai")
     return [KeywordOpportunity(**o) for o in opportunities]
 
 
@@ -214,7 +214,7 @@ def keyword_action_plan(
         )
     except RankProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "action_plan_serp")
 
     try:
         html = fetch_html(page.url)
@@ -226,5 +226,5 @@ def keyword_action_plan(
     except AIProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    deduct_credit(session, current_user)
+    deduct_credit(session, current_user, "action_plan_ai")
     return RankingActionPlan(plan=plan)

@@ -2,8 +2,20 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { formatUsd, limitLabel } from "@/lib/format";
+import { SUPPORT_EMAIL } from "@/lib/site";
+import type { Pricing, PricingPlan } from "@/lib/types";
 
-export default function LandingPage() {
+// What each plan includes beyond its numeric limits (those come from the API,
+// which mirrors PLAN_LIMITS). Only list things the product really does in
+// production - scheduled audits are built but not deployed, so they're not here.
+const PLAN_EXTRAS: Record<string, string[]> = {
+  free: ["Full audits + opportunities list", "Manual rescan, 1× per day", "Credits included to try AI fixes & rank checks"],
+  pro: ["Everything in Free", "Unlimited manual rescans"],
+  agency: ["Everything in Pro", "Built for managing client sites"],
+};
+
+export default function LandingPage({ pricing }: { pricing: Pricing }) {
   const { user } = useAuth();
 
   const primaryHref = user ? "/dashboard" : "/login?mode=register";
@@ -573,8 +585,8 @@ export default function LandingPage() {
             </svg>
           </div>
           <div>
-            <h4>Scheduled audits + alerts</h4>
-            <p>Daily re-audits on Pro/Agency, with an in-app alert whenever a score drops 10+ points or a check starts newly failing.</p>
+            <h4>Alerts on verified fixes</h4>
+            <p>Mark a fix as applied and Signal alerts you in-app the moment your next scan confirms it worked.</p>
           </div>
         </div>
         <div className="lp-strip-item">
@@ -633,78 +645,21 @@ export default function LandingPage() {
           <div className="lp-kicker">Plans</div>
           <h2>Start free. Grow into more sites and automation.</h2>
         </div>
-        {/* Limits mirror PLAN_LIMITS in backend/app/models.py - keep in sync if that changes. */}
+        {/* Prices and limits come from GET /pricing (edited in /admin/pricing); PLAN_EXTRAS above is the copy. */}
         <div className="lp-plans-grid">
-          <div className="lp-plan-card">
-            <div className="lp-plan-top">
-              <span className="lp-plan-name">Free</span>
-            </div>
-            <div className="lp-plan-price lp-mono">$0</div>
-            <ul className="lp-plan-feats">
-              <li>
-                <b>1</b> site
-              </li>
-              <li>
-                <b>5</b> pages per site
-              </li>
-              <li>
-                <b>3</b> tracked keywords per page
-              </li>
-              <li>Full audits + opportunities list</li>
-              <li>Manual rescan, 1× per day</li>
-              <li>Credits included to try AI fixes &amp; rank checks</li>
-            </ul>
-            <Link className="btn lp-btn-block" href={primaryHref}>
-              {user ? "Go to dashboard" : "Get started free"}
-            </Link>
-          </div>
-          <div className="lp-plan-card featured">
-            <div className="lp-plan-top">
-              <span className="lp-plan-name">Pro</span>
-              <span className="lp-plan-flag">Popular</span>
-            </div>
-            <div className="lp-plan-price lp-mono">Contact us</div>
-            <ul className="lp-plan-feats">
-              <li>
-                <b>5</b> sites
-              </li>
-              <li>
-                <b>50</b> pages per site
-              </li>
-              <li>
-                <b>50</b> tracked keywords per page
-              </li>
-              <li>Everything in Free</li>
-              <li>Unlimited manual rescans</li>
-              <li>Daily scheduled audits + alerts</li>
-            </ul>
-            <span className="btn btn-ghost lp-btn-block" style={{ cursor: "default", opacity: 0.8 }}>
-              Contact us to upgrade
-            </span>
-          </div>
-          <div className="lp-plan-card">
-            <div className="lp-plan-top">
-              <span className="lp-plan-name">Agency</span>
-            </div>
-            <div className="lp-plan-price lp-mono">Contact us</div>
-            <ul className="lp-plan-feats">
-              <li>
-                <b>Unlimited</b> sites
-              </li>
-              <li>
-                <b>Unlimited</b> pages per site
-              </li>
-              <li>
-                <b>Unlimited</b> tracked keywords
-              </li>
-              <li>Everything in Pro</li>
-              <li>Built for managing client sites</li>
-            </ul>
-            <span className="btn btn-ghost lp-btn-block" style={{ cursor: "default", opacity: 0.8 }}>
-              Contact us to upgrade
-            </span>
-          </div>
+          {pricing.plans.map((plan) => (
+            <PlanCard key={plan.key} plan={plan} user={!!user} primaryHref={primaryHref} />
+          ))}
         </div>
+        {pricing.credit_packs.length > 0 && (
+          <p className="lp-plans-note">
+            Need more credits? {pricing.credit_packs.map((p) => `${p.name} — ${formatUsd(p.price_cents)}`).join(" · ")} (one-time).
+          </p>
+        )}
+        <p className="lp-plans-note">
+          Prices in USD, billed monthly, cancel any time. Payments are handled by Dodo Payments, our merchant of record, which adds
+          sales tax/VAT where required. See our <Link href="/refunds">refund policy</Link> and <Link href="/terms">terms</Link>.
+        </p>
       </section>
 
       <div className="lp-section lp-cta-band">
@@ -743,10 +698,73 @@ export default function LandingPage() {
               <Link href="/login">Log in</Link>
               <Link href="/login?mode=register">Create account</Link>
             </div>
+            <div className="lp-footer-col">
+              <h5>Legal &amp; contact</h5>
+              <Link href="/terms">Terms of Service</Link>
+              <Link href="/privacy">Privacy Policy</Link>
+              <Link href="/refunds">Refund Policy</Link>
+              <a href={`mailto:${SUPPORT_EMAIL}`}>Contact</a>
+            </div>
           </div>
         </div>
         <div className="lp-footer-bottom">SIGNAL · SEO AUDITS, RANK TRACKING &amp; AI FIXES IN ONE APP</div>
       </footer>
+    </div>
+  );
+}
+
+function PlanCard({ plan, user, primaryHref }: { plan: PricingPlan; user: boolean; primaryHref: string }) {
+  const free = plan.key === "free";
+  const featured = plan.key === "pro";
+  const limits = plan.limits;
+
+  let cta: React.ReactNode;
+  if (free) {
+    cta = (
+      <Link className="btn lp-btn-block" href={primaryHref}>
+        {user ? "Go to dashboard" : "Get started free"}
+      </Link>
+    );
+  } else if (plan.purchasable) {
+    cta = (
+      <Link className="btn lp-btn-block" href={user ? "/dashboard/billing" : "/login?mode=register"}>
+        {user ? `Upgrade to ${plan.name}` : `Get ${plan.name}`}
+      </Link>
+    );
+  } else {
+    cta = (
+      <span className="btn btn-ghost lp-btn-block" style={{ cursor: "default", opacity: 0.8 }}>
+        Coming soon
+      </span>
+    );
+  }
+
+  return (
+    <div className={`lp-plan-card ${featured ? "featured" : ""}`}>
+      <div className="lp-plan-top">
+        <span className="lp-plan-name">{plan.name}</span>
+        {featured && <span className="lp-plan-flag">Popular</span>}
+      </div>
+      <div className="lp-plan-price lp-mono">
+        {formatUsd(plan.price_cents)}
+        {plan.interval && <span className="lp-plan-per"> / {plan.interval}</span>}
+      </div>
+      <ul className="lp-plan-feats">
+        <li>
+          <b>{limitLabel(limits.max_sites)}</b> site{limits.max_sites === 1 ? "" : "s"}
+        </li>
+        <li>
+          <b>{limitLabel(limits.max_pages_per_site)}</b> pages per site
+        </li>
+        <li>
+          <b>{limitLabel(limits.max_keywords_per_page)}</b> tracked keywords per page
+        </li>
+        {(PLAN_EXTRAS[plan.key] ?? []).map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+        {plan.description && <li>{plan.description}</li>}
+      </ul>
+      {cta}
     </div>
   );
 }

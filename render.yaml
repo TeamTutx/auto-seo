@@ -75,3 +75,16 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+
+      # Admin panel: emails allowed into /admin (comma-separated).
+      - key: ADMIN_EMAILS
+        sync: false
+
+      # Billing (Dodo Payments) - see backend/README.md "Billing & admin".
+      # Billing stays off until both keys are set.
+      - key: DODO_API_KEY
+        sync: false
+      - key: DODO_WEBHOOK_KEY
+        sync: false
+      - key: DODO_ENVIRONMENT
+        value: test_mode

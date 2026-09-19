@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -52,6 +53,11 @@ class User(SQLModel, table=True):
     plan: PlanTier = Field(default=PlanTier.free)
     credits_balance: int = Field(default=3)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Set from Dodo webhooks (app/services/dodo_webhooks.py): the customer id
+    # lets us open the billing portal, the subscription id ties renewals and
+    # cancellations back to this user.
+    dodo_customer_id: Optional[str] = Field(default=None, index=True)
+    dodo_subscription_id: Optional[str] = Field(default=None, index=True)
 
     sites: List["Site"] = Relationship(back_populates="user")
 
@@ -175,3 +181,93 @@ class GoogleConnection(SQLModel, table=True):
     token_expires_at: datetime
     scope: str = Field(default="")
     connected_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# --- Billing / admin (Phase H in plan.md) ---
+#
+# Deliberately plain string columns instead of Postgres enums for kind/reason/
+# provider: SQLite (tests, dev) doesn't enforce enum labels but Postgres does,
+# which once broke every audit in production (see CLAUDE.md), and a new value
+# must never need an `ALTER TYPE`. Validation lives in the API schemas.
+
+
+class CreditReason(str, Enum):
+    opening_balance = "opening_balance"  # ledger backfill for pre-existing users
+    signup = "signup"
+    usage = "usage"
+    admin = "admin"
+    purchase = "purchase"
+    refund = "refund"
+
+
+class PaymentKind(str, Enum):
+    credit_pack = "credit_pack"
+    subscription = "subscription"
+    manual = "manual"
+    refund = "refund"
+
+
+class Product(SQLModel, table=True):
+    """What's for sale, and what the public pricing section shows. Edited from
+    the admin panel (/admin/pricing). The displayed price is informational -
+    the amount actually charged is whatever the linked Dodo product says, so the
+    admin page can compare the two (POST /admin/products/{id}/verify)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(index=True, unique=True)  # "pro", "agency", "credits_50"
+    name: str
+    kind: str  # "subscription" | "credit_pack"
+    price_cents: int
+    interval: Optional[str] = None  # "month" for subscriptions
+    plan: Optional[str] = None  # PlanTier value a subscription grants
+    credits: int = 0  # credits a credit pack grants
+    dodo_product_id: Optional[str] = None
+    description: Optional[str] = None
+    active: bool = True
+    sort_order: int = 0
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CreditTransaction(SQLModel, table=True):
+    """Every change to User.credits_balance, written in the same transaction as
+    the change itself (app/services/credits.py) - so the ledger always sums to
+    the balance."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    delta: int
+    balance_after: int
+    reason: str
+    ref: Optional[str] = None  # what was spent on, e.g. "keyword_check"
+    note: Optional[str] = None
+    actor_id: Optional[int] = Field(default=None, foreign_key="user.id")  # the admin, if any
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Payment(SQLModel, table=True):
+    """Money received (or returned: refunds are negative rows). amount_cents is
+    what the customer paid *excluding tax*, in USD; tax_cents is recorded
+    separately so partial refunds can be prorated. Dodo's own fee is not
+    deducted - this is gross revenue."""
+    __table_args__ = (UniqueConstraint("provider", "provider_ref", name="uq_payment_provider_ref"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    amount_cents: int
+    tax_cents: int = 0
+    kind: str
+    plan: Optional[str] = None
+    credits_granted: int = 0
+    provider: str  # "manual" | "dodo"
+    provider_ref: Optional[str] = None  # Dodo payment/refund id - webhook idempotency
+    note: Optional[str] = None
+    actor_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    paid_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AdminAuditLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor_id: Optional[int] = Field(default=None, foreign_key="user.id")  # None = system (webhook)
+    action: str
+    target_user_id: Optional[int] = Field(default=None, index=True)
+    payload: Optional[str] = None  # JSON text
+    created_at: datetime = Field(default_factory=datetime.utcnow)
