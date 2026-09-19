@@ -10,10 +10,26 @@ import type { Pricing } from "@/lib/types";
 // redeploy. If the API is down we fall back to the seeded defaults.
 export const revalidate = 300;
 
+/** A reachable API is not the same as a *current* one. The frontend and the API
+ *  deploy independently, so during a rollout this can get the previous version's
+ *  response shape - which once failed the Netlify build outright, because the
+ *  page read `limits.max_sites` off a body that had no `limits`. Anything
+ *  missing falls back to the seeded defaults rather than throwing. */
+function normalise(body: unknown): Pricing {
+  const data = (body ?? {}) as Partial<Pricing>;
+  const packs = Array.isArray(data.credit_packs) ? data.credit_packs : null;
+  return {
+    billing_enabled: typeof data.billing_enabled === "boolean" ? data.billing_enabled : false,
+    signup_credits: typeof data.signup_credits === "number" ? data.signup_credits : DEFAULT_PRICING.signup_credits,
+    limits: data.limits && typeof data.limits === "object" ? data.limits : DEFAULT_PRICING.limits,
+    credit_packs: packs ?? DEFAULT_PRICING.credit_packs,
+  };
+}
+
 async function getPricing(): Promise<Pricing> {
   try {
     const res = await fetch(`${API_URL}/pricing`, { next: { revalidate: 300 }, signal: AbortSignal.timeout(8000) });
-    if (res.ok) return (await res.json()) as Pricing;
+    if (res.ok) return normalise(await res.json());
   } catch {
     // API unreachable (e.g. Render cold start during a build) - use the fallback
   }
