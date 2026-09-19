@@ -8,7 +8,6 @@ import { useSiteJobs } from "@/lib/use-site-jobs";
 import JobProgress from "@/components/JobProgress";
 import { scoreBucket } from "@/lib/score";
 import { useSites } from "@/lib/sites-context";
-import OpportunitiesPanel from "@/components/OpportunitiesPanel";
 import SearchPresencePanel from "@/components/SearchPresencePanel";
 import ScoreGauge from "@/components/ScoreGauge";
 import SiteHealthPanel from "@/components/SiteHealthPanel";
@@ -190,7 +189,7 @@ export default function SiteOverviewPage() {
   return (
     <div>
       <div className="topbar">
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
           {editingDomain ? (
             <form onSubmit={handleSaveDomain} style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
@@ -245,6 +244,9 @@ export default function SiteOverviewPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/opportunities`}>
+            Fixes
+          </Link>
           <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/keywords`}>
             Keywords
           </Link>
@@ -424,9 +426,6 @@ export default function SiteOverviewPage() {
         </div>
       )}
 
-      <div style={{ marginTop: 28 }}>
-        <OpportunitiesPanel siteId={siteId} />
-      </div>
     </div>
   );
 }

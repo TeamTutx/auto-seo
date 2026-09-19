@@ -258,6 +258,9 @@ input {
   justify-content: space-between;
   margin-bottom: 28px;
   gap: 16px;
+  /* The site page carries six actions. Without wrapping, they squeeze the title
+     into a one-word-per-line column long before the viewport is actually small. */
+  flex-wrap: wrap;
 }
 .page-title {
   font-size: 22px;
