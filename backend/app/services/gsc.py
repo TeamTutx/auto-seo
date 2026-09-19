@@ -107,6 +107,38 @@ def get_site_search_analytics(access_token: str, property_url: str, days: int = 
     ]
 
 
+def get_page_daily_metrics(access_token: str, property_url: str, page_url: str, days: int = 28) -> List[dict]:
+    """One row per day for a single page: clicks, impressions and average
+    position. This is the page's actual search performance over time - the only
+    trend line Signal can draw from measured data rather than inference.
+
+    Search Console lags roughly two days, so the most recent dates are usually
+    missing rather than zero. Days with no impressions simply aren't returned;
+    the caller fills the gaps so the chart has a continuous x-axis."""
+    end = date.today()
+    start = end - timedelta(days=days)
+    payload = {
+        "startDate": start.isoformat(),
+        "endDate": end.isoformat(),
+        "dimensions": ["date"],
+        "dimensionFilterGroups": [
+            {"filters": [{"dimension": "page", "operator": "equals", "expression": page_url}]}
+        ],
+        "rowLimit": days + 1,
+    }
+    url = SEARCH_ANALYTICS_URL.format(site=quote(property_url, safe=""))
+    data = _request("POST", url, access_token, json=payload)
+    return [
+        {
+            "date": row["keys"][0],
+            "clicks": int(row.get("clicks", 0)),
+            "impressions": int(row.get("impressions", 0)),
+            "position": round(row.get("position", 0), 1),
+        }
+        for row in data.get("rows", [])
+    ]
+
+
 def inspect_url(access_token: str, property_url: str, page_url: str) -> dict:
     payload = {"inspectionUrl": page_url, "siteUrl": property_url}
     data = _request("POST", INSPECT_URL, access_token, json=payload)

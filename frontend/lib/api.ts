@@ -26,6 +26,7 @@ import type {
   Pricing,
   ProductVerifyResult,
   RankingActionPlan,
+  SearchPresence,
   Site,
   SiteHealth,
   SiteJob,
@@ -175,6 +176,7 @@ export const api = {
   // crawl, keyword discovery, visibility - all three start a background run and
   // return a job the caller polls with siteJobs()
   siteJobs: (siteId: number) => request<SiteJobs>(`/sites/${siteId}/jobs`),
+  searchPresence: (siteId: number) => request<SearchPresence>(`/sites/${siteId}/presence`),
   startCrawl: (siteId: number) => request<SiteJob>(`/sites/${siteId}/crawl`, { method: "POST" }),
   indexSummary: (siteId: number) => request<IndexSummary>(`/sites/${siteId}/index-summary`),
   checkPageIndex: (pageId: number) => request<Page>(`/pages/${pageId}/index-check`, { method: "POST" }),

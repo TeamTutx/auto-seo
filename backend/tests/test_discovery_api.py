@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlmodel import Session, select
 
+import app.services.gsc as gsc_module
 import app.services.site_jobs as site_jobs
 from app.models import KeywordIdea, Page, SiteJob, VisibilityCheck
 from app.services.crawler import Discovered
@@ -475,3 +476,163 @@ def test_no_ai_overview_is_distinguished_from_not_being_cited(monkeypatch):
     _, ai = vis.check_google("widgets", "example.com")
 
     assert ai.present is False and ai.detail == vis.NO_AI_OVERVIEW
+
+
+# --- search presence (the site page's gauges + trend) ---
+
+def test_presence_gauges_score_google_and_ai_out_of_checked_keywords(client, db, targeted_site, monkeypatch):
+    headers, site_id, keyword = targeted_site
+    monkeypatch.setattr(site_jobs.visibility, "check_google", lambda kw, domain, *a, **k: [
+        EngineResult(engine="google", present=True, position=9),
+        EngineResult(engine="google_ai_overview", present=False, detail="Cited instead: ahrefs.com"),
+    ])
+    monkeypatch.setattr(site_jobs.visibility, "check_chatgpt", lambda kw, domain: EngineResult(
+        engine="chatgpt", present=True, detail="Example.com is one option."))
+    client.post(f"/sites/{site_id}/visibility/check", headers=headers)
+
+    presence = client.get(f"/sites/{site_id}/presence", headers=headers).json()
+
+    assert presence["checked_keywords"] == 1
+    assert (presence["google_visible"], presence["google_score"], presence["best_position"]) == (1, 100, 9)
+    # AI combines the Overview citation and the model mention - one question to the owner
+    assert (presence["ai_visible"], presence["ai_score"]) == (1, 100)
+    assert (presence["ai_overview_cited"], presence["chatgpt_mentions"]) == (0, 1)
+
+
+def test_presence_scores_are_null_before_anything_is_checked(client, db, stub_discovery, no_google):
+    """Nothing checked yet is not the same as "visible for none of them", and a
+    gauge reading 0% would say the second."""
+    headers = register_and_login(client, "pres2@test.dev")
+    site_id = make_site(client, headers)
+
+    presence = client.get(f"/sites/{site_id}/presence", headers=headers).json()
+
+    assert presence["checked_keywords"] == 0
+    assert presence["google_score"] is None and presence["ai_score"] is None
+    assert presence["trend_unavailable"] == "no_pages"
+
+
+def test_presence_explains_why_there_is_no_trend_line(client, db, monkeypatch, no_google):
+    headers = register_and_login(client, "pres3@test.dev")
+    site_id = make_site(client, headers)
+    monkeypatch.setattr(site_jobs, "discover", lambda domain, limit: [Discovered("https://example.com/", "sitemap")])
+    client.post(f"/sites/{site_id}/crawl", headers=headers)
+
+    presence = client.get(f"/sites/{site_id}/presence", headers=headers).json()
+
+    assert presence["trend_unavailable"] == "no_google"  # pages exist, Google doesn't
+    assert presence["trend"] == []
+
+
+def test_presence_charts_the_home_page_and_measures_the_week_on_week_change(client, db, monkeypatch):
+    from datetime import date, timedelta
+
+    headers = register_and_login(client, "pres4@test.dev")
+    site_id = make_site(client, headers)
+    monkeypatch.setattr(site_jobs, "discover", lambda domain, limit: [
+        Discovered("https://example.com/blog/post", "sitemap"),
+        Discovered("https://example.com/", "sitemap"),
+    ])
+    monkeypatch.setattr(site_jobs, "google_access", lambda session, site: ("token", "sc-domain:example.com"))
+    monkeypatch.setattr(site_jobs.index_status, "check_page", lambda *a: None)
+    client.post(f"/sites/{site_id}/crawl", headers=headers)
+
+    today = date.today()
+    # 10/day for the older week, 20/day for the most recent: a clean +100%.
+    rows = (
+        [{"date": (today - timedelta(days=d)).isoformat(), "clicks": 1, "impressions": 10, "position": 12.0}
+         for d in range(13, 6, -1)]
+        + [{"date": (today - timedelta(days=d)).isoformat(), "clicks": 2, "impressions": 20, "position": 8.0}
+           for d in range(6, -1, -1)]
+    )
+    captured = {}
+
+    def fake_daily(token, prop, page_url, days=28):
+        captured["page_url"] = page_url
+        return rows
+
+    monkeypatch.setattr(gsc_module, "get_page_daily_metrics", fake_daily)
+
+    presence = client.get(f"/sites/{site_id}/presence", headers=headers).json()
+
+    assert captured["page_url"] == "https://example.com/"  # the home page, not the first crawled
+    assert presence["trend_page_url"] == "https://example.com/"
+    assert presence["trend_unavailable"] is None
+    assert len(presence["trend"]) == 29  # gaps filled, so the x-axis is continuous
+    assert presence["impressions_total"] == 7 * 10 + 7 * 20
+    assert presence["impressions_change"] == 100
+    assert presence["average_position"] == 10.0
+
+
+def test_days_with_no_impressions_are_filled_in_rather_than_skipped(client, db, monkeypatch):
+    """Search Console omits empty days entirely. Plotting only what it returns
+    would squeeze a quiet month into a busy-looking line."""
+    from datetime import date, timedelta
+
+    headers = register_and_login(client, "pres5@test.dev")
+    site_id = make_site(client, headers)
+    monkeypatch.setattr(site_jobs, "discover", lambda domain, limit: [Discovered("https://example.com/", "sitemap")])
+    monkeypatch.setattr(site_jobs, "google_access", lambda session, site: ("token", "sc-domain:example.com"))
+    monkeypatch.setattr(site_jobs.index_status, "check_page", lambda *a: None)
+    client.post(f"/sites/{site_id}/crawl", headers=headers)
+    two_days_ago = (date.today() - timedelta(days=2)).isoformat()
+    monkeypatch.setattr(gsc_module, "get_page_daily_metrics", lambda *a, **k: [
+        {"date": two_days_ago, "clicks": 5, "impressions": 50, "position": 3.0},
+    ])
+
+    trend = client.get(f"/sites/{site_id}/presence", headers=headers).json()["trend"]
+
+    # 29 days, minus today and yesterday trimmed as reporting lag
+    assert len(trend) == 27
+    assert sum(p["impressions"] for p in trend) == 50
+    assert next(p for p in trend if p["date"] == two_days_ago)["clicks"] == 5
+    # the quiet days before it are still drawn, so the gap is visible
+    assert sum(1 for p in trend if p["impressions"] == 0) == 26
+
+
+def test_the_trend_stops_before_search_consoles_reporting_lag(client, db, monkeypatch):
+    """Search Console runs ~2 days behind, so its trailing zeros mean "not
+    counted yet". Drawing them plunges the line to the floor and reads as
+    traffic collapsing."""
+    from datetime import date, timedelta
+
+    headers = register_and_login(client, "lag@test.dev")
+    site_id = make_site(client, headers)
+    monkeypatch.setattr(site_jobs, "discover", lambda domain, limit: [Discovered("https://example.com/", "sitemap")])
+    monkeypatch.setattr(site_jobs, "google_access", lambda session, site: ("token", "sc-domain:example.com"))
+    monkeypatch.setattr(site_jobs.index_status, "check_page", lambda *a: None)
+    client.post(f"/sites/{site_id}/crawl", headers=headers)
+    today = date.today()
+    # Real data up to 2 days ago, then nothing - exactly the lag pattern.
+    monkeypatch.setattr(gsc_module, "get_page_daily_metrics", lambda *a, **k: [
+        {"date": (today - timedelta(days=d)).isoformat(), "clicks": 2, "impressions": 30, "position": 7.0}
+        for d in range(28, 1, -1)
+    ])
+
+    trend = client.get(f"/sites/{site_id}/presence", headers=headers).json()["trend"]
+
+    assert trend[-1]["date"] == (today - timedelta(days=2)).isoformat()
+    assert all(p["impressions"] > 0 for p in trend)  # no false cliff at the end
+
+
+def test_a_real_run_of_zero_days_is_not_hidden(client, db, monkeypatch):
+    """Only the lag window is trimmed. A site that genuinely stopped getting
+    impressions a week ago must still see that week."""
+    from datetime import date, timedelta
+
+    headers = register_and_login(client, "lag2@test.dev")
+    site_id = make_site(client, headers)
+    monkeypatch.setattr(site_jobs, "discover", lambda domain, limit: [Discovered("https://example.com/", "sitemap")])
+    monkeypatch.setattr(site_jobs, "google_access", lambda session, site: ("token", "sc-domain:example.com"))
+    monkeypatch.setattr(site_jobs.index_status, "check_page", lambda *a: None)
+    client.post(f"/sites/{site_id}/crawl", headers=headers)
+    today = date.today()
+    monkeypatch.setattr(gsc_module, "get_page_daily_metrics", lambda *a, **k: [
+        {"date": (today - timedelta(days=d)).isoformat(), "clicks": 2, "impressions": 30, "position": 7.0}
+        for d in range(28, 9, -1)  # nothing for the last 10 days
+    ])
+
+    trend = client.get(f"/sites/{site_id}/presence", headers=headers).json()["trend"]
+
+    zeros = [p for p in trend if p["impressions"] == 0]
+    assert len(zeros) >= 6  # the real drought is still visible

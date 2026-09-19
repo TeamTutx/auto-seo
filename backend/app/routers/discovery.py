@@ -18,6 +18,8 @@ from app.routers.pages import get_owned_page
 from app.routers.sites import _get_owned_site
 from app.schemas import (
     IndexSummary,
+    SearchPresence,
+    TrendPoint,
     KeywordIdeaRead,
     KeywordTargetRequest,
     PageRead,
@@ -27,8 +29,9 @@ from app.schemas import (
     VisibilityKeywordRead,
     VisibilityReport,
 )
-from app.services import index_status, site_jobs, visibility
+from app.services import gsc, index_status, search_presence, site_jobs, visibility
 from app.services.credits import deduct_credit, require_credits
+from app.services.gsc import GSCError
 
 router = APIRouter(tags=["discovery"])
 
@@ -71,6 +74,54 @@ def site_jobs_status(
         kind.value: _job_read(site_jobs.latest(session, site.id, kind.value))
         for kind in JobKind
     })
+
+
+@router.get("/sites/{site_id}/presence", response_model=SearchPresence)
+def site_presence(
+    site_id: int,
+    days: int = 28,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Google and AI visibility gauges, plus the home page's search trend. Reads
+    stored data and (when connected) Search Console; never spends a credit, so
+    the site page is free to open as often as the owner likes."""
+    site = _get_owned_site(session, site_id, current_user)
+    scores, _ = search_presence.visibility_scores(session, site.id)
+
+    page = search_presence.home_page(session, site)
+    google = site_jobs.google_access(session, site)
+    unavailable = None
+    rows: List[dict] = []
+
+    if page is None:
+        unavailable = "no_pages"
+    elif google is None:
+        unavailable = "no_property" if site.gsc_property else "no_google"
+    else:
+        try:
+            rows = gsc.get_page_daily_metrics(*google, page.url, days=days)
+        except GSCError:
+            # An expired grant or a property the user only has partial access to
+            # shouldn't blank the gauges, which don't need Google at all.
+            unavailable = "no_google"
+
+    points = search_presence.fill_gaps(rows, days) if rows else []
+    if not points and unavailable is None:
+        unavailable = "no_data"
+
+    ranked = [p["position"] for p in points if p["position"]]
+    return SearchPresence(
+        **scores,
+        trend_page_url=page.url if page else None,
+        trend=[TrendPoint(**p) for p in points],
+        clicks_total=sum(p["clicks"] for p in points),
+        impressions_total=sum(p["impressions"] for p in points),
+        clicks_change=search_presence.trailing_change(points, "clicks"),
+        impressions_change=search_presence.trailing_change(points, "impressions"),
+        average_position=round(sum(ranked) / len(ranked), 1) if ranked else None,
+        trend_unavailable=unavailable,
+    )
 
 
 # --- crawl + index status ---

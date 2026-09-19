@@ -20,6 +20,10 @@ don't leave it stale.** Concretely:
 - New feature shipped in the dashboard → decide whether it earns its own
   `lp-feature-row` (or a full-width "deep dive" `lp-feature-row full`) or
   just a line in the `lp-strip` "also included" row, and add it.
+- The site page leads with `SearchPresencePanel` (Google + AI gauges and the home page's
+  Search Console trend, from `GET /sites/{id}/presence`) where the opportunities list used
+  to be; `OpportunitiesPanel` now sits below the pages it refers to. The presence endpoint
+  never spends a credit, so the page stays free to open.
 - Anything the site page shows about crawling, index status, keyword ideas or visibility
   is fed by `app/routers/discovery.py`. What each action costs is listed in two places
   the user reads — `CREDIT_COSTS` on the landing page and the "What a credit buys" panel

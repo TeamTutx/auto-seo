@@ -488,6 +488,19 @@ unit at a time — and are written up in `CLAUDE.md`. If a worker is ever provis
 down with `alembic check` clean, and the crawler run against the real signal-seo.in (which
 is how the `/login?mode=register` duplicate was found and fixed).
 
+**The site page now leads with it.** `SearchPresencePanel` replaced the opportunities list
+in the prime slot: two gauges (Google, AI answers) that sweep up from zero on mount, and
+the home page's Search Console impressions as a self-drawing area chart with a hover
+readout. Opportunities moved below the pages they refer to rather than being removed - it
+is still the list the product is about. Everything the panel shows is derived from data
+already stored, so opening a site costs nothing.
+
+One bug worth remembering came out of looking at the chart: Search Console reports about
+two days behind, and drawing those trailing zeros plunged the line to the floor - it read
+as traffic collapsing, and it dragged the week-on-week figures from +31% down to +2%.
+Trailing zeros inside the lag window are trimmed; a genuine run of quiet days is not, and
+is still drawn.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

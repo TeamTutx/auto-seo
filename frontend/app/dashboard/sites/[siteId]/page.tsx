@@ -9,6 +9,7 @@ import JobProgress from "@/components/JobProgress";
 import { scoreBucket } from "@/lib/score";
 import { useSites } from "@/lib/sites-context";
 import OpportunitiesPanel from "@/components/OpportunitiesPanel";
+import SearchPresencePanel from "@/components/SearchPresencePanel";
 import ScoreGauge from "@/components/ScoreGauge";
 import SiteHealthPanel from "@/components/SiteHealthPanel";
 import SiteVerification from "@/components/SiteVerification";
@@ -313,9 +314,9 @@ export default function SiteOverviewPage() {
         </div>
       </div>
 
-      <SiteHealthPanel siteId={siteId} />
+      <SearchPresencePanel siteId={siteId} />
 
-      <OpportunitiesPanel siteId={siteId} />
+      <SiteHealthPanel siteId={siteId} />
 
       <div className="section-toolbar">
         <div className="section-title">Pages</div>
@@ -422,6 +423,10 @@ export default function SiteOverviewPage() {
           })}
         </div>
       )}
+
+      <div style={{ marginTop: 28 }}>
+        <OpportunitiesPanel siteId={siteId} />
+      </div>
     </div>
   );
 }

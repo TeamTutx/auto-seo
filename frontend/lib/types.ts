@@ -343,6 +343,35 @@ export interface VisibilityReport {
   keywords: VisibilityKeyword[];
 }
 
+export interface TrendPoint {
+  date: string;
+  clicks: number;
+  impressions: number;
+  position: number | null;
+}
+
+export interface SearchPresence {
+  targeted_keywords: number;
+  checked_keywords: number;
+  google_visible: number;
+  /** Percent of checked keywords. null = nothing checked yet, which is not 0%. */
+  google_score: number | null;
+  best_position: number | null;
+  ai_visible: number;
+  ai_score: number | null;
+  ai_overview_cited: number;
+  chatgpt_mentions: number;
+  last_checked_at: string | null;
+  trend_page_url: string | null;
+  trend: TrendPoint[];
+  clicks_total: number;
+  impressions_total: number;
+  clicks_change: number | null;
+  impressions_change: number | null;
+  average_position: number | null;
+  trend_unavailable: "no_google" | "no_property" | "no_pages" | "no_data" | null;
+}
+
 // --- admin ---
 
 export interface AdminUserRow {

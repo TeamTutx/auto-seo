@@ -458,6 +458,42 @@ class VisibilityReport(BaseModel):
     keywords: List[VisibilityKeywordRead]
 
 
+class TrendPoint(BaseModel):
+    date: str  # YYYY-MM-DD
+    clicks: int
+    impressions: int
+    position: Optional[float] = None
+
+
+class SearchPresence(BaseModel):
+    """What the site page leads with: one gauge for Google, one for AI answers,
+    and the home page's search trend behind them. Derived entirely from data
+    already stored, so opening the page costs nothing."""
+    # Google + AI gauges
+    targeted_keywords: int
+    checked_keywords: int  # how many of those have actually been checked
+    google_visible: int
+    google_score: Optional[int] = None  # percent, None = nothing checked yet
+    best_position: Optional[int] = None
+    ai_visible: int
+    ai_score: Optional[int] = None
+    ai_overview_cited: int
+    chatgpt_mentions: int
+    last_checked_at: Optional[datetime] = None
+
+    # Trend for the home page
+    trend_page_url: Optional[str] = None
+    trend: List[TrendPoint] = []
+    clicks_total: int = 0
+    impressions_total: int = 0
+    clicks_change: Optional[int] = None  # percent vs the previous week
+    impressions_change: Optional[int] = None
+    average_position: Optional[float] = None
+    # Why there's no trend line, when there isn't one: "no_google", "no_property",
+    # "no_pages", "no_data", or None when there is.
+    trend_unavailable: Optional[str] = None
+
+
 class IndexSummary(BaseModel):
     total_pages: int
     indexed: int

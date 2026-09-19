@@ -1826,3 +1826,82 @@ tbody tr.clickable:hover {
   display: block; font-size: 11px; color: var(--text-muted); margin-top: 3px;
   max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+
+/* ===== Search presence: the site page's headline gauges + trend ===== */
+.presence-panel { padding: 20px 22px 18px; margin-bottom: 24px; }
+.presence-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+.presence-body { display: grid; grid-template-columns: 290px 1fr; gap: 28px; align-items: start; }
+@media (max-width: 900px) {
+  .presence-body { grid-template-columns: 1fr; gap: 22px; }
+}
+.presence-skeleton {
+  height: 150px; border-radius: 8px;
+  background: linear-gradient(90deg, var(--surface-raised) 25%, var(--border) 50%, var(--surface-raised) 75%);
+  background-size: 200% 100%; animation: presence-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes presence-shimmer { to { background-position: -200% 0; } }
+
+.presence-gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gauge-card { position: relative; text-align: center; }
+.gauge-svg { width: 100%; max-width: 132px; height: auto; display: block; margin: 0 auto; }
+.gauge-arc {
+  /* Sweep the arc up from empty once, then leave it still. */
+  animation: gauge-sweep .95s cubic-bezier(.25, .9, .3, 1) both;
+}
+@keyframes gauge-sweep { from { stroke-dasharray: 0 9999; } }
+.gauge-centre {
+  position: absolute; top: 46%; left: 0; right: 0; transform: translateY(-50%); pointer-events: none;
+}
+.gauge-pct { font-family: var(--font-mono); font-size: 23px; font-weight: 600; color: var(--text); letter-spacing: -.02em; }
+.gauge-name { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.gauge-hint { font-size: 11.5px; color: var(--text-muted); margin-top: -6px; }
+.gauge-foot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); margin-top: 3px; opacity: .8; }
+
+.presence-trend { min-width: 0; }
+.presence-trend-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.presence-trend-title { font-size: 13px; font-weight: 500; color: var(--text); }
+.presence-trend-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.presence-figures { display: flex; gap: 20px; }
+.presence-figure-value {
+  font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text);
+  display: flex; align-items: baseline; gap: 5px;
+}
+.presence-figure-value span { font-size: 10.5px; font-weight: 500; }
+.presence-figure-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+
+.trend-wrap { position: relative; }
+.trend-svg { width: 100%; height: 120px; display: block; overflow: visible; }
+.trend-svg.ghost { opacity: .5; }
+.trend-line {
+  /* Draw the line left to right once. The dash length is a generous
+     over-estimate of the path length so it works at any data density. */
+  stroke-dasharray: 2000; stroke-dashoffset: 2000;
+  animation: trend-draw 1.3s cubic-bezier(.4, 0, .2, 1) .15s forwards;
+}
+@keyframes trend-draw { to { stroke-dashoffset: 0; } }
+.trend-area { opacity: 0; animation: trend-fade .8s ease-out .7s forwards; }
+@keyframes trend-fade { to { opacity: 1; } }
+.trend-axis {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 11px; color: var(--text-muted); margin-top: 6px; min-height: 16px;
+}
+.trend-readout { color: var(--text-muted); }
+.trend-readout b { color: var(--text); font-family: var(--font-mono); }
+.trend-empty { text-align: center; position: relative; }
+.trend-empty p {
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.6; max-width: 400px;
+  margin: -58px auto 10px; position: relative;
+}
+
+.presence-cta {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gauge-arc, .trend-line, .trend-area, .presence-skeleton { animation: none; }
+  .trend-line { stroke-dashoffset: 0; }
+  .trend-area { opacity: 1; }
+}
