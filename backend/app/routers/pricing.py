@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.database import get_session
-from app.models import ACCOUNT_LIMITS, SIGNUP_CREDITS, Product
+from app import models
+from app.models import ACCOUNT_LIMITS, Product
 from app.schemas import AccountLimitsRead, PricingCreditPack, PricingResponse
 
 router = APIRouter(tags=["pricing"])
@@ -21,7 +22,7 @@ def build_pricing(session: Session) -> PricingResponse:
     ).all()
     return PricingResponse(
         billing_enabled=settings.billing_enabled,
-        signup_credits=SIGNUP_CREDITS,
+        signup_credits=models.SIGNUP_CREDITS,  # read late, so a change takes effect everywhere at once
         limits=AccountLimitsRead(**ACCOUNT_LIMITS),
         credit_packs=[
             PricingCreditPack(

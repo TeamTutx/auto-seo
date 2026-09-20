@@ -7,7 +7,7 @@ import type { Pricing } from "./types";
 // there can be any number of them.
 export const DEFAULT_PRICING: Pricing = {
   billing_enabled: false,
-  signup_credits: 3,
+  signup_credits: 10,
   limits: { max_sites: 5, max_pages_per_site: 50, max_keywords_per_page: 25 },
   credit_packs: [
     {

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import app.models as models
 import app.services.site_jobs as site_jobs
 from app.database import get_session
 from app.config import settings
@@ -20,6 +21,19 @@ _real_session_factory = site_jobs.session_factory
 # unique-constraint edge cases or row locking the way production does (see the
 # enum gotcha in CLAUDE.md), so run it that way before shipping schema changes.
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
+# What a new account starts with, *for tests only*. Pinned because the real
+# SIGNUP_CREDITS is a growth lever the owner tunes, and dozens of assertions
+# about credit arithmetic ("started with this, spent one, expect that") would
+# otherwise all need rewriting every time that number moves - for no gain, since
+# none of them are testing the free allowance. The tests that *do* care assert
+# against models.SIGNUP_CREDITS itself, whatever it happens to be.
+SIGNUP_CREDITS_IN_TESTS = 3
+
+
+@pytest.fixture(autouse=True)
+def pinned_signup_credits(monkeypatch):
+    monkeypatch.setattr(models, "SIGNUP_CREDITS", SIGNUP_CREDITS_IN_TESTS)
 
 
 @pytest.fixture

@@ -1,8 +1,9 @@
 from sqlmodel import Session, select
 
-from app.models import ACCOUNT_LIMITS, SIGNUP_CREDITS, Product
+import app.models as models
+from app.models import ACCOUNT_LIMITS, CreditTransaction, Product, User
 from app.services.billing import DEFAULT_PRODUCTS, seed_default_products
-from tests.conftest import link_dodo_product
+from tests.conftest import link_dodo_product, register_and_login
 
 
 def test_pricing_is_public_and_lists_the_credit_packs(client, products):
@@ -10,7 +11,7 @@ def test_pricing_is_public_and_lists_the_credit_packs(client, products):
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["signup_credits"] == SIGNUP_CREDITS
+    assert body["signup_credits"] == models.SIGNUP_CREDITS
     assert body["limits"] == ACCOUNT_LIMITS  # the same for everyone; there are no tiers
     assert [p["key"] for p in body["credit_packs"]] == ["credits_10", "credits_50", "credits_200"]
     assert body["credit_packs"][1] == {
@@ -135,3 +136,23 @@ def test_seeding_never_overwrites_an_admins_edits_or_refills_a_curated_catalog(c
         session.commit()
         assert seed_default_products(session) == 0
         assert [p.key for p in session.exec(select(Product)).all()] == ["credits_50"]
+
+
+def test_the_free_allowance_reaches_signup_and_the_pricing_page_together(client, db, monkeypatch):
+    """The number a visitor is promised and the number a new account actually
+    gets are the same number, whatever it is set to. Asserting against the
+    constant rather than a literal is the point: this has to keep holding when
+    the allowance is tuned."""
+    monkeypatch.setattr(models, "SIGNUP_CREDITS", 25)
+
+    promised = client.get("/pricing").json()["signup_credits"]
+    client.post("/auth/register", json={"email": "allowance@test.dev", "password": "correct-horse-battery"})
+    headers = register_and_login(client, "allowance2@test.dev")
+    granted = client.get("/auth/me", headers=headers).json()["credits_balance"]
+
+    assert promised == granted == 25
+    with Session(db) as session:
+        user = session.exec(select(User).where(User.email == "allowance2@test.dev")).one()
+        ledger = session.exec(select(CreditTransaction).where(CreditTransaction.user_id == user.id)).all()
+    # the ledger has to sum to the balance, or the admin panel disagrees with itself
+    assert [(t.delta, t.reason) for t in ledger] == [(25, "signup")]

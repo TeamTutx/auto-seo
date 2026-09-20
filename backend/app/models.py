@@ -50,8 +50,13 @@ class OpportunityType(str, Enum):
 ACCOUNT_LIMITS = {"max_sites": 5, "max_pages_per_site": 50, "max_keywords_per_page": 25}
 
 # What a new account starts with, so it can try Signal before buying credits.
-# Real money: every one of these is a SerpApi or OpenAI call.
-SIGNUP_CREDITS = 3
+# Real money: every one of these is a SerpApi or OpenAI call, so this is a
+# growth lever with a direct cost - expect it to be tuned.
+#
+# Read through this module (models.SIGNUP_CREDITS), never copied into another
+# module's namespace at import time, so changing it changes every reader at
+# once and tests can pin it. See User.credits_balance below.
+SIGNUP_CREDITS = 10
 
 
 class User(SQLModel, table=True):
@@ -59,7 +64,10 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     hashed_password: str
     plan: PlanTier = Field(default=PlanTier.free)
-    credits_balance: int = Field(default=SIGNUP_CREDITS)
+    # default_factory, not default: a plain default is captured when the class
+    # is defined, which would freeze SIGNUP_CREDITS at import time and make the
+    # value impossible to change for a running process or a test.
+    credits_balance: int = Field(default_factory=lambda: SIGNUP_CREDITS)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Set from Dodo webhooks (app/services/dodo_webhooks.py): the customer id
     # lets us open the billing portal, the subscription id ties renewals and

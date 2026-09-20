@@ -132,6 +132,15 @@ writing copy for it.
   which is what rescues pages stored before any of this. Google *Analytics* has none of
   this trouble — it matches on `pagePath`, so it works either way, which is exactly why
   the two can disagree and look like a bug.
+- **`SIGNUP_CREDITS` (the free allowance) is read late, never imported by value.** Use
+  `models.SIGNUP_CREDITS`, not `from app.models import SIGNUP_CREDITS` — the latter binds
+  the number at import and silently ignores any later change, which is exactly what one
+  test did until it started failing. `User.credits_balance` uses `default_factory` for the
+  same reason. `tests/conftest.py` pins it to `SIGNUP_CREDITS_IN_TESTS` so the suite's
+  credit arithmetic doesn't churn every time the allowance is tuned; tests that actually
+  care about the allowance assert against the constant, not a literal. The landing page
+  and `/dashboard/billing` read it from `GET /pricing`, so they need no edit — but
+  `frontend/lib/default-pricing.ts` is a hardcoded fallback and does.
 - **Never write `User.credits_balance` directly.** All credit changes go through
   `apply_credit_delta()` (`backend/app/services/credits.py`): an atomic conditional
   `UPDATE` plus a `CreditTransaction` row in the same transaction, so the balance can't go

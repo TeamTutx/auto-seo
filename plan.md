@@ -332,7 +332,7 @@ Internal-only, so no landing-page change.
      a buy-credits link; make the landing Plans cards real checkout CTAs
      (landing parity rule); swap the unused `stripe_*` settings in `config.py`
      for the Dodo ones.
-   - Optional: disable user (free signups get 3 credits per email, so throwaway
+   - Optional: disable user (free signups get 10 credits per email, so throwaway
      accounts are cheap), CSV export, vendor-cost vs revenue.
 
 **Open items to settle while building Phase 3** (not verified yet): the exact
@@ -514,6 +514,15 @@ hand-typed URLs are normalised on entry without touching the path, and the Searc
 lookup retries the other slash form before reporting nothing - which is what rescues rows
 stored before the fix. Google Analytics never had the problem because it matches on
 `pagePath`; that asymmetry is what made the two panels disagree.
+
+**Free signup allowance raised 3 → 10 (2026-09-20).** A growth lever with a direct cost:
+every credit is a real SerpApi or OpenAI call, and there is still nothing stopping a
+throwaway email from collecting another ten (see the disable-user note above - that is the
+obvious mitigation when it starts mattering). The number lives in one place,
+`SIGNUP_CREDITS` in `models.py`, and is read late rather than copied at import so changing
+it changes every reader at once. The test suite pins it to its own value, because dozens
+of assertions about credit arithmetic were tracking a product decision they had no
+interest in; the tests that genuinely care assert against the constant itself.
 
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
