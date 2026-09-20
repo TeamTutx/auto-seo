@@ -4,15 +4,18 @@ import { DEFAULT_PRICING } from "@/lib/default-pricing";
 import { API_URL, SITE_URL } from "@/lib/site";
 import type { Pricing } from "@/lib/types";
 
-// Prices are edited in /admin/pricing and read from the API. Fetched on the
-// server so the HTML crawlers (and Dodo's reviewers) see carries the real
-// prices, and re-fetched at most every 5 minutes so an edit shows up without a
-// redeploy. If the API is down we fall back to the seeded defaults.
-export const revalidate = 300;
+// Prices are edited in /admin/pricing and read from the API. Fetched at build
+// time so the HTML crawlers (and Dodo's reviewers) see carries the real prices.
+// If the API is down we fall back to the seeded defaults.
+//
+// There is no revalidate window any more: this is a static export, so there is
+// no server to re-render on a timer. A pricing change in /admin/pricing asks
+// Render to rebuild instead (backend/app/services/site_rebuild.py), which takes
+// a couple of minutes and produces the same HTML the crawler wants.
 
 /** A reachable API is not the same as a *current* one. The frontend and the API
  *  deploy independently, so during a rollout this can get the previous version's
- *  response shape - which once failed the Netlify build outright, because the
+ *  response shape - which once failed a production build outright, because the
  *  page read `limits.max_sites` off a body that had no `limits`. Anything
  *  missing falls back to the seeded defaults rather than throwing. */
 function normalise(body: unknown): Pricing {
@@ -28,7 +31,7 @@ function normalise(body: unknown): Pricing {
 
 async function getPricing(): Promise<Pricing> {
   try {
-    const res = await fetch(`${API_URL}/pricing`, { next: { revalidate: 300 }, signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${API_URL}/pricing`, { signal: AbortSignal.timeout(8000) });
     if (res.ok) return normalise(await res.json());
   } catch {
     // API unreachable (e.g. Render cold start during a build) - use the fallback

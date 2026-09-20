@@ -592,6 +592,29 @@ cost 2 credits per keyword on the site. `POST /sites/{id}/visibility/check` now 
 optional keyword, and each row has its own check. The body stays optional so the "Check
 all" button is the same call it always was.
 
+**Off Netlify, onto Render's CDN (2026-09-20).** Netlify's free plan is 300 credits a
+month and a production deploy costs 15 of them — about twenty deploys — with bandwidth at
+20 credits/GB. Over the limit the site is *paused* until the next billing cycle, along
+with every other project on the account. Not a bill to negotiate: an outage, on the
+public pages, days after starting to care about ranking.
+
+Render's static sites are free and never sleep. Its free *web services* do sleep — 15
+minutes idle, ~a minute to wake — which is why the frontend is a static export rather
+than a Node service: a one-minute first byte for Googlebot would have undone the
+`/auto-seo-tools` work.
+
+The export costs three things, all of which turned out to be cheap. Dynamic route
+segments can only be pre-rendered if they can be enumerated, and per-user ids can't, so
+dashboard ids moved into the query string (`lib/routes.ts` owns every URL now, which is
+better than the 24 hand-built template literals it replaced). Old links are rewritten to
+`/legacy-link`, which reads the path the rewrite preserved and forwards. And the landing
+page's 5-minute ISR became a build-time fetch plus a deploy hook the *API* fires after a
+pricing change — on the API because a deploy hook spends build minutes, and anything the
+browser can send is public.
+
+Nothing was lost that the SEO pages care about: `/` and `/auto-seo-tools` were already
+prerendered, and now they come off a CDN with no origin to wake up.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

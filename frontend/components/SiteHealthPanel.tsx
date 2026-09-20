@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import type { KeywordMovement, ScoreMovement, SiteHealth } from "@/lib/types";
 import ScoreTrendChart from "./ScoreTrendChart";
 
@@ -38,7 +39,7 @@ export default function SiteHealthPanel({ siteId }: { siteId: number }) {
     health.keyword_losses.length > 0;
 
   function goToPage(pageId: number) {
-    router.push(`/dashboard/sites/${siteId}/pages/${pageId}`);
+    router.push(routes.page(siteId, pageId));
   }
 
   function ScoreRow({ m }: { m: ScoreMovement }) {

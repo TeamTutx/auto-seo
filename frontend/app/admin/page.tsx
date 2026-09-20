@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import { formatDate, formatDateTime, formatUsd } from "@/lib/format";
 import type { AdminStats } from "@/lib/types";
 import { describeAudit, Money } from "@/components/admin/AdminBits";
@@ -123,7 +124,7 @@ export default function AdminOverviewPage() {
                 {stats.recent_signups.map((u) => (
                   <tr key={u.id}>
                     <td>
-                      <Link href={`/admin/users/${u.id}`} className="link-btn">
+                      <Link href={routes.adminUser(u.id)} className="link-btn">
                         {u.email}
                       </Link>
                     </td>

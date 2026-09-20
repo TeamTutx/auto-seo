@@ -325,17 +325,6 @@ export const api = {
   adminDeleteProduct: (id: number) => request<void>(`/admin/products/${id}`, { method: "DELETE" }),
   adminReorderProducts: (ids: number[]) =>
     request<AdminProduct[]>("/admin/products/reorder", { method: "POST", body: JSON.stringify({ ids }) }),
-  // Ask the Next.js server to refresh the cached landing page after a pricing
-  // change. Best-effort: if it fails the page just refreshes itself within 5 minutes.
-  revalidatePublicPricing: async () => {
-    const token = getToken();
-    if (!token) return;
-    try {
-      await fetch("/api/revalidate-pricing", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-    } catch {
-      // ignore
-    }
-  },
   adminCreateCreditPack: (data: {
     key: string;
     name: string;

@@ -14,6 +14,7 @@ from sqlmodel import Session, func, select
 from app.config import settings
 from app.database import get_session
 from app.deps import is_admin_user, require_admin
+from app.services import site_rebuild
 from app.models import (
     AdminAuditLog,
     Audit,
@@ -420,6 +421,7 @@ def create_credit_pack(
     )
     session.commit()
     session.refresh(product)
+    site_rebuild.request_rebuild("pricing_changed")
     return _product_read(product)
 
 
@@ -450,6 +452,7 @@ def update_product(
     session.add(product)
     log_admin_action(session, admin.id, "product_updated", None, {"product": product.key, "before": before, "after": changes})
     session.commit()
+    site_rebuild.request_rebuild("pricing_changed")
     session.refresh(product)
     return _product_read(product, _sales_by_key(session).get(product.key, 0))
 
@@ -476,6 +479,7 @@ def delete_product(
     session.delete(product)
     log_admin_action(session, admin.id, "product_deleted", None, {"product": product.key, "name": product.name})
     session.commit()
+    site_rebuild.request_rebuild("pricing_changed")
 
 
 @router.post("/products/reorder", response_model=List[ProductRead])
@@ -503,6 +507,7 @@ def reorder_products(
         session.add(products[product_id])
     log_admin_action(session, admin.id, "products_reordered", None, {"ids": payload.ids})
     session.commit()
+    site_rebuild.request_rebuild("pricing_changed")
     sales = _sales_by_key(session)
     return [
         _product_read(p, sales.get(p.key, 0))

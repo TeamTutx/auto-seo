@@ -117,21 +117,43 @@ writing copy for it.
   making a second one.
 - `/dashboard/*` — the actual product (sites, pages, settings), gated by
   `app/dashboard/layout.tsx` (redirects to `/login` if unauthenticated).
-  `/dashboard/sites/[siteId]/keywords` (keyword ideas + which ones to target) and
-  `/dashboard/sites/[siteId]/visibility` (Google / AI Overview / ChatGPT) are the two
-  pages driven by background jobs — see the gotcha below.
-  This used to be a route group living at `/` before the landing page
-  existed — if you ever run across old links to `/sites/...` or `/settings`
-  (missing the `/dashboard` prefix), they're stale and need fixing.
-  `/dashboard/billing` is the customer's credits/payment page (buy a pack, history).
+  **Ids travel in the query string, never the path** — `/dashboard/site?id=7`,
+  `/dashboard/site/keywords?id=7`, `/dashboard/site/visibility?id=7`,
+  `/dashboard/site/opportunities?id=7`, `/dashboard/page?site=7&id=12`,
+  `/admin/user?id=4`. **Build every one of them with `lib/routes.ts`**, never by hand:
+  that file is the only place the shapes are written down, and `legacyPathToRoute` in it
+  maps the old path-style URLs for the rewrite described under "Static export" below.
+  A page reading an id needs `useRouteId()` *inside a `<Suspense>` boundary* — it wraps
+  `useSearchParams`, which fails `next build` without one.
+  The keywords page (keyword ideas + which ones to target) and the visibility page
+  (Google / AI Overview / ChatGPT) are the two driven by background jobs — see the
+  gotcha below. `/dashboard/billing` is the customer's credits/payment page.
+  Older links you may still run across: `/sites/...` (predates the `/dashboard` prefix)
+  and `/dashboard/sites/7/visibility` (predates the query-string move). Both are stale.
 - `/admin/*` — the owner-only panel (users, payments, credits, credit packs), client-gated by
   `app/admin/layout.tsx` and **really** gated by the API: every `/admin/*` route needs the
   caller's email in `ADMIN_EMAILS`. `/admin` is disallowed in `robots.ts`.
-- `app/api/revalidate-pricing` — admin-only Next route that refreshes the landing page's
-  cached pricing right after an edit in `/admin/pricing`.
+- `/auto-seo-tools` — long-form content page (see the routing note further down).
+- There is **no `app/api/*`** and there can't be. See "Static export" below.
 
 ## Dev gotchas
 
+- **The frontend is a static export** (`output: "export"`), served as files from Render's
+  CDN. There is no server at request time, which rules out route handlers (`app/api/*`),
+  ISR and `export const revalidate`, `next/headers`, and dynamic route segments whose
+  values can't be enumerated at build time. Per-user ids can't be, which is why the
+  dashboard puts them in the query string (`lib/routes.ts`). Old path-style URLs are
+  *rewritten* — not redirected — to `/legacy-link` by the `routes` rules in `render.yaml`,
+  so the original path is still in the address bar for that page to read and forward.
+  A free Render **static site** never sleeps; a free Render **web service** spins down
+  after 15 minutes and takes ~a minute to wake, which is why the site is not one.
+- **Landing-page prices are baked in at build time.** `app/page.tsx` fetches `GET /pricing`
+  during the build, so the API has to be up when Render builds, and an edit in
+  `/admin/pricing` only reaches visitors once the site rebuilds. The API asks it to:
+  `site_rebuild.request_rebuild()` pokes `RENDER_DEPLOY_HOOK_URL` after every pricing
+  mutation. That hook is a credential (it spends build minutes), so it lives on the API
+  and never in the frontend bundle — anything the browser can send is public. Unset, it's
+  a no-op and prices refresh on the next deploy.
 - **Never run `npm run build` while `npm run dev` is also running against
   the same `.next` directory** — it corrupts webpack chunk references
   (`Cannot find module './NNN.js'`, pages failing to render). Fix: kill both

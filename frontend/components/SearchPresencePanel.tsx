@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import type { SearchPresence, TrendPoint } from "@/lib/types";
 
 /** The site page's headline: how visible this site is in Google, how visible it
@@ -44,7 +45,7 @@ export default function SearchPresencePanel({ siteId }: { siteId: number }) {
       <div className="presence-head">
         <div className="gauge-label">SEARCH PRESENCE</div>
         {data.last_checked_at && (
-          <Link href={`/dashboard/sites/${siteId}/visibility`} className="link-btn">
+          <Link href={routes.siteVisibility(siteId)} className="link-btn">
             Full report →
           </Link>
         )}
@@ -113,7 +114,7 @@ export default function SearchPresencePanel({ siteId }: { siteId: number }) {
             : `${data.targeted_keywords} keyword${data.targeted_keywords === 1 ? "" : "s"} targeted — run a check to fill these in.`}
           <Link
             className="btn btn-sm"
-            href={`/dashboard/sites/${siteId}/${data.targeted_keywords === 0 ? "keywords" : "visibility"}`}
+            href={data.targeted_keywords === 0 ? routes.siteKeywords(siteId) : routes.siteVisibility(siteId)}
           >
             {data.targeted_keywords === 0 ? "Choose keywords" : "Check visibility"}
           </Link>
@@ -278,7 +279,7 @@ function TrendEmpty({ reason, siteId }: { reason: SearchPresence["trend_unavaila
   const copy: Record<string, { text: string; action?: { href: string; label: string } }> = {
     no_pages: {
       text: "Find your pages first — then Signal can chart how the home page performs in Google.",
-      action: { href: `/dashboard/sites/${siteId}`, label: "" },
+      action: { href: routes.site(siteId), label: "" },
     },
     no_google: {
       text: "Connect Google Search Console to chart real impressions and clicks for your home page. It's free.",

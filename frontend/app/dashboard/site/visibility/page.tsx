@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
+import { Suspense, Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
+import { routes, useRouteId } from "@/lib/routes";
 import { useAuth } from "@/lib/auth-context";
 import { formatDateTime } from "@/lib/format";
 import { useSiteJobs } from "@/lib/use-site-jobs";
@@ -23,9 +23,8 @@ const ENGINES: { key: VisibilityEngine; label: string; hint: string }[] = [
   { key: "chatgpt", label: "ChatGPT", hint: "Whether the model names your site when asked this question" },
 ];
 
-export default function VisibilityPage() {
-  const params = useParams<{ siteId: string }>();
-  const siteId = Number(params.siteId);
+function VisibilityPage() {
+  const siteId = useRouteId("id");
   const { refresh: refreshUser } = useAuth();
 
   const [site, setSite] = useState<Site | null>(null);
@@ -153,7 +152,7 @@ export default function VisibilityPage() {
       <div className="topbar">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="breadcrumb">
-            <Link href={`/dashboard/sites/${siteId}`} className="link-btn">
+            <Link href={routes.site(siteId)} className="link-btn">
               {site.domain}
             </Link>{" "}
             / Visibility
@@ -164,7 +163,7 @@ export default function VisibilityPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/keywords`}>
+          <Link className="btn btn-ghost" href={routes.siteKeywords(siteId)}>
             Keywords
           </Link>
           <button
@@ -201,7 +200,7 @@ export default function VisibilityPage() {
           Nothing tracked yet. Add a keyword above, or let Signal suggest some from your Search Console and your
           own pages.
           <div style={{ marginTop: 12 }}>
-            <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/keywords`}>
+            <Link className="btn btn-ghost" href={routes.siteKeywords(siteId)}>
               Suggest keywords for me →
             </Link>
           </div>
@@ -430,5 +429,15 @@ function AdvicePanel({
         what the AI answers cited, and your own page&apos;s content. Suggestions, not guarantees.
       </p>
     </div>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or `next build` fails
+// (see CLAUDE.md). Same shape as /login, which has always read its query string.
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <VisibilityPage />
+    </Suspense>
   );
 }

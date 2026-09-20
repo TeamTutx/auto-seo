@@ -156,3 +156,49 @@ def test_the_free_allowance_reaches_signup_and_the_pricing_page_together(client,
         ledger = session.exec(select(CreditTransaction).where(CreditTransaction.user_id == user.id)).all()
     # the ledger has to sum to the balance, or the admin panel disagrees with itself
     assert [(t.delta, t.reason) for t in ledger] == [(25, "signup")]
+
+
+# --- rebuilding the static landing page after a pricing change ---
+
+def test_a_pricing_change_asks_the_site_to_rebuild(client, admin_headers, monkeypatch):
+    """The landing page renders prices into static HTML at build time, so an
+    edit only reaches visitors once Render rebuilds. Nothing else triggers it."""
+    from app.services import site_rebuild
+
+    called = []
+    monkeypatch.setattr(
+        "app.routers.admin.site_rebuild.request_rebuild",
+        lambda reason: called.append(reason) or True,
+    )
+
+    resp = client.post("/admin/products", json={
+        "key": "credits_777", "name": "777 credits", "price_cents": 900, "credits": 777,
+    }, headers=admin_headers)
+    assert resp.status_code == 201
+
+    assert called == ["pricing_changed"]
+
+
+def test_no_deploy_hook_configured_is_not_an_error(monkeypatch):
+    """Local dev and anyone self-hosting have no hook. The edit must still
+    succeed - the database is the source of truth either way."""
+    from app.config import settings
+    from app.services import site_rebuild
+
+    monkeypatch.setattr(settings, "render_deploy_hook_url", "")
+
+    assert site_rebuild.request_rebuild("pricing_changed") is False
+
+
+def test_a_failing_deploy_hook_never_breaks_the_edit(monkeypatch):
+    import httpx
+
+    from app.config import settings
+    from app.services import site_rebuild
+
+    monkeypatch.setattr(settings, "render_deploy_hook_url", "https://api.render.com/deploy/srv-xxx")
+    def boom(*a, **k):
+        raise httpx.ConnectError("no route to host")
+    monkeypatch.setattr(site_rebuild.httpx, "post", boom)
+
+    assert site_rebuild.request_rebuild("pricing_changed") is False

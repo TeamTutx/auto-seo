@@ -13,8 +13,7 @@ export default function AdminPricingPage() {
   const [error, setError] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
 
-  async function load(publish = false) {
-    if (publish) await api.revalidatePublicPricing();
+  async function load() {
     try {
       const [list, pricing] = await Promise.all([api.adminProducts(), api.getPricing()]);
       setPacks(list);
@@ -39,7 +38,6 @@ export default function AdminPricingPage() {
     setReordering(true);
     try {
       setPacks(await api.adminReorderProducts(next.map((p) => p.id)));
-      await api.revalidatePublicPricing();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not reorder.");
       await load();
@@ -98,12 +96,12 @@ export default function AdminPricingPage() {
           <PackEditor
             key={p.id}
             pack={p}
-            onSaved={() => load(true)}
+            onSaved={() => load()}
             onMoveUp={i > 0 && !reordering ? () => move(i, -1) : undefined}
             onMoveDown={i < packs.length - 1 && !reordering ? () => move(i, 1) : undefined}
           />
         ))}
-        <NewPackForm onCreated={() => load(true)} />
+        <NewPackForm onCreated={() => load()} />
       </div>
     </>
   );

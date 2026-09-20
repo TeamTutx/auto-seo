@@ -1,7 +1,7 @@
 # Render Blueprint - https://render.com/docs/blueprint-spec
 #
-# Deploys just the FastAPI backend (backend/). The frontend is deployed
-# separately (see README). Celery worker/beat + Redis are deliberately not
+# Deploys the FastAPI backend (backend/) and the marketing/app frontend
+# (frontend/) as a static site. Celery worker/beat + Redis are deliberately not
 # included yet - scheduled audits (backend/README.md "Scheduled audits +
 # alerts") work locally but aren't provisioned here; see plan.md "Not yet
 # scheduled" for why and how to add them back.
@@ -93,3 +93,41 @@ services:
         sync: false
       - key: DODO_ENVIRONMENT
         value: test_mode
+
+  # The frontend: a Next.js static export (frontend/next.config.mjs sets
+  # `output: "export"`), served from Render's CDN. Static sites are free and
+  # don't spin down, which matters because the public pages are the ones
+  # search engines crawl.
+  #
+  # `rootDir` scopes autodeploys as well as paths: a backend-only commit does
+  # not rebuild the site, which keeps build minutes (a metered resource on the
+  # free workspace) for changes that actually alter it.
+  - type: web
+    name: signal-site
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./out
+    envVars:
+      # Baked into the bundle at build time, so these are build inputs, not
+      # runtime config - changing one needs a rebuild, not a restart. The
+      # landing page also *fetches* this API during the build to render real
+      # prices into the HTML, so it must be reachable when the build runs.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://api.signal-seo.in
+      - key: NEXT_PUBLIC_SITE_URL
+        value: https://signal-seo.in
+    routes:
+      # The dashboard used to live at /dashboard/sites/:id/... and
+      # /admin/users/:id. Those ids can't be enumerated at build time, so the
+      # routes now carry them in the query string (frontend/lib/routes.ts).
+      # A *rewrite* (not a redirect) keeps the original path in the address bar,
+      # which is what lets /legacy-link read it and forward to the new URL.
+      # Render skips these rules for paths where a file exists, so real pages
+      # under /dashboard are unaffected.
+      - type: rewrite
+        source: /dashboard/sites/*
+        destination: /legacy-link
+      - type: rewrite
+        source: /admin/users/*
+        destination: /legacy-link

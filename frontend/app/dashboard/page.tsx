@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { routes } from "@/lib/routes";
 import { useSites } from "@/lib/sites-context";
 
 export default function DashboardHome() {
@@ -10,7 +11,7 @@ export default function DashboardHome() {
 
   useEffect(() => {
     if (sites && sites.length > 0) {
-      router.replace(`/dashboard/sites/${sites[0].id}`);
+      router.replace(routes.site(sites[0].id));
     }
   }, [sites, router]);
 
