@@ -57,6 +57,12 @@ don't leave it stale.** Concretely:
   provisioned.
 - A concept gets renamed or removed (e.g. "Opportunities" becomes something
   else) → update the matching `lp-feature-tag` and copy.
+- **`/auto-seo-tools` makes product claims too**, and is the more detailed of the two —
+  it lists the audit checklist item by item, what Signal automates, and an explicit "what
+  it can't automate" section (no link building, no search volumes, doesn't edit your
+  site). That last section is the reason the page is credible; don't quietly drop a line
+  from it because the product grew. Anything shipped or removed that changes those lists
+  updates this page in the same change, exactly like the landing page.
 - Auth/routing changes → the landing page's CTAs branch on `useAuth()`'s
   `user` (logged in → "Go to dashboard" / `/dashboard`; logged out →
   `/login` and `/login?mode=register`). Keep that logic in sync with
@@ -77,6 +83,13 @@ writing copy for it.
   Also public: `/terms`, `/privacy`, `/refunds` (route group `app/(legal)/`, required by
   the payment provider — Dodo won't approve an account without them, pricing and a
   contact address; the contact is `SUPPORT_EMAIL` in `lib/site.ts`).
+- `/auto-seo-tools` — long-form content page targeting "auto seo" / "auto seo tools",
+  written from Signal's own visibility report for that keyword. Same split as `/`: a
+  client component for the `useAuth()` CTAs plus a server wrapper owning metadata and the
+  Article + FAQPage + BreadcrumbList JSON-LD. Its FAQ text lives in
+  `app/auto-seo-tools/content.ts` so the visible answers and the structured data can't
+  drift. **Its checklist mirrors `audit_engine.run_onpage_audit`** — add or remove a
+  check there and this page is making a false claim about what the audit does.
 - `/login` — **"Continue with Google" is the only advertised way in**
   (`GET /auth/google/start` → Google → `/auth/google/callback`, which redirects back
   here with the token in the URL *fragment*; the page reads it, stores it and scrubs the

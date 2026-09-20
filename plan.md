@@ -560,6 +560,21 @@ opened" guard was keyed per job kind, so a site's *first* run of a kind that fin
 before the next poll looked pre-existing and never refreshed anything. The baseline is now
 taken once per site, on the first poll.
 
+**Eating our own output (2026-09-20).** Signal's visibility check said the site doesn't
+rank for "auto seo" and isn't cited by the AI Overview, and its own advice endpoint gave
+the reason: no page here is about automated SEO tools, while every page that does rank is.
+So `/auto-seo-tools` exists — a long-form page covering what the category automates, the
+audit checklist item by item, what Signal does, and what it can't do. It is the first real
+test of whether the advice feature produces work worth doing.
+
+Three of the suggestions were followed and one was not. Followed: a dedicated page, a
+numbered checklist (the AI Overview's sources all had one), and explicit coverage of the
+features the Overview named — keyword tracking and technical fixes. Not followed: user
+reviews. Signal has no users to quote, and inventing testimonials is the one thing on that
+list that would have been faster to write than anything else and worth less than nothing.
+Link building got a section saying Signal deliberately doesn't do it, which is the honest
+version of "cover the features the Overview mentions".
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

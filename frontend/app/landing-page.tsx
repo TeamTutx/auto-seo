@@ -38,6 +38,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
             <a href="#features">Features</a>
             <a href="#how">How it works</a>
             <a href="#plans">Pricing</a>
+            <Link href="/auto-seo-tools">Auto SEO</Link>
           </div>
           <div className="lp-nav-actions">
             {user ? (
@@ -655,6 +656,10 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
         <div className="lp-section-head center">
           <div className="lp-kicker">How it works</div>
           <h2>From a bare domain to a prioritized fix list in three steps.</h2>
+          <p>
+            New to this? <Link href="/auto-seo-tools">What automated SEO tools actually do</Link> walks through the
+            full on-page checklist Signal runs, and where the automation stops.
+          </p>
         </div>
         <div className="lp-steps-grid">
           <div className="lp-step">
@@ -766,6 +771,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
               <a href="#features">Features</a>
               <a href="#how">How it works</a>
               <a href="#plans">Pricing</a>
+              <Link href="/auto-seo-tools">Auto SEO tools</Link>
             </div>
             <div className="lp-footer-col">
               <h5>Account</h5>
