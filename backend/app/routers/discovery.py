@@ -8,6 +8,7 @@ answer arrives in the GET endpoints as the job progresses.
 import json
 import logging
 from datetime import datetime
+from functools import partial
 from typing import Dict, List, Optional
 
 from bs4 import BeautifulSoup
@@ -28,6 +29,7 @@ from app.schemas import (
     VisibilityActionRead,
     VisibilityAdviceRead,
     VisibilityAdviceRequest,
+    VisibilityCheckRequest,
     KeywordIdeaRead,
     KeywordTargetRequest,
     PageRead,
@@ -328,12 +330,17 @@ def delete_idea(
 def start_visibility_check(
     site_id: int,
     background: BackgroundTasks,
+    payload: Optional[VisibilityCheckRequest] = None,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Check every targeted keyword in Google and in an AI answer. Costs 2
-    credits per keyword: one search (which covers both the organic ranking and
-    the AI Overview) and one model question."""
+    """Check targeted keywords in Google and in an AI answer. Costs 2 credits
+    per keyword: one search (which covers both the organic ranking and the AI
+    Overview) and one model question.
+
+    With no body, that's every targeted keyword. With `{"keyword": "..."}` it's
+    just that one - re-checking whether a single keyword moved shouldn't cost
+    the whole list. The body is optional so older clients keep working."""
     site = _get_owned_site(session, site_id, current_user)
     targeted = session.exec(
         select(KeywordIdea).where(KeywordIdea.site_id == site.id, KeywordIdea.targeted == True)  # noqa: E712
@@ -343,10 +350,21 @@ def start_visibility_check(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Pick the keywords you want to rank for first.",
         )
+
+    keyword = (payload.keyword or "").strip() if payload else ""
+    if keyword and keyword not in {idea.keyword for idea in targeted}:
+        # Not 404: the keyword may well exist as an idea, just not one being
+        # targeted - and only targeted keywords appear in the report a check feeds.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That keyword isn't one you're targeting on this site.",
+        )
+
     # Enough for at least one keyword; the run stops cleanly when credits run
     # out rather than refusing to start on a balance that covers most of it.
     require_credits(current_user, needed=2)
-    return _start(background, session, site, JobKind.visibility, site_jobs.run_visibility)
+    runner = partial(site_jobs.run_visibility, keyword=keyword) if keyword else site_jobs.run_visibility
+    return _start(background, session, site, JobKind.visibility, runner)
 
 
 @router.get("/sites/{site_id}/visibility", response_model=VisibilityReport)

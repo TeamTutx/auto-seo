@@ -27,6 +27,19 @@ don't leave it stale.** Concretely:
   **Don't delete that route** — `OpportunitiesPanel` holds the only "mark as applied"
   button in the app, so the whole fix-then-verify loop (which the landing page sells, and
   `AppliedFix` implements) is unreachable without it.
+- **A visibility check can cover one keyword or all of them.** `POST
+  /sites/{id}/visibility/check` takes an optional `{"keyword": "..."}`; without it the run
+  covers every targeted keyword. The body is optional on purpose, so an older client that
+  posts nothing still gets the full run. Cost is unchanged either way — 2 credits per
+  keyword — so the credit lists on the landing page and `/dashboard/billing` don't move.
+- **A plan the owner paid for is kept until they replace it.** `VisibilityAdvice` rows are
+  never deleted or overwritten; the report returns the newest per keyword, and a re-check
+  only sets `stale` (the reading it was written against is older than the newest one). The
+  UI says so rather than pushing a regenerate: "View plan" in the accent colour when one
+  exists, "Get a plan" when one doesn't — they used to share the label "How to improve",
+  which made a paid plan look identical to the button that charges for one. Which rows are
+  open is remembered per browser in `localStorage` (`signal:visibility-open:<siteId>`), so
+  a reload doesn't collapse a plan and make it look discarded.
 - **Visibility advice is only as good as the evidence behind it.** `POST
   /sites/{id}/visibility/suggest` builds its prompt entirely from what the check measured —
   the pages that outrank the site, the sources the AI Overview cited, what an assistant

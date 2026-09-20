@@ -2060,3 +2060,10 @@ tbody tr.clickable:hover {
   .lp-doc-steps { grid-template-columns: 1fr; }
   .lp-doc-features { grid-template-columns: 1fr; }
 }
+
+/* Visibility table row actions: "Re-check" (2 credits, this keyword only) next
+   to the saved plan toggle. The saved plan reads in the accent colour because
+   the thing it must never be confused with is the button that charges you. */
+.vis-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.vis-row-actions .link-btn:disabled { opacity: .5; cursor: default; }
+.link-btn.vis-plan-saved { color: var(--accent); }

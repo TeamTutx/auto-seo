@@ -530,6 +530,13 @@ class VisibilityAdviceRequest(BaseModel):
     keyword: str = Field(min_length=1, max_length=200)
 
 
+class VisibilityCheckRequest(BaseModel):
+    """Which keywords a visibility run covers. Omitted (or a null keyword) means
+    all of them; a keyword means just that one, so re-checking whether one
+    ranking moved costs 2 credits rather than 2 per keyword on the site."""
+    keyword: Optional[str] = Field(default=None, max_length=200)
+
+
 class VisibilityReport(BaseModel):
     """One row per targeted keyword, newest reading per engine."""
     checked_at: Optional[datetime] = None

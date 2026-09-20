@@ -32,10 +32,36 @@ export default function VisibilityPage() {
   const [report, setReport] = useState<VisibilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [advising, setAdvising] = useState<string | null>(null);
   const [newKeyword, setNewKeyword] = useState("");
   const [adding, setAdding] = useState(false);
+  const [checking, setChecking] = useState<string | null>(null);
+
+  // Which plans were open last time. A plan is paid for and kept server-side,
+  // so collapsing it on every reload made it look like it had been thrown away.
+  // Per-browser convenience only - the plan itself lives in the database.
+  const openKey = `signal:visibility-open:${siteId}`;
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(openKey) || "[]");
+      if (Array.isArray(saved)) setOpen(Object.fromEntries(saved.map((k: string) => [k, true])));
+    } catch {
+      // no stored state, or storage unavailable - everything starts collapsed
+    }
+  }, [openKey]);
+
+  function toggleRow(keyword: string) {
+    setOpen((current) => {
+      const next = { ...current, [keyword]: !current[keyword] };
+      try {
+        localStorage.setItem(openKey, JSON.stringify(Object.keys(next).filter((k) => next[k])));
+      } catch {
+        // a browser that refuses storage still gets the toggle, just not the memory
+      }
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     const [s, r] = await Promise.all([api.getSite(siteId), api.visibilityReport(siteId)]);
@@ -68,7 +94,15 @@ export default function VisibilityPage() {
           ? { ...current, keywords: current.keywords.map((k) => (k.keyword === keyword ? { ...k, advice } : k)) }
           : current
       );
-      setOpen(keyword);
+      setOpen((current) => {
+        const next = { ...current, [keyword]: true };
+        try {
+          localStorage.setItem(openKey, JSON.stringify(Object.keys(next).filter((k) => next[k])));
+        } catch {
+          // see toggleRow
+        }
+        return next;
+      });
       refreshUser();  // a credit was just spent
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not get suggestions.");
@@ -94,13 +128,15 @@ export default function VisibilityPage() {
     }
   }
 
-  async function check() {
+  async function check(keyword?: string) {
     setBusy(true);
+    setChecking(keyword ?? null);
     setError(null);
     try {
-      await api.startVisibilityCheck(siteId);
+      await api.startVisibilityCheck(siteId, keyword);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not start the check.");
+      setChecking(null);
     } finally {
       setBusy(false);
     }
@@ -133,10 +169,11 @@ export default function VisibilityPage() {
           </Link>
           <button
             className="btn"
-            onClick={check}
+            onClick={() => check()}
             disabled={busy || job?.status === "running" || report.targeted_keywords === 0}
+            title={`${cost} credits — every targeted keyword`}
           >
-            {job?.status === "running" ? "Checking…" : "Check now"}
+            {job?.status === "running" ? "Checking…" : "Check all"}
           </button>
         </div>
       </div>
@@ -217,7 +254,8 @@ export default function VisibilityPage() {
                 <tbody>
                   {report.keywords.map((row) => {
                     const byEngine = Object.fromEntries(row.engines.map((e) => [e.engine, e]));
-                    const expanded = open === row.keyword;
+                    const expanded = Boolean(open[row.keyword]);
+                    const running = job?.status === "running";
                     return (
                       <Fragment key={row.keyword}>
                         <tr className={expanded ? "vis-row-open" : ""}>
@@ -228,13 +266,27 @@ export default function VisibilityPage() {
                             </td>
                           ))}
                           <td className="num">
-                            <KeywordAction
-                              row={row}
-                              expanded={expanded}
-                              busy={advising === row.keyword}
-                              onToggle={() => setOpen(expanded ? null : row.keyword)}
-                              onGenerate={() => suggest(row.keyword)}
-                            />
+                            <div className="vis-row-actions">
+                              <button
+                                className="link-btn"
+                                onClick={() => check(row.keyword)}
+                                disabled={busy || running}
+                                title="2 credits — re-checks this keyword only"
+                              >
+                                {running && checking === row.keyword
+                                  ? "Checking…"
+                                  : row.engines.length
+                                  ? "Re-check"
+                                  : "Check"}
+                              </button>
+                              <KeywordAction
+                                row={row}
+                                expanded={expanded}
+                                busy={advising === row.keyword}
+                                onToggle={() => toggleRow(row.keyword)}
+                                onGenerate={() => suggest(row.keyword)}
+                              />
+                            </div>
                           </td>
                         </tr>
                         {expanded && row.advice && (
@@ -305,17 +357,22 @@ function KeywordAction({
   onGenerate: () => void;
 }) {
   if (busy) return <span className="muted">Thinking…</span>;
+  // A plan that has been paid for and a button that charges for one must never
+  // look the same. They both used to read "How to improve", so after a reload
+  // the saved plan was indistinguishable from having no plan at all.
   if (row.advice) {
     return (
-      <button className="link-btn" onClick={onToggle}>
-        {expanded ? "Hide" : "How to improve"}
-        {row.advice.stale && !expanded && <span className="advice-stale-dot" title="Re-checked since this was written" />}
+      <button className="link-btn vis-plan-saved" onClick={onToggle} title="Already generated — free to reopen">
+        {expanded ? "Hide plan" : "View plan"}
+        {row.advice.stale && !expanded && (
+          <span className="advice-stale-dot" title="Written before the latest check" />
+        )}
       </button>
     );
   }
   return (
     <button className="link-btn" onClick={onGenerate} title="1 credit — the search itself is already paid for">
-      How to improve
+      Get a plan
     </button>
   );
 }
@@ -333,11 +390,8 @@ function AdvicePanel({
     <div className="advice">
       {advice.stale && (
         <div className="advice-stale">
-          This keyword has been checked again since these suggestions were written, so they may describe a
-          search that has moved on.{" "}
-          <button className="link-btn" onClick={onRegenerate} disabled={busy}>
-            Get fresh suggestions
-          </button>
+          Written before the most recent check, so parts of it may describe a search that has moved on. It stays
+          here until you replace it.
         </div>
       )}
       <p className="advice-diagnosis">{advice.diagnosis}</p>
@@ -367,11 +421,12 @@ function AdvicePanel({
           <span>No existing page fits this keyword — the suggestions describe a new one.</span>
         )}
         <button className="link-btn" onClick={onRegenerate} disabled={busy}>
-          Regenerate (1 credit)
+          Replace with a new plan (1 credit)
         </button>
       </div>
       <p className="advice-caveat">
-        Written by a language model from what Signal measured for this exact search — the pages that outrank you,
+        Kept for you once generated — reopening it is free, and only “Replace with a new plan” spends another
+        credit. Written by a language model from what Signal measured for this exact search — the pages that outrank you,
         what the AI answers cited, and your own page&apos;s content. Suggestions, not guarantees.
       </p>
     </div>

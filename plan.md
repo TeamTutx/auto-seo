@@ -575,6 +575,23 @@ list that would have been faster to write than anything else and worth less than
 Link building got a section saying Signal deliberately doesn't do it, which is the honest
 version of "cover the features the Overview mentions".
 
+**Keeping a plan, and checking one keyword (2026-09-20).** Two complaints about the
+visibility page, both about the same thing: money.
+
+The advice was already stored and already free to re-read, but the page hid that. After a
+reload the row said "How to improve" — the exact label on the button that spends a credit —
+and the plan was collapsed behind it, so a plan that had been paid for looked like one that
+hadn't. Now: "View plan" in the accent colour when one exists, "Get a plan" when one
+doesn't, the open rows are remembered per browser, and the staleness note says the plan
+stays until it's replaced rather than asking for a fresh one. Nothing about the storage
+changed, because nothing about it was broken — it was legible to the database and not to
+the person paying.
+
+The second: checking visibility was all-or-nothing, so asking "did this one keyword move?"
+cost 2 credits per keyword on the site. `POST /sites/{id}/visibility/check` now takes an
+optional keyword, and each row has its own check. The body stays optional so the "Check
+all" button is the same call it always was.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

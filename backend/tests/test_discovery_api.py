@@ -932,3 +932,88 @@ def test_generated_results_of_another_users_page_are_not_readable(client, db):
     page_id = make_page(client, headers)
 
     assert client.get(f"/pages/{page_id}/generated", headers=other).status_code == 404
+
+
+# --- checking one keyword instead of the whole list ---
+
+def _target_a_second_keyword(client, headers, site_id):
+    """The fixture targets one idea; these tests need two."""
+    ideas = client.get(f"/sites/{site_id}/keywords/ideas", headers=headers).json()
+    second = next(i for i in ideas if not i["targeted"])
+    client.post(f"/sites/{site_id}/keywords/target", json={"ids": [second["id"]]}, headers=headers)
+    return second["keyword"]
+
+
+def test_checking_one_keyword_leaves_the_others_unchecked(client, db, targeted_site, monkeypatch):
+    """Re-checking whether one ranking moved shouldn't cost 2 credits for every
+    other keyword on the site."""
+    headers, site_id, keyword = targeted_site
+    other = _target_a_second_keyword(client, headers, site_id)
+    monkeypatch.setattr(site_jobs.visibility, "check_google", lambda kw, domain, *a, **k: [
+        EngineResult(engine="google", present=True, position=4),
+        EngineResult(engine="google_ai_overview", present=False),
+    ])
+    monkeypatch.setattr(site_jobs.visibility, "check_chatgpt", lambda kw, domain: EngineResult(
+        engine="chatgpt", present=False))
+
+    client.post(f"/sites/{site_id}/visibility/check", json={"keyword": keyword}, headers=headers)
+    job = finished_job(db, "visibility")
+
+    assert job.credits_spent == 2  # one keyword, not two
+    assert keyword in job.message
+    rows = {k["keyword"]: k for k in client.get(f"/sites/{site_id}/visibility", headers=headers).json()["keywords"]}
+    assert rows[keyword]["engines"] and not rows[other]["engines"]
+
+
+def test_a_check_with_no_keyword_still_covers_every_targeted_keyword(client, db, targeted_site, monkeypatch):
+    """The body is optional, so the "check everything" button is unchanged."""
+    headers, site_id, keyword = targeted_site
+    other = _target_a_second_keyword(client, headers, site_id)
+    monkeypatch.setattr(site_jobs.visibility, "check_google", lambda kw, domain, *a, **k: [
+        EngineResult(engine="google", present=False),
+        EngineResult(engine="google_ai_overview", present=False),
+    ])
+    monkeypatch.setattr(site_jobs.visibility, "check_chatgpt", lambda kw, domain: EngineResult(
+        engine="chatgpt", present=False))
+
+    client.post(f"/sites/{site_id}/visibility/check", headers=headers)
+    job = finished_job(db, "visibility")
+
+    assert job.credits_spent == 4  # 2 per keyword
+    rows = {k["keyword"]: k for k in client.get(f"/sites/{site_id}/visibility", headers=headers).json()["keywords"]}
+    assert rows[keyword]["engines"] and rows[other]["engines"]
+
+
+def test_checking_a_keyword_you_are_not_targeting_is_refused(client, db, targeted_site):
+    headers, site_id, keyword = targeted_site
+
+    resp = client.post(f"/sites/{site_id}/visibility/check", json={"keyword": "never asked for this"},
+                       headers=headers)
+
+    assert resp.status_code == 400 and "targeting" in resp.json()["detail"]
+
+
+def test_a_saved_plan_is_still_the_same_plan_after_a_re_check(client, db, checked_keyword, monkeypatch):
+    """Re-checking a keyword must not replace or discard the advice already paid
+    for - it is flagged as written against an older reading, and kept until the
+    owner asks for a new one."""
+    headers, site_id, keyword = checked_keyword
+    monkeypatch.setattr(
+        "app.services.visibility_advice.get_ai_provider",
+        lambda: type("P", (), {"complete": staticmethod(
+            lambda s, u, max_tokens=900: '{"diagnosis": "the original plan", "actions": ['
+                                         '{"title": "do this", "addresses": "both"}]}')})(),
+    )
+    client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+    before = client.get("/auth/me", headers=headers).json()["credits_balance"]
+
+    client.post(f"/sites/{site_id}/visibility/check", json={"keyword": keyword}, headers=headers)
+    finished_job(db, "visibility")
+
+    row = next(k for k in client.get(f"/sites/{site_id}/visibility", headers=headers).json()["keywords"]
+               if k["keyword"] == keyword)
+    assert row["advice"]["diagnosis"] == "the original plan"
+    assert row["advice"]["actions"][0]["title"] == "do this"
+    assert row["advice"]["stale"] is True  # labelled, not thrown away
+    after = client.get("/auth/me", headers=headers).json()["credits_balance"]
+    assert before - after == 2  # the check, and nothing for reading the plan back

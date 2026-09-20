@@ -328,7 +328,13 @@ def _save_ideas(session: Session, site_id: int, ideas: List) -> int:
 
 # --- visibility ---
 
-def run_visibility(session: Session, job: SiteJob) -> None:
+def run_visibility(session: Session, job: SiteJob, keyword: Optional[str] = None) -> None:
+    """Every targeted keyword, or just one of them.
+
+    `keyword` is what makes a single re-check possible: a full run costs 2
+    credits per keyword, so re-checking a site's whole list to see whether one
+    of them moved is the expensive way to ask a cheap question. The caller has
+    already checked that the keyword is targeted - this only narrows the list."""
     site = session.get(Site, job.site_id)
     keywords = [
         idea.keyword
@@ -336,11 +342,14 @@ def run_visibility(session: Session, job: SiteJob) -> None:
             select(KeywordIdea).where(KeywordIdea.site_id == site.id, KeywordIdea.targeted == True)  # noqa: E712
         ).all()
     ]
+    if keyword is not None:
+        keywords = [k for k in keywords if k == keyword]
     if not keywords:
         _progress(session, job, message="No targeted keywords yet — pick some first.", total=0, progress=0)
         return
 
-    _progress(session, job, message=f"Checking {len(keywords)} keyword(s)…", total=len(keywords), progress=0)
+    opening = f"Checking “{keywords[0]}”…" if keyword is not None else f"Checking {len(keywords)} keyword(s)…"
+    _progress(session, job, message=opening, total=len(keywords), progress=0)
     seen = 0
     for i, keyword in enumerate(keywords, start=1):
         _spend(session, job, site.user_id, "visibility_google")
@@ -364,5 +373,9 @@ def run_visibility(session: Session, job: SiteJob) -> None:
             seen += 1
         _progress(session, job, progress=i)
 
-    _progress(session, job, progress=len(keywords),
-              message=f"Checked {len(keywords)} keyword(s) — visible for {seen}.")
+    closing = (
+        f"Checked “{keywords[0]}” — {'visible' if seen else 'not visible'}."
+        if keyword is not None
+        else f"Checked {len(keywords)} keyword(s) — visible for {seen}."
+    )
+    _progress(session, job, progress=len(keywords), message=closing)

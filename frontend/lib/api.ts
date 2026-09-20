@@ -220,8 +220,14 @@ export const api = {
   deleteKeywordIdea: (siteId: number, ideaId: number) =>
     request<void>(`/sites/${siteId}/keywords/ideas/${ideaId}`, { method: "DELETE" }),
 
-  startVisibilityCheck: (siteId: number) =>
-    request<SiteJob>(`/sites/${siteId}/visibility/check`, { method: "POST" }),
+  /** No keyword checks every targeted keyword; a keyword checks just that one.
+   *  Not flagged `metered` even though it spends credits: the job charges as it
+   *  runs, so the balance is refreshed when the job finishes, not when it starts. */
+  startVisibilityCheck: (siteId: number, keyword?: string) =>
+    request<SiteJob>(`/sites/${siteId}/visibility/check`, {
+      method: "POST",
+      body: JSON.stringify(keyword ? { keyword } : {}),
+    }),
   visibilityReport: (siteId: number) => request<VisibilityReport>(`/sites/${siteId}/visibility`),
   suggestForKeyword: (siteId: number, keyword: string) =>
     request<VisibilityAdvice>(`/sites/${siteId}/visibility/suggest`, {
