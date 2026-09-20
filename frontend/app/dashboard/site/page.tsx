@@ -157,17 +157,28 @@ function SiteOverviewPage() {
     if (!rows || rows.length === 0) return;
     setScanning(true);
     setBanner(null);
-    let failures = 0;
+    // Keep the reason each page gave. The old version counted failures and
+    // guessed at the cause ("rate limit or fetch error"), which named the one
+    // thing it couldn't be once rescans stopped being throttled - and left the
+    // owner with no idea which page was broken, or how.
+    const failures: { url: string; reason: string }[] = [];
     for (const row of rows) {
       try {
         await api.runAudit(row.page.id);
-      } catch {
-        failures += 1;
+      } catch (err) {
+        failures.push({
+          url: row.page.url,
+          reason: err instanceof ApiError ? err.message : "Unknown error",
+        });
       }
     }
     setScanning(false);
-    if (failures > 0) {
-      setBanner(`${failures} page(s) could not be rescanned (rate limit or fetch error).`);
+    if (failures.length > 0) {
+      setBanner(
+        failures
+          .map((f) => `${shortPath(f.url)} — ${f.reason}`)
+          .join("\n")
+      );
     }
     await loadAll();
   }
@@ -266,7 +277,7 @@ function SiteOverviewPage() {
       </div>
 
       {banner && (
-        <div className="form-error" style={{ marginBottom: 20 }}>
+        <div className="form-error" style={{ marginBottom: 20, whiteSpace: "pre-line" }}>
           {banner}
         </div>
       )}
@@ -365,12 +376,7 @@ function SiteOverviewPage() {
             const bucket = latestAudit ? scoreBucket(latestAudit.score) : null;
             const barColor =
               bucket === "good" ? "var(--good)" : bucket === "warn" ? "var(--warn)" : bucket === "bad" ? "var(--bad)" : "var(--border)";
-            let path: string;
-            try {
-              path = new URL(page.url).pathname || "/";
-            } catch {
-              path = page.url;
-            }
+            const path = shortPath(page.url);
             return (
               <div className="page-card" key={page.id}>
                 <div className="page-card-top" onClick={() => router.push(routes.page(siteId, page.id))}>
@@ -436,6 +442,16 @@ function SiteOverviewPage() {
 
 // useSearchParams has to sit inside a Suspense boundary or `next build` fails
 // (see CLAUDE.md). Same shape as /login, which has always read its query string.
+/** The page's path, for when the domain is already obvious from context.
+ *  Falls back to the whole URL if it won't parse. */
+function shortPath(url: string): string {
+  try {
+    return new URL(url).pathname || "/";
+  } catch {
+    return url;
+  }
+}
+
 export default function Page() {
   return (
     <Suspense fallback={<div className="loading-state">Loading…</div>}>

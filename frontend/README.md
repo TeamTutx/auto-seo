@@ -96,8 +96,9 @@ competitor list (own domain correctly excluded) → edit a site's domain and
 a page's url/keyword → delete a page → delete a site and confirm the
 sidebar updates without a reload → open a real alert (seeded by an actual
 Celery worker run against real Redis) and confirm it marks read and
-navigates to the right page. Also hit the free-tier site-limit (402) and
-rescan-throttle (429) errors and confirmed they render as inline messages.
+navigates to the right page. Also hit the site-limit (402) and fetch-failure
+(502) errors and confirmed they render as inline messages. ("Run full scan"
+now lists the page and the reason for each failure rather than a count.)
 
 Two things worth knowing if you're driving this with browser automation
 rather than a human:

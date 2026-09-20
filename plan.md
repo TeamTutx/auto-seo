@@ -371,8 +371,8 @@ to keep. Nobody was subscribed, so nothing was lost.
   reprices the old `credits_50` row from $9 only if it is still exactly the value `0008`
   seeded — a price the owner has actually edited is left alone.
 - `PLAN_LIMITS` → `ACCOUNT_LIMITS` (5 sites, 50 pages/site, 25 keywords/page, for
-  everyone). The rescan throttle was "1/day for free, unlimited for paid"; with no tiers
-  it is 5 minutes for everyone, short enough for the apply-a-fix-then-verify loop.
+  everyone). The rescan throttle was "1/day for free, unlimited for paid", then 5 minutes
+  for everyone, and is now **gone** — see "Rescans are not rate limited" below.
 - `/admin/pricing` does full CRUD: create any number of packs, reprice, rename, badge,
   reorder (`POST /admin/products/reorder`, all ids at once so it can't half-apply),
   deactivate, delete. A pack that has **sold** can't be deleted, only deactivated — Dodo
@@ -614,6 +614,22 @@ browser can send is public.
 
 Nothing was lost that the SEO pages care about: `/` and `/auto-seo-tools` were already
 prerendered, and now they come off a CDN with no origin to wake up.
+
+**Rescans are not rate limited (2026-09-20).** "Run full scan" was reporting "4 page(s)
+could not be rescanned (rate limit or fetch error)". The rate limit was ours: a five-minute
+minimum gap per page, left over from when a daily rescan was the free tier's upgrade nudge.
+It is gone. Audits cost no credits — Signal fetches the page itself — so the limit was
+protecting nothing the owner was paying for, and it broke the one thing the button is for:
+edit a page, come back, check whether the failure cleared. It also broke "Run full scan"
+against itself, since that walks every page in turn and collided with its own previous run.
+
+What a gap really guards against — hammering someone's web server — is a fetch concern and
+stays with the fetch: one request per page, a timeout, a bot user agent.
+
+The message was the other half of the bug. It counted failures and guessed at the cause,
+naming the one thing it could no longer be, and never said *which* page. It now lists each
+failed page with the reason the server gave ("/pricing — Could not fetch page: Client error
+'404 Not Found'"), trimmed to the first line because httpx appends an MDN link.
 
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product

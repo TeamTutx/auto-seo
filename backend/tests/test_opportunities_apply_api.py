@@ -79,8 +79,8 @@ def test_rescan_resolves_the_applied_fix_and_opportunity_disappears(client, db, 
 
     headers = register_and_login(client, "apply5@test.dev")
     site_id, page_id = _make_site_and_page(client, headers)
-    # Older than RESCAN_THROTTLE, as a real baseline would be by the time
-    # someone has edited their page and come back to verify the fix.
+    # A baseline from a few minutes ago, as it would be by the time someone has
+    # edited their page and come back to verify the fix.
     _insert_audit(
         db, page_id, [("meta_description", CheckStatus.fail, "Missing meta description.")], minutes_ago=10
     )

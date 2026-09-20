@@ -43,7 +43,7 @@ def test_failed_check_insert_leaves_no_audit_behind(client, db, monkeypatch):
     assert _count(db, Audit) == 0
 
 
-def test_check_less_audit_does_not_burn_the_free_daily_rescan(client, db, monkeypatch):
+def test_an_audit_with_no_stored_checks_is_replaced_by_a_real_one(client, db, monkeypatch):
     monkeypatch.setattr(audit_runner, "fetch_html", lambda url: HTML)
     headers = register_and_login(client, "atomic3@test.dev")
     page_id = make_page(client, headers)
@@ -58,12 +58,18 @@ def test_check_less_audit_does_not_burn_the_free_daily_rescan(client, db, monkey
     assert len(resp.json()["checks"]) > 0
 
 
-def test_a_real_audit_still_triggers_the_free_daily_rescan_throttle(client, db, monkeypatch):
+def test_a_page_can_be_rescanned_immediately(client, db, monkeypatch):
+    """Rescanning is free and deliberately unthrottled: you edit the page, come
+    back, and want to know whether the check cleared. "Run full scan" also walks
+    every page in turn, so any per-page gap made it fail against its own last
+    run."""
     monkeypatch.setattr(audit_runner, "fetch_html", lambda url: HTML)
     headers = register_and_login(client, "atomic4@test.dev")
     page_id = make_page(client, headers)
 
-    assert client.post(f"/pages/{page_id}/audits", headers=headers).status_code == 201
+    first = client.post(f"/pages/{page_id}/audits", headers=headers)
     second = client.post(f"/pages/{page_id}/audits", headers=headers)
+    third = client.post(f"/pages/{page_id}/audits", headers=headers)
 
-    assert second.status_code == 429
+    assert [first.status_code, second.status_code, third.status_code] == [201, 201, 201]
+    assert _count(db, Audit) == 3  # each one is a real, stored reading

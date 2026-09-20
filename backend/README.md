@@ -61,9 +61,9 @@ vendor or costs real money.
   `Check`, `KeywordRank`, `Alert`, plus `PLAN_LIMITS` for free/pro/agency
   gating.
 - `app/routers/` — `auth` (register/login/me, JWT), `sites`, `pages`,
-  `audits`, `keywords`, `suggestions`, `alerts`. Plan limits (§3.1), the
-  free-tier 1x/day rescan throttle, and per-check credit spend are enforced
-  in the routers. `sites`/`pages` also have `PATCH`/`DELETE`; deleting
+  `audits`, `keywords`, `suggestions`, `alerts`. Account limits and per-check
+  credit spend are enforced in the routers. Audit rescans are **not** rate
+  limited (see "Rescans are free and unthrottled" below). `sites`/`pages` also have `PATCH`/`DELETE`; deleting
   either cascades through `app/services/cascade_delete.py` (no ORM-level
   cascade configured, so this is done manually - audits/checks/keyword_ranks
   would otherwise be orphaned).
@@ -171,12 +171,19 @@ vendor or costs real money.
   keyword, excluding the page's own domain. Same credit cost as a rank
   check (it's the same underlying SERP fetch).
 
-**Why every check spends a credit even on paid plans:** REQUIREMENTS.md §3.1
-only specifies *automatic* weekly/daily rank refresh for Pro/Agency as a
-scheduled job. There's no "unlimited on-demand rank checks" tier the way
-there is for audit rescans, so every self-serve check is metered the same
-way regardless of plan. Revisit if/when automatic rank refresh gets built
-alongside the scheduled-audits job below.
+**Rescans are free and unthrottled.** `POST /pages/{id}/audits` costs no
+credits and has no minimum gap. It used to: 1/day on the old free tier, then
+5 minutes for everyone. Both were wrong for what the button is for — you edit
+a page, come back, and want to know whether the check cleared — and the
+5-minute version broke "Run full scan" outright, since that audits every page
+in turn and so collided with its own previous run. The thing a gap actually
+protected, not hammering someone's web server, belongs with the fetch: one
+request per page, a timeout, and a bot user agent (`services/fetcher.py`).
+
+**Why every rank check spends a credit:** rank data is bought from a vendor
+per lookup, so every self-serve check is metered. Audits are different: Signal
+fetches the page itself, which costs nothing, which is why they are free and
+unlimited.
 
 ## AI suggestions (step 7)
 

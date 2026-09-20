@@ -28,9 +28,12 @@ def audit_page(session: Session, page_id: int) -> Audit:
     try:
         html = fetch_html(page.url)
     except Exception as exc:  # httpx raises several distinct error types here
+        # First line only: httpx appends a "For more information check: <MDN
+        # link>" paragraph, which is noise in a banner listing several pages.
+        reason = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Could not fetch page: {exc}",
+            detail=f"Could not fetch page: {reason}",
         )
 
     sibling_titles = _sibling_titles(session, page.site_id, page.id)
