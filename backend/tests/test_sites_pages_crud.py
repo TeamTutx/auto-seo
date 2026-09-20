@@ -1,3 +1,4 @@
+import pytest
 from sqlmodel import Session, select
 
 from app.models import Audit, Check, KeywordRank, Page, Site
@@ -134,3 +135,63 @@ def test_cannot_delete_another_users_site(client):
     resp = client.delete(f"/sites/{site['id']}", headers=headers_b)
     assert resp.status_code == 404
     assert client.get(f"/sites/{site['id']}", headers=headers_a).status_code == 200
+
+
+# --- URL normalisation on entry ---
+#
+# Search Console matches a page by exact URL, so a stray fragment or a capital
+# in the host means its search data is silently unreachable - and "no data"
+# looks identical to "this page gets no traffic".
+
+@pytest.mark.parametrize("typed, stored", [
+    ("example.com/pricing", "https://example.com/pricing"),          # no scheme typed
+    ("https://EXAMPLE.com/Pricing", "https://example.com/Pricing"),  # host case only; paths are case-sensitive
+    ("https://example.com/pricing#features", "https://example.com/pricing"),  # a fragment is a position, not a page
+    ("  https://example.com/pricing  ", "https://example.com/pricing"),
+    ("https://example.com", "https://example.com/"),                 # Search Console's form for a root
+])
+def test_a_hand_typed_page_url_is_tidied_before_it_is_stored(client, db, typed, stored):
+    headers = register_and_login(client, f"norm{abs(hash(typed))}@test.dev")
+    site = client.post("/sites", json={"domain": "example.com"}, headers=headers).json()
+
+    page = client.post(f"/sites/{site['id']}/pages", json={"url": typed}, headers=headers).json()
+
+    assert page["url"] == stored
+
+
+def test_the_sites_own_trailing_slash_is_left_alone(client, db):
+    """/about/ and /about are different canonical forms and Google records
+    whichever one the site uses - so neither is rewritten into the other."""
+    headers = register_and_login(client, "norm-slash@test.dev")
+    site = client.post("/sites", json={"domain": "example.com"}, headers=headers).json()
+
+    kept = client.post(f"/sites/{site['id']}/pages", json={"url": "https://example.com/about/"}, headers=headers)
+
+    assert kept.json()["url"] == "https://example.com/about/"
+
+
+@pytest.mark.parametrize("bad", [
+    "", "   ",
+    "ftp://example.com/a",
+    "mailto:someone@example.com",
+    "data:text/html,hi",
+    # Without a real scheme check this became "https://javascript:alert(1)" - a
+    # nonsense host that passed every later validation.
+    "javascript:alert(1)",
+    "https://not a host",
+])
+def test_something_that_is_not_a_page_url_is_refused(client, db, bad):
+    headers = register_and_login(client, f"norm-bad{abs(hash(bad))}@test.dev")
+    site = client.post("/sites", json={"domain": "example.com"}, headers=headers).json()
+
+    assert client.post(f"/sites/{site['id']}/pages", json={"url": bad}, headers=headers).status_code == 422
+
+
+def test_editing_a_page_url_normalises_it_too(client, db):
+    headers = register_and_login(client, "norm-edit@test.dev")
+    site = client.post("/sites", json={"domain": "example.com"}, headers=headers).json()
+    page = client.post(f"/sites/{site['id']}/pages", json={"url": "https://example.com/a"}, headers=headers).json()
+
+    updated = client.patch(f"/pages/{page['id']}", json={"url": "EXAMPLE.com/b#top"}, headers=headers)
+
+    assert updated.json()["url"] == "https://example.com/b"

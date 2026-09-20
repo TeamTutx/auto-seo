@@ -26,14 +26,27 @@ class FakeClient:
 # --- URL normalisation ---
 
 @pytest.mark.parametrize("raw, expected", [
-    ("https://example.com/about/", "https://example.com/about"),
     ("https://example.com/a#section", "https://example.com/a"),
     ("https://EXAMPLE.com/A", "https://example.com/A"),  # host lowercased, path isn't - paths are case-sensitive
     ("https://example.com", "https://example.com/"),
     ("https://example.com/search?q=1", "https://example.com/search?q=1"),
 ])
-def test_urls_are_normalised_for_comparison(raw, expected):
+def test_urls_are_tidied_for_storage(raw, expected):
     assert crawler.normalise_url(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["https://example.com/about/", "https://example.com/about"])
+def test_the_sites_own_trailing_slash_is_preserved(raw):
+    """The trailing slash is the site's canonical form, and Search Console
+    matches a page by exact URL. Rewriting it would store a URL Google has never
+    heard of, and every search query for that page would come back empty."""
+    assert crawler.normalise_url(raw) == raw
+
+
+def test_slash_variants_are_one_page_for_de_duplication():
+    """Preserved in what's stored, ignored when deciding if two URLs are the
+    same page."""
+    assert crawler.path_key("https://example.com/about/") == crawler.path_key("https://example.com/about")
 
 
 @pytest.mark.parametrize("raw", [
@@ -165,6 +178,32 @@ def test_link_following_does_not_loop_on_circular_links():
     found = crawler.from_links(client, "https://example.com", "example.com", limit=50, robots=None)
 
     assert found == ["https://example.com/", "https://example.com/a"]
+
+
+def test_a_sitemaps_trailing_slashes_survive_into_what_is_stored():
+    """A WordPress-style site whose canonical URLs end in / must be stored that
+    way, or its Search Console data is unreachable."""
+    xml = """<urlset>
+      <url><loc>https://example.com/about/</loc></url>
+      <url><loc>https://example.com/blog/post/</loc></url>
+    </urlset>"""
+    client = FakeClient({"https://example.com/sitemap.xml": (200, xml, "application/xml")})
+
+    found = crawler.from_sitemaps(client, "https://example.com", "example.com", [], limit=50, robots=None)
+
+    assert found == ["https://example.com/about/", "https://example.com/blog/post/"]
+
+
+def test_a_sitemap_listing_both_slash_forms_yields_one_page():
+    xml = """<urlset>
+      <url><loc>https://example.com/about/</loc></url>
+      <url><loc>https://example.com/about</loc></url>
+    </urlset>"""
+    client = FakeClient({"https://example.com/sitemap.xml": (200, xml, "application/xml")})
+
+    found = crawler.from_sitemaps(client, "https://example.com", "example.com", [], limit=50, robots=None)
+
+    assert found == ["https://example.com/about/"]  # first wins, so the sitemap's own order decides
 
 
 def test_query_string_variants_of_the_same_page_are_not_crawled_twice():

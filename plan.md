@@ -501,6 +501,20 @@ as traffic collapsing, and it dragged the week-on-week figures from +31% down to
 Trailing zeros inside the lag window are trimmed; a genuine run of quiet days is not, and
 is still drawn.
 
+**A silent-data bug found by a user question.** The site page showed no Search Console
+impressions while the page below it showed Analytics pageviews, which looked like a
+contradiction. It wasn't - the site was days old, indexed but ranking for nothing, and the
+pageviews were direct visits - but checking it exposed a real fault behind it. Search
+Console matches a page by *exact URL*, and the crawler was stripping trailing slashes. For
+any site whose canonical URLs end in `/` (WordPress and friends) Signal would have stored
+a URL Google has never heard of, and every search query for that page would have come back
+empty, looking exactly like a page with no traffic. Fixed three ways: the crawler now
+preserves the site's own slash (de-duplicating on a slash-insensitive key instead),
+hand-typed URLs are normalised on entry without touching the path, and the Search Console
+lookup retries the other slash form before reporting nothing - which is what rescues rows
+stored before the fix. Google Analytics never had the problem because it matches on
+`pagePath`; that asymmetry is what made the two panels disagree.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

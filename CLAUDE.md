@@ -120,6 +120,18 @@ writing copy for it.
   lets the owner start another. Credits are spent one unit at a time, after the work
   succeeds. TestClient runs BackgroundTasks inline, so in tests a POST returns with the
   job already finished.
+- **A page's stored URL must be the one Google canonicalised**, character for character.
+  Search Console's page filter is an exact string match, so a mismatch returns zero rows —
+  which is indistinguishable from "this page gets no search traffic" and was invisible for
+  a while. Three rules follow. Never rewrite a trailing slash: `/about/` and `/about` are
+  different canonical forms and sites disagree (WordPress serves one, Next.js the other),
+  so `crawler.normalise_url` preserves it and `crawler.path_key` ignores it for
+  de-duplication only. Hand-typed URLs go through `_clean_page_url` in `schemas.py`, which
+  fixes host case, scheme and fragments but leaves the path alone. And
+  `gsc._page_filtered_rows` retries the other slash form when the first returns nothing,
+  which is what rescues pages stored before any of this. Google *Analytics* has none of
+  this trouble — it matches on `pagePath`, so it works either way, which is exactly why
+  the two can disagree and look like a bug.
 - **Never write `User.credits_balance` directly.** All credit changes go through
   `apply_credit_delta()` (`backend/app/services/credits.py`): an atomic conditional
   `UPDATE` plus a `CreditTransaction` row in the same transaction, so the balance can't go

@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -23,6 +23,44 @@ def _clean_domain(value: str) -> str:
     if not netloc or not _DOMAIN_RE.match(netloc):
         raise ValueError(f'"{value}" doesn\'t look like a valid domain (expected something like example.com)')
     return netloc
+
+
+def _clean_page_url(value: str) -> str:
+    """Tidy a hand-typed page URL without changing which page it names.
+
+    Search Console matches a page by exact URL, so a stored URL that differs
+    from the real one by a scheme, a capital letter in the host or a stray
+    fragment silently returns no search data at all - indistinguishable from a
+    page that genuinely gets no traffic. The trailing slash is left exactly as
+    typed: it is the site's choice of canonical form, not noise (see
+    app/services/crawler.py), and the Search Console lookup tries both anyway.
+    """
+    value = (value or "").strip()
+    if not value:
+        raise ValueError("Enter a page URL")
+
+    # Only add a scheme when there genuinely isn't one. Testing for "//" instead
+    # would turn "javascript:alert(1)" into "https://javascript:alert(1)" - a
+    # nonsense host that then passes every later check.
+    scheme = re.match(r"^([a-zA-Z][a-zA-Z0-9+.\-]*):", value)
+    if scheme is None:
+        value = f"https://{value}"
+    elif scheme.group(1).lower() not in ("http", "https"):
+        raise ValueError(f'"{value}" isn\'t a web page address (it must start with http:// or https://)')
+
+    parsed = urlparse(value)
+    if not parsed.hostname or not _DOMAIN_RE.match(parsed.hostname):
+        raise ValueError(
+            f'"{value}" doesn\'t look like a page URL (expected something like https://example.com/pricing)'
+        )
+    return urlunparse((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path or "/",
+        parsed.params,
+        parsed.query,
+        "",  # a fragment is a position within a page, never a different page
+    ))
 
 
 # --- auth ---
@@ -99,10 +137,20 @@ class PageCreate(BaseModel):
     url: str
     target_keyword: Optional[str] = None
 
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return _clean_page_url(v)
+
 
 class PageUpdate(BaseModel):
     url: Optional[str] = None
     target_keyword: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_page_url(v) if v is not None else v
 
 
 class PageRead(BaseModel):

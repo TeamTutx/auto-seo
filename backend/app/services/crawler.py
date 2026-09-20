@@ -53,8 +53,17 @@ class Discovered:
 
 
 def normalise_url(url: str) -> Optional[str]:
-    """Canonical form for comparison: no fragment, no trailing slash on a path,
-    lowercase host. Returns None for anything that isn't an http(s) page."""
+    """Tidy a URL for storage without changing which page it names: lowercase
+    host, no fragment, no tracking parameters, and an empty path becomes "/".
+
+    **The trailing slash is deliberately left alone.** It is not noise - it is
+    the site's own choice of canonical form, and Search Console records whichever
+    one the site uses. WordPress serves /about/, Next.js serves /about. Stripping
+    it here would have stored a URL Google has never heard of, and every search
+    query for that page would silently come back empty. Slash variants are still
+    treated as one page for de-duplication; that is what path_key is for.
+
+    Returns None for anything that isn't an http(s) page."""
     try:
         parsed = urlparse(url.strip())
     except ValueError:
@@ -62,8 +71,6 @@ def normalise_url(url: str) -> Optional[str]:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return None
     path = parsed.path or "/"
-    if path != "/" and path.endswith("/"):
-        path = path.rstrip("/")
     if any(path.lower().endswith(ext) for ext in SKIP_EXTENSIONS):
         return None
     if any(hint in path.lower() for hint in SKIP_PATH_HINTS):
@@ -76,13 +83,17 @@ def normalise_url(url: str) -> Optional[str]:
 
 
 def path_key(url: str) -> str:
-    """Identity for "is this the same page?". Two URLs differing only by query
-    string are nearly always one page rendered differently - /login and
-    /login?mode=register are the same template, and auditing both twice wastes
-    the owner's page budget on a duplicate. Sitemap entries are exempt: if the
-    owner listed both, they meant both."""
+    """Identity for "is this the same page?", used only for de-duplication -
+    never for what gets stored.
+
+    Two URLs differing only by query string are nearly always one page rendered
+    differently: /login and /login?mode=register are the same template, and
+    auditing both twice wastes the owner's page budget on a duplicate. A
+    trailing slash is ignored here for the same reason, even though it is
+    preserved in the stored URL."""
     parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    path = parsed.path.rstrip("/") or "/"
+    return f"{parsed.scheme}://{parsed.netloc}{path}"
 
 
 def same_site(url: str, domain: str) -> bool:
@@ -160,11 +171,14 @@ def from_sitemaps(client: httpx.Client, base: str, domain: str, candidates: Iter
         queue.extend(nested)
         for raw in pages:
             url = normalise_url(raw)
-            if url and url not in seen and same_site(url, domain) and _allowed(robots, url):
-                seen.add(url)
-                found.append(url)
-                if len(found) >= limit:
-                    break
+            if url is None or not same_site(url, domain) or not _allowed(robots, url):
+                continue
+            if path_key(url) in seen:
+                continue
+            seen.add(path_key(url))
+            found.append(url)
+            if len(found) >= limit:
+                break
     return found
 
 

@@ -333,10 +333,14 @@ export default function SiteOverviewPage() {
           onSubmit={handleAddPage}
           style={{ border: "1px solid var(--border)", borderRadius: 8, marginBottom: 10 }}
         >
+          {/* Deliberately not type="url": the browser would reject
+              "example.com/pricing" before it ever reached the API, which
+              accepts it and adds the scheme. The API validates properly and
+              returns a readable message for anything that isn't a page. */}
           <input
-            type="url"
+            type="text"
             required
-            placeholder="https://example.com/page"
+            placeholder="example.com/pricing"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
           />

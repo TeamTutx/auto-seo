@@ -7,7 +7,7 @@ real answer to "why does this page have zero rank" for a brand new page.
 """
 from datetime import date, timedelta
 from typing import List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 
@@ -54,20 +54,51 @@ def list_properties(access_token: str) -> List[str]:
     return [entry["siteUrl"] for entry in data.get("siteEntry", [])]
 
 
+def slash_variants(page_url: str) -> List[str]:
+    """The URL as given, then the same URL with its trailing slash toggled.
+
+    Search Console's page filter is an exact string match against the canonical
+    URL *Google* chose, and sites disagree about trailing slashes: WordPress
+    serves /about/, Next.js serves /about, and Google records whichever one the
+    site actually canonicalises to. One character of disagreement returns zero
+    rows - which looks exactly like "this page gets no search traffic" and is
+    impossible to tell apart from the real thing. Trying both costs one extra
+    request, and only in the case that would otherwise report nothing."""
+    parsed = urlparse(page_url)
+    path = parsed.path or "/"
+    if path == "/":
+        other = ""  # https://site.com/ vs https://site.com
+    elif path.endswith("/"):
+        other = path.rstrip("/")
+    else:
+        other = path + "/"
+    return [page_url, urlunparse(parsed._replace(path=other))]
+
+
+def _page_filtered_rows(access_token: str, property_url: str, page_url: str, payload: dict) -> List[dict]:
+    """Run a page-filtered Search Analytics query, retrying the other
+    trailing-slash form if the first returns nothing. See slash_variants."""
+    url = SEARCH_ANALYTICS_URL.format(site=quote(property_url, safe=""))
+    for candidate in slash_variants(page_url):
+        body = dict(payload)
+        body["dimensionFilterGroups"] = [
+            {"filters": [{"dimension": "page", "operator": "equals", "expression": candidate}]}
+        ]
+        rows = _request("POST", url, access_token, json=body).get("rows", [])
+        if rows:
+            return rows
+    return []
+
+
 def get_page_search_analytics(access_token: str, property_url: str, page_url: str, days: int = 28) -> List[dict]:
     end = date.today()
     start = end - timedelta(days=days)
-    payload = {
+    rows = _page_filtered_rows(access_token, property_url, page_url, {
         "startDate": start.isoformat(),
         "endDate": end.isoformat(),
         "dimensions": ["query"],
-        "dimensionFilterGroups": [
-            {"filters": [{"dimension": "page", "operator": "equals", "expression": page_url}]}
-        ],
         "rowLimit": MAX_QUERY_ROWS,
-    }
-    url = SEARCH_ANALYTICS_URL.format(site=quote(property_url, safe=""))
-    data = _request("POST", url, access_token, json=payload)
+    })
     return [
         {
             "query": row["keys"][0],
@@ -76,7 +107,7 @@ def get_page_search_analytics(access_token: str, property_url: str, page_url: st
             "ctr": round(row.get("ctr", 0) * 100, 2),
             "position": round(row.get("position", 0), 1),
         }
-        for row in data.get("rows", [])
+        for row in rows
     ]
 
 
@@ -117,17 +148,12 @@ def get_page_daily_metrics(access_token: str, property_url: str, page_url: str, 
     the caller fills the gaps so the chart has a continuous x-axis."""
     end = date.today()
     start = end - timedelta(days=days)
-    payload = {
+    rows = _page_filtered_rows(access_token, property_url, page_url, {
         "startDate": start.isoformat(),
         "endDate": end.isoformat(),
         "dimensions": ["date"],
-        "dimensionFilterGroups": [
-            {"filters": [{"dimension": "page", "operator": "equals", "expression": page_url}]}
-        ],
         "rowLimit": days + 1,
-    }
-    url = SEARCH_ANALYTICS_URL.format(site=quote(property_url, safe=""))
-    data = _request("POST", url, access_token, json=payload)
+    })
     return [
         {
             "date": row["keys"][0],
@@ -135,7 +161,7 @@ def get_page_daily_metrics(access_token: str, property_url: str, page_url: str, 
             "impressions": int(row.get("impressions", 0)),
             "position": round(row.get("position", 0), 1),
         }
-        for row in data.get("rows", [])
+        for row in rows
     ]
 
 
