@@ -125,9 +125,15 @@ services:
       # which is what lets /legacy-link read it and forward to the new URL.
       # Render skips these rules for paths where a file exists, so real pages
       # under /dashboard are unaffected.
+      #
+      # The destination needs the `.html` extension. A *request* for /foo
+      # resolves to foo.html, but a rewrite destination is matched literally:
+      # pointing it at /legacy-link served an empty 200 (verified in
+      # production, and cached at the edge for five minutes before it could be
+      # re-tested - so re-check with a cache-busting query string).
       - type: rewrite
         source: /dashboard/sites/*
-        destination: /legacy-link
+        destination: /legacy-link.html
       - type: rewrite
         source: /admin/users/*
-        destination: /legacy-link
+        destination: /legacy-link.html

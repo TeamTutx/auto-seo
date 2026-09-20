@@ -11,7 +11,7 @@ import { useSearchParams } from "next/navigation";
  *  strings need no such enumeration: one exported page serves every id.
  *
  *  Old links still work: the `routes` rules in render.yaml rewrite
- *  `/dashboard/sites/*` and `/admin/users/*` to /legacy-link, which translates
+ *  `/dashboard/sites/*` and `/admin/users/*` to /legacy-link.html, which translates
  *  them client-side. See `legacyPathToRoute` below. */
 export const routes = {
   site: (siteId: number | string) => `/dashboard/site?id=${siteId}`,
