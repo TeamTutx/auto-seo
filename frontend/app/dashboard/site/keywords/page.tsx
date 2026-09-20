@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { routes, useRouteId } from "@/lib/routes";
 import { useAuth } from "@/lib/auth-context";
 import { useSiteJobs } from "@/lib/use-site-jobs";
 import JobProgress from "@/components/JobProgress";
@@ -16,9 +16,8 @@ const SOURCE_LABEL: Record<KeywordIdea["source"], { label: string; title: string
   manual: { label: "You added it", title: "Typed in by hand rather than suggested by Signal" },
 };
 
-export default function KeywordsPage() {
-  const params = useParams<{ siteId: string }>();
-  const siteId = Number(params.siteId);
+function KeywordsPage() {
+  const siteId = useRouteId("id");
   const { refresh: refreshUser } = useAuth();
 
   const [site, setSite] = useState<Site | null>(null);
@@ -91,7 +90,7 @@ export default function KeywordsPage() {
       <div className="topbar">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="breadcrumb">
-            <Link href={`/dashboard/sites/${siteId}`} className="link-btn">
+            <Link href={routes.site(siteId)} className="link-btn">
               {site.domain}
             </Link>{" "}
             / Keywords
@@ -103,7 +102,7 @@ export default function KeywordsPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {targeted > 0 && (
-            <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/visibility`}>
+            <Link className="btn btn-ghost" href={routes.siteVisibility(siteId)}>
               Check visibility →
             </Link>
           )}
@@ -190,5 +189,15 @@ export default function KeywordsPage() {
         won’t invent one.
       </p>
     </div>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or `next build` fails
+// (see CLAUDE.md). Same shape as /login, which has always read its query string.
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <KeywordsPage />
+    </Suspense>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import { formatDate } from "@/lib/format";
 import type { AdminUserList } from "@/lib/types";
 import { Money } from "@/components/admin/AdminBits";
@@ -124,7 +125,7 @@ export default function AdminUsersPage() {
             </thead>
             <tbody>
               {data?.items.map((u) => (
-                <tr key={u.id} className="clickable" onClick={() => router.push(`/admin/users/${u.id}`)}>
+                <tr key={u.id} className="clickable" onClick={() => router.push(routes.adminUser(u.id))}>
                   <td>
                     {u.email}
                     {u.is_admin && <span className="admin-tag">ADMIN</span>}

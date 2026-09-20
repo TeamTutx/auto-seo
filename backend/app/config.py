@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Dodo Payments (Merchant of Record) - see app/services/dodo.py. Billing is
     # "enabled" only once both keys are set; until then checkout endpoints
     # answer 503 and the pricing page shows plans without a buy button.
+    # Render deploy hook for the marketing site. Set it and a pricing change in
+    # /admin/pricing rebuilds the static landing page; leave it blank and prices
+    # refresh on the next deploy like any other content change.
+    render_deploy_hook_url: str = ""
+
     dodo_api_key: str = ""
     dodo_webhook_key: str = ""
     dodo_environment: str = "test_mode"  # "test_mode" | "live_mode"

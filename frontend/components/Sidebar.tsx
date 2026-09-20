@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import { useAuth } from "@/lib/auth-context";
 import { useSites } from "@/lib/sites-context";
 import AlertsBell from "./AlertsBell";
@@ -29,7 +30,7 @@ export default function Sidebar() {
       setDomain("");
       setAdding(false);
       await refreshSites();
-      router.push(`/dashboard/sites/${site.id}`);
+      router.push(routes.site(site.id));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add site.");
     } finally {
@@ -52,7 +53,7 @@ export default function Sidebar() {
           {sites?.map((site) => (
             <Link
               key={site.id}
-              href={`/dashboard/sites/${site.id}`}
+              href={routes.site(site.id)}
               className={`site-item ${activeSiteId === site.id ? "active" : ""}`}
             >
               <div className="site-item-name">

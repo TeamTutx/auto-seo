@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
+import { routes, useRouteId } from "@/lib/routes";
 import { formatDate, formatDateTime, parseUsdToCents } from "@/lib/format";
 import type { AdminUserDetail } from "@/lib/types";
 import { describeAudit, Money } from "@/components/admin/AdminBits";
 
-export default function AdminUserPage() {
-  const params = useParams<{ id: string }>();
-  const userId = Number(params.id);
+function AdminUserPage() {
+  const userId = useRouteId("id");
   const [detail, setDetail] = useState<AdminUserDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -334,5 +333,15 @@ function PaymentForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or `next build` fails
+// (see CLAUDE.md). Same shape as /login, which has always read its query string.
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <AdminUserPage />
+    </Suspense>
   );
 }

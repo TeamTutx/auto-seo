@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import type { Opportunity, OpportunitySeverity } from "@/lib/types";
 
 const SEVERITY_ORDER: OpportunitySeverity[] = ["high", "medium", "low"];
@@ -127,9 +128,9 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
                     className="check-goto"
                     onClick={(e) => {
                       e.preventDefault();
-                      router.push(`/dashboard/sites/${siteId}/pages/${opp.page_id}`);
+                      router.push(routes.page(siteId, opp.page_id));
                     }}
-                    href={`/dashboard/sites/${siteId}/pages/${opp.page_id}`}
+                    href={routes.page(siteId, opp.page_id)}
                   >
                     {opp.page_url} →
                   </a>

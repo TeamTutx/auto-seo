@@ -114,61 +114,76 @@ rather than a human:
   wrong but `read_page` and DOM introspection say the state is correct,
   open a new tab before concluding there's an actual problem.
 
-## Deploying (Netlify)
+## Deploying (Render static site)
 
-No code changes needed — the app already reads its API base URL from
-`NEXT_PUBLIC_API_URL` (`lib/api.ts`, defaults to `http://localhost:8000` for
-local dev) and `next.config.mjs` has no custom build behavior.
+The app is a **static export** (`next.config.mjs` sets `output: "export"`),
+published to Render's CDN. What that buys: it's free on Render's Hobby plan,
+it never spins down (unlike a free *web service*, which sleeps after 15
+minutes and takes ~a minute to wake — fatal for pages you want crawled), and
+the public pages are served as files.
 
-**Why Netlify and not Vercel:** Vercel's free Hobby plan flatly refuses to
-connect a project to any repo owned by a GitHub *Organization* (private or
-public — `TeamTutx/auto-seo` is org-owned) unless you pay for Pro. Netlify
-has the same restriction but only for **private** org repos, so the fix was
-making the repo public (already verified no secrets are committed — real
-`.env` files are gitignored) rather than paying. If this ever needs to be
-private again, Netlify Pro or moving the repo to a personal account are the
-options.
+What it costs, and what you must not break:
 
-1. In the Netlify dashboard: **Add new site → Import an existing project →
-   GitHub**. First time connecting this org: click **Configure the Netlify
-   app on GitHub** (opens a real, separate GitHub popup/tab — if it looks
-   like nothing happened, check for a new window) and grant it access to
-   `TeamTutx/auto-seo`.
-2. Pick the repo. In the import screen, set:
-   - **Base directory**: `frontend`
-   - **Build command**: `npm run build`
-   - **Publish directory**: `frontend/.next` — **must not equal the base
-     directory**, or the build fails with "Your publish directory cannot be
-     the same as the base directory of your site." Netlify's Next.js
-     Runtime otherwise auto-suggests `frontend/` for both, which trips this.
-   - Add environment variable `NEXT_PUBLIC_API_URL` = the Render backend's
-     URL (production: `https://api.signal-seo.in`, a custom domain on the Render
-     service; the raw `https://signal-api-xxxx.onrender.com` also works), no
-     trailing slash. It's inlined at build time, so changing it needs a redeploy.
-   - Optional `NEXT_PUBLIC_GA_ID` = the Google Analytics 4 measurement ID
-     (`G-XXXXXXXXXX`, public by design). Unset means no tracking tag at all;
-     malformed values are ignored rather than injected into the page. Also
-     build-time.
-   - Optional `NEXT_PUBLIC_SITE_URL` (default `https://signal-seo.in`) — the
-     origin used for the canonical URL, `/sitemap.xml` and `/robots.txt`.
-3. Deploy. If **Site configuration → Build & deploy → Runtime** doesn't
-   already show **Next.js**, set it explicitly — without it Netlify skips
-   the Next.js Runtime plugin entirely (build phase silently shows
-   "Skipped" and every route 404s, even though the deploy reports success).
-4. Netlify gives you a `*.netlify.app` URL immediately. New sites default
-   to **Private** (Netlify's own access gate, unrelated to GitHub) — go to
-   **Project overview → Make public** to open it to real visitors.
-5. Go back to the **backend** (Render dashboard → `signal-api` →
-   Environment) and add, now that this URL exists:
-   - `CORS_ORIGINS` — this Netlify URL (comma-separated if you add a custom
-     domain later: `https://signal-seo.in,https://<project>.netlify.app`).
+- **No server at request time.** No route handlers (`app/api/*`), no ISR/
+  `revalidate`, no `next/headers`, no server-side dynamic rendering.
+- **No dynamic route segments** unless they can be enumerated at build time.
+  Per-user ids can't be, which is why the dashboard passes them in the query
+  string — see `lib/routes.ts`, and add new id-carrying routes there.
+- **Prices are baked in at build time.** The landing page fetches
+  `GET /pricing` during the build, so the API must be reachable when Render
+  builds. An edit in `/admin/pricing` triggers a rebuild through a deploy hook
+  (`backend/app/services/site_rebuild.py`); without the hook configured,
+  prices refresh on the next deploy.
+
+**Why not Vercel:** its free Hobby plan forbids commercial use, and Signal
+sells credits. Its free plan also refuses to connect a project to a repo owned
+by a GitHub *Organization* (`TeamTutx/auto-seo` is one) without Pro.
+
+**Why not Netlify any more:** the free plan is 300 credits/month and a
+production deploy costs 15 of them (~20 deploys), with bandwidth at 20
+credits/GB. Exceeding it **pauses the site** until the next billing cycle —
+and pauses every other project on the account with it.
+
+### First deploy
+
+1. `render.yaml` already defines the `signal-site` service. In the Render
+   dashboard, **Blueprints → the blueprint for this repo → Apply** picks it up
+   alongside `signal-api`. Or create it by hand: **New → Static Site**, root
+   directory `frontend`, build command `npm ci && npm run build`, publish
+   directory `out`.
+2. Set the build-time env vars (the blueprint sets the first two):
+   - `NEXT_PUBLIC_API_URL` = `https://api.signal-seo.in`, no trailing slash.
+   - `NEXT_PUBLIC_SITE_URL` = `https://signal-seo.in` — the origin used for
+     canonical URLs, `/sitemap.xml` and `/robots.txt`.
+   - Optional `NEXT_PUBLIC_GA_ID` = the GA4 measurement ID (`G-XXXXXXXXXX`,
+     public by design). Unset means no tracking tag; malformed values are
+     ignored rather than injected.
+   All three are inlined into the bundle, so changing one needs a rebuild.
+3. Render gives you an `onrender.com` URL. **Check it before moving DNS** —
+   in particular `/auto-seo-tools` and `/terms` (extensionless paths resolving
+   to the exported `.html` files) and one dashboard URL with a query string.
+4. Backend (`signal-api` → Environment), once the URL exists:
+   - `CORS_ORIGINS` — comma-separated, e.g.
+     `https://signal-seo.in,https://signal-site.onrender.com`.
    - `FRONTEND_URL` — same origin, used to build the Google OAuth redirect.
-   Skip this and every API call fails from the browser (CORS), even though
-   both services are individually up and healthy.
-6. Custom domain (`signal-seo.in`, bought via GoDaddy): add it under
-   Project configuration → Domain management — Netlify gives you the exact
-   DNS records to add at GoDaddy (or move nameservers to Netlify first if
-   you'd rather manage DNS there).
+   Skip these and every API call fails from the browser even though both
+   services are healthy.
+   - Optional `RENDER_DEPLOY_HOOK_URL` — the static site's deploy hook
+     (**Settings → Deploy Hook**). With it set, a pricing change rebuilds the
+     landing page automatically. It's a credential: anyone holding it can
+     spend your build minutes, which is why it lives on the API and never in
+     the frontend bundle.
+5. Custom domain (`signal-seo.in`, bought via GoDaddy): add it under the
+   static site's **Settings → Custom Domains**; Render prints the exact DNS
+   records to add at GoDaddy. Do this last, and only once step 3 passed.
+
+### Old dashboard URLs
+
+`/dashboard/sites/:id/...` and `/admin/users/:id` are *rewritten* (not
+redirected) to `/legacy-link`, which reads the original path — still in the
+address bar, because it's a rewrite — and forwards to the query-string URL.
+The rules live in `render.yaml`; the mapping lives in `legacyPathToRoute`
+(`lib/routes.ts`).
 
 ## Known gaps
 

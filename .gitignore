@@ -4,6 +4,8 @@ __pycache__/
 .venv/
 node_modules/
 .next/
+# Static export output - `next build` with output: "export" writes here.
+/frontend/out/
 *.db
 dump.rdb
 .env*.local

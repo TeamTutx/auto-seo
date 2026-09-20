@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { routes, useRouteId } from "@/lib/routes";
 import ScoreGauge from "@/components/ScoreGauge";
 import CheckList from "@/components/CheckList";
 import GoogleAnalyticsPanel from "@/components/GoogleAnalyticsPanel";
@@ -11,10 +12,9 @@ import GoogleSearchConsolePanel from "@/components/GoogleSearchConsolePanel";
 import KeywordPanel from "@/components/KeywordPanel";
 import type { AuditDetail, Page, Site } from "@/lib/types";
 
-export default function PageDetailPage() {
-  const params = useParams<{ siteId: string; pageId: string }>();
-  const siteId = Number(params.siteId);
-  const pageId = Number(params.pageId);
+function PageDetailPage() {
+  const siteId = useRouteId("site");
+  const pageId = useRouteId("id");
   const router = useRouter();
 
   const [site, setSite] = useState<Site | null>(null);
@@ -91,7 +91,7 @@ export default function PageDetailPage() {
     setDeleting(true);
     try {
       await api.deletePage(pageId);
-      router.push(`/dashboard/sites/${siteId}`);
+      router.push(routes.site(siteId));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not delete page.");
       setDeleting(false);
@@ -111,7 +111,7 @@ export default function PageDetailPage() {
   return (
     <div>
       <div className="breadcrumb">
-        <Link href={`/dashboard/sites/${siteId}`}>{site.domain}</Link>
+        <Link href={routes.site(siteId)}>{site.domain}</Link>
         {path !== "/" && <> / {path}</>}
       </div>
       <div className="detail-header">
@@ -220,5 +220,15 @@ export default function PageDetailPage() {
       {site.gsc_property && <GoogleSearchConsolePanel pageId={pageId} />}
       {site.ga_property_id && <GoogleAnalyticsPanel pageId={pageId} />}
     </div>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or `next build` fails
+// (see CLAUDE.md). Same shape as /login, which has always read its query string.
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <PageDetailPage />
+    </Suspense>
   );
 }

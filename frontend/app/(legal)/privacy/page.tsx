@@ -73,7 +73,7 @@ export default function PrivacyPage() {
       <p>These providers process data on our behalf, only as needed to run the Service:</p>
       <ul>
         <li>
-          <b>Hosting</b> — Render (application and database, Singapore) and Netlify (website).
+          <b>Hosting</b> — Render (website, application and database; database in Singapore).
         </li>
         <li>
           <b>SerpApi</b> — receives the keyword, location and domain of a rank check you run.

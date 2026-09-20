@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { routes, useRouteId } from "@/lib/routes";
 import { useSiteJobs } from "@/lib/use-site-jobs";
 import JobProgress from "@/components/JobProgress";
 import { scoreBucket } from "@/lib/score";
@@ -19,9 +20,8 @@ interface PageRow {
   latestAudit: Audit | null;
 }
 
-export default function SiteOverviewPage() {
-  const params = useParams<{ siteId: string }>();
-  const siteId = Number(params.siteId);
+function SiteOverviewPage() {
+  const siteId = useRouteId("id");
   const router = useRouter();
   const { refreshSites } = useSites();
 
@@ -244,13 +244,13 @@ export default function SiteOverviewPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/opportunities`}>
+          <Link className="btn btn-ghost" href={routes.siteOpportunities(siteId)}>
             Fixes
           </Link>
-          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/keywords`}>
+          <Link className="btn btn-ghost" href={routes.siteKeywords(siteId)}>
             Keywords
           </Link>
-          <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/visibility`}>
+          <Link className="btn btn-ghost" href={routes.siteVisibility(siteId)}>
             Visibility
           </Link>
           <button className="btn btn-ghost" onClick={handleCrawl} disabled={crawling || crawlJob?.status === "running"}>
@@ -373,7 +373,7 @@ export default function SiteOverviewPage() {
             }
             return (
               <div className="page-card" key={page.id}>
-                <div className="page-card-top" onClick={() => router.push(`/dashboard/sites/${siteId}/pages/${page.id}`)}>
+                <div className="page-card-top" onClick={() => router.push(routes.page(siteId, page.id))}>
                   <div style={{ minWidth: 0 }}>
                     <div className="page-path">{path}</div>
                     <div className="page-url">{page.url}</div>
@@ -431,5 +431,15 @@ export default function SiteOverviewPage() {
       )}
 
     </div>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or `next build` fails
+// (see CLAUDE.md). Same shape as /login, which has always read its query string.
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <SiteOverviewPage />
+    </Suspense>
   );
 }

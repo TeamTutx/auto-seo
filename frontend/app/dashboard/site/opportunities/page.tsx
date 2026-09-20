@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { routes, useRouteId } from "@/lib/routes";
 import OpportunitiesPanel from "@/components/OpportunitiesPanel";
 import type { Site } from "@/lib/types";
 
@@ -11,9 +11,8 @@ import type { Site } from "@/lib/types";
  *  It used to sit on the site overview; that slot now belongs to the visibility
  *  gauges. The list itself stays — marking a fix as applied, so the next scan
  *  can confirm it worked, only exists here. */
-export default function OpportunitiesPage() {
-  const params = useParams<{ siteId: string }>();
-  const siteId = Number(params.siteId);
+function OpportunitiesPage() {
+  const siteId = useRouteId("id");
   const [site, setSite] = useState<Site | null>(null);
 
   useEffect(() => {
@@ -25,7 +24,7 @@ export default function OpportunitiesPage() {
       <div className="topbar">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="breadcrumb">
-            <Link href={`/dashboard/sites/${siteId}`} className="link-btn">
+            <Link href={routes.site(siteId)} className="link-btn">
               {site?.domain ?? "Site"}
             </Link>{" "}
             / Fixes
@@ -39,5 +38,15 @@ export default function OpportunitiesPage() {
 
       <OpportunitiesPanel siteId={siteId} />
     </div>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or `next build` fails
+// (see CLAUDE.md). Same shape as /login, which has always read its query string.
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="loading-state">Loading…</div>}>
+      <OpportunitiesPage />
+    </Suspense>
   );
 }

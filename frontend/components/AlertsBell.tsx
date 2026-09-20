@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import type { Alert } from "@/lib/types";
 
 export default function AlertsBell() {
@@ -48,7 +49,7 @@ export default function AlertsBell() {
       }
     }
     setOpen(false);
-    router.push(`/dashboard/sites/${alert.site_id}/pages/${alert.page_id}`);
+    router.push(routes.page(alert.site_id, alert.page_id));
   }
 
   if (alerts === null || alerts.length === 0) return null;
