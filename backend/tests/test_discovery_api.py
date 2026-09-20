@@ -5,6 +5,7 @@ returns here the job has already finished - which means these tests exercise the
 real background path rather than a stand-in for it. `finished_job` just reads
 back the result.
 """
+import json
 from datetime import datetime, timedelta
 
 import pytest
@@ -636,3 +637,165 @@ def test_a_real_run_of_zero_days_is_not_hidden(client, db, monkeypatch):
 
     zeros = [p for p in trend if p["impressions"] == 0]
     assert len(zeros) >= 6  # the real drought is still visible
+
+
+# --- visibility advice ---
+
+@pytest.fixture
+def checked_keyword(client, db, targeted_site, monkeypatch):
+    """A keyword with a real reading behind it: we rank #14, the AI Overview
+    cited someone else, and an assistant named someone else."""
+    headers, site_id, keyword = targeted_site
+    monkeypatch.setattr(site_jobs.visibility, "check_google", lambda kw, domain, *a, **k: [
+        EngineResult(engine="google", present=True, position=14, context={
+            "top_results": [{"position": 1, "title": "Best SEO Audit Tools", "domain": "ahrefs.com",
+                             "url": "https://ahrefs.com/blog/seo-audit"}],
+        }),
+        EngineResult(engine="google_ai_overview", present=False, detail="Cited instead: ahrefs.com",
+                     context={"sources": ["ahrefs.com", "moz.com"], "answer": "The leading tools are..."}),
+    ])
+    monkeypatch.setattr(site_jobs.visibility, "check_chatgpt", lambda kw, domain: EngineResult(
+        engine="chatgpt", present=False, detail="Not mentioned in the answer",
+        context={"answer": "Popular options include Ahrefs and Semrush."}))
+    client.post(f"/sites/{site_id}/visibility/check", headers=headers)
+    return headers, site_id, keyword
+
+
+def test_advice_is_built_from_what_the_check_actually_found(client, db, checked_keyword, monkeypatch):
+    """The whole point is that the suggestions are specific, so the model must
+    be handed the real evidence - the competitor that ranks, the sources the AI
+    Overview used, the site's own page."""
+    headers, site_id, keyword = checked_keyword
+    seen = {}
+
+    def fake_complete(system, user, max_tokens=900):
+        seen["system"], seen["user"] = system, user
+        return '''{"diagnosis": "You rank #14 while Ahrefs holds the AI Overview citation.",
+                   "target_page": "https://example.com/",
+                   "actions": [{"title": "Add a tool comparison table",
+                                "detail": "Ahrefs ranks #1 with one; your page has none.",
+                                "addresses": "both"}]}'''
+
+    monkeypatch.setattr(
+        "app.services.visibility_advice.get_ai_provider", lambda: type("P", (), {"complete": staticmethod(fake_complete)})()
+    )
+    monkeypatch.setattr("app.routers.discovery._page_text", lambda url: "We audit pages for SEO problems.")
+
+    resp = client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["diagnosis"].startswith("You rank #14")
+    assert body["actions"][0]["addresses"] == "both"
+    assert body["target_page_url"] == "https://example.com/"
+    # the evidence really reached the model
+    assert "#14" in seen["user"] and "ahrefs.com" in seen["user"]
+    assert "Popular options include Ahrefs" in seen["user"]  # what the assistant said instead
+    assert "We audit pages for SEO problems." in seen["user"]  # their own content
+    assert "generic" in seen["system"].lower() or "Generic" in seen["system"]
+
+
+def test_advice_costs_one_credit_and_is_free_to_read_again(client, db, checked_keyword, monkeypatch):
+    headers, site_id, keyword = checked_keyword
+    monkeypatch.setattr(
+        "app.services.visibility_advice.get_ai_provider",
+        lambda: type("P", (), {"complete": staticmethod(lambda s, u, max_tokens=900: '{"diagnosis": "d", "actions": []}')})(),
+    )
+    before = client.get("/auth/me", headers=headers).json()["credits_balance"]
+
+    client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+    after_generate = client.get("/auth/me", headers=headers).json()["credits_balance"]
+    report = client.get(f"/sites/{site_id}/visibility", headers=headers).json()
+    after_read = client.get("/auth/me", headers=headers).json()["credits_balance"]
+
+    assert after_generate == before - 1  # the search was already paid for by the check
+    assert after_read == after_generate  # re-reading is free
+    row = next(k for k in report["keywords"] if k["keyword"] == keyword)
+    assert row["advice"]["diagnosis"] == "d"
+
+
+def test_advice_needs_a_check_to_have_run_first(client, db, targeted_site):
+    headers, site_id, keyword = targeted_site
+
+    resp = client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+
+    assert resp.status_code == 400 and "Check this keyword" in resp.json()["detail"]
+
+
+def test_a_reading_taken_before_evidence_was_recorded_asks_for_a_re_check(client, db, targeted_site, monkeypatch):
+    """Old rows have no stored SERP. Advice with nothing behind it would be the
+    generic filler this feature exists to avoid, so it isn't offered."""
+    headers, site_id, keyword = targeted_site
+    monkeypatch.setattr(site_jobs.visibility, "check_google", lambda kw, domain, *a, **k: [
+        EngineResult(engine="google", present=True, position=9),  # no context, as before 0013
+        EngineResult(engine="google_ai_overview", present=False),
+    ])
+    monkeypatch.setattr(site_jobs.visibility, "check_chatgpt", lambda kw, domain: EngineResult(
+        engine="chatgpt", present=False))
+    client.post(f"/sites/{site_id}/visibility/check", headers=headers)
+
+    resp = client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+
+    assert resp.status_code == 400 and "Run the check again" in resp.json()["detail"]
+
+
+def test_advice_is_marked_stale_once_the_keyword_is_re_checked(client, db, checked_keyword, monkeypatch):
+    """Advice describing a SERP that has since moved is worse than none unless
+    it's labelled."""
+    headers, site_id, keyword = checked_keyword
+    monkeypatch.setattr(
+        "app.services.visibility_advice.get_ai_provider",
+        lambda: type("P", (), {"complete": staticmethod(lambda s, u, max_tokens=900: '{"diagnosis": "d", "actions": []}')})(),
+    )
+    client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+    fresh = client.get(f"/sites/{site_id}/visibility", headers=headers).json()
+    assert next(k for k in fresh["keywords"] if k["keyword"] == keyword)["advice"]["stale"] is False
+
+    client.post(f"/sites/{site_id}/visibility/check", headers=headers)  # the search moves on
+
+    after = client.get(f"/sites/{site_id}/visibility", headers=headers).json()
+    assert next(k for k in after["keywords"] if k["keyword"] == keyword)["advice"]["stale"] is True
+
+
+def test_the_check_records_who_won_so_advice_costs_no_extra_search(client, db, checked_keyword):
+    """The SERP is captured during the check - which already fetched it - so the
+    advice never has to buy the same search twice."""
+    headers, site_id, keyword = checked_keyword
+
+    with Session(db) as session:
+        google = session.exec(
+            select(VisibilityCheck).where(VisibilityCheck.engine == "google")
+        ).first()
+    stored = json.loads(google.context)
+    assert stored["top_results"][0]["domain"] == "ahrefs.com"
+
+
+def test_a_page_that_cannot_be_fetched_does_not_block_the_advice(client, db, checked_keyword, monkeypatch):
+    headers, site_id, keyword = checked_keyword
+
+    def boom(url):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("app.routers.discovery._page_text", boom)
+    monkeypatch.setattr(
+        "app.services.visibility_advice.get_ai_provider",
+        lambda: type("P", (), {"complete": staticmethod(lambda s, u, max_tokens=900: '{"diagnosis": "still useful", "actions": []}')})(),
+    )
+
+    resp = client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+
+    assert resp.status_code == 200 and resp.json()["diagnosis"] == "still useful"
+
+
+def test_a_model_that_returns_nothing_usable_does_not_charge(client, db, checked_keyword, monkeypatch):
+    headers, site_id, keyword = checked_keyword
+    monkeypatch.setattr(
+        "app.services.visibility_advice.get_ai_provider",
+        lambda: type("P", (), {"complete": staticmethod(lambda s, u, max_tokens=900: "sorry, I can't help")})(),
+    )
+    before = client.get("/auth/me", headers=headers).json()["credits_balance"]
+
+    resp = client.post(f"/sites/{site_id}/visibility/suggest", json={"keyword": keyword}, headers=headers)
+
+    assert resp.status_code == 502
+    assert client.get("/auth/me", headers=headers).json()["credits_balance"] == before  # never charge on failure

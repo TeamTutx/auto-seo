@@ -36,6 +36,7 @@ import type {
   TitleTagSuggestion,
   User,
   VerificationMethod,
+  VisibilityAdvice,
   VisibilityReport,
 } from "./types";
 
@@ -195,6 +196,11 @@ export const api = {
   startVisibilityCheck: (siteId: number) =>
     request<SiteJob>(`/sites/${siteId}/visibility/check`, { method: "POST" }),
   visibilityReport: (siteId: number) => request<VisibilityReport>(`/sites/${siteId}/visibility`),
+  suggestForKeyword: (siteId: number, keyword: string) =>
+    request<VisibilityAdvice>(`/sites/${siteId}/visibility/suggest`, {
+      method: "POST",
+      body: JSON.stringify({ keyword }),
+    }),
 
   getOpportunities: (siteId: number) => request<Opportunity[]>(`/sites/${siteId}/opportunities`),
   getSiteHealth: (siteId: number) => request<SiteHealth>(`/sites/${siteId}/health`),

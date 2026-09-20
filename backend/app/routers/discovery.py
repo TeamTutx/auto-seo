@@ -5,21 +5,27 @@ immediately with a job the UI polls, because none of them finishes inside a
 request. The POSTs are therefore "start this", not "here is the answer" — the
 answer arrives in the GET endpoints as the job progresses.
 """
+import json
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from bs4 import BeautifulSoup
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import JobKind, KeywordIdea, Page, Site, SiteJob, User, VisibilityCheck
+from app.models import Audit, JobKind, KeywordIdea, Page, Site, SiteJob, User, VisibilityAdvice, VisibilityCheck
 from app.routers.pages import get_owned_page
 from app.routers.sites import _get_owned_site
 from app.schemas import (
     IndexSummary,
     SearchPresence,
     TrendPoint,
+    VisibilityActionRead,
+    VisibilityAdviceRead,
+    VisibilityAdviceRequest,
     KeywordIdeaRead,
     KeywordTargetRequest,
     PageRead,
@@ -29,11 +35,30 @@ from app.schemas import (
     VisibilityKeywordRead,
     VisibilityReport,
 )
-from app.services import gsc, index_status, search_presence, site_jobs, visibility
+from app.services import gsc, index_status, search_presence, site_jobs, visibility, visibility_advice
 from app.services.credits import deduct_credit, require_credits
+from app.services.fetcher import fetch_html
 from app.services.gsc import GSCError
 
 router = APIRouter(tags=["discovery"])
+logger = logging.getLogger("signal.discovery")
+
+
+def _advice_read(advice: Optional[VisibilityAdvice], engines: List[VisibilityEngineRead]) -> Optional[VisibilityAdviceRead]:
+    if advice is None:
+        return None
+    try:
+        actions = [VisibilityActionRead(**a) for a in json.loads(advice.actions)]
+    except (ValueError, TypeError):
+        actions = []
+    # Advice about a search that has since been re-checked may describe a SERP
+    # that no longer exists, which is worse than no advice unless it's labelled.
+    newest_check = max((e.checked_at for e in engines), default=None)
+    stale = bool(newest_check and advice.based_on_checked_at and newest_check > advice.based_on_checked_at)
+    return VisibilityAdviceRead(
+        diagnosis=advice.diagnosis, actions=actions, target_page_url=advice.target_page_url,
+        created_at=advice.created_at, stale=stale,
+    )
 
 
 def _job_read(job: Optional[SiteJob]) -> Optional[SiteJobRead]:
@@ -309,6 +334,11 @@ def visibility_report(
     for row in rows:
         newest[(row.keyword, row.engine)] = row  # ordered by id, so the last write wins
 
+    advice_rows = session.exec(
+        select(VisibilityAdvice).where(VisibilityAdvice.site_id == site.id).order_by(VisibilityAdvice.id)
+    ).all()
+    latest_advice = {a.keyword: a for a in advice_rows}  # ordered by id, so the last write wins
+
     keywords: List[VisibilityKeywordRead] = []
     checked_at: Optional[datetime] = None
     counts = {visibility.GOOGLE: 0, visibility.AI_OVERVIEW: 0, visibility.CHATGPT: 0}
@@ -326,7 +356,9 @@ def visibility_report(
             if row.present:
                 counts[engine] = counts.get(engine, 0) + 1
             checked_at = max(checked_at, row.checked_at) if checked_at else row.checked_at
-        keywords.append(VisibilityKeywordRead(keyword=keyword, engines=engines))
+        keywords.append(VisibilityKeywordRead(
+            keyword=keyword, engines=engines, advice=_advice_read(latest_advice.get(keyword), engines),
+        ))
 
     return VisibilityReport(
         checked_at=checked_at,
@@ -336,3 +368,99 @@ def visibility_report(
         chatgpt_mentions=counts[visibility.CHATGPT],
         keywords=keywords,
     )
+
+
+@router.post("/sites/{site_id}/visibility/suggest", response_model=VisibilityAdviceRead)
+def suggest_for_keyword(
+    site_id: int,
+    payload: VisibilityAdviceRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Specific, evidence-backed advice for one keyword: what is beating this
+    site in Google, what the AI answers cited instead, and what this site's own
+    page is missing. One credit - the search that produced the evidence was
+    already paid for by the visibility check."""
+    site = _get_owned_site(session, site_id, current_user)
+    keyword = payload.keyword.strip()
+
+    rows = session.exec(
+        select(VisibilityCheck)
+        .where(VisibilityCheck.site_id == site.id, VisibilityCheck.keyword == keyword)
+        .order_by(VisibilityCheck.id)
+    ).all()
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check this keyword's visibility first — the advice is built from what that check found.",
+        )
+
+    readings, contexts = {}, {}
+    for row in rows:  # ordered by id, so the newest reading per engine wins
+        readings[row.engine] = {"present": row.present, "position": row.position, "detail": row.detail or ""}
+        if row.context:
+            try:
+                contexts[row.engine] = json.loads(row.context)
+            except ValueError:
+                pass
+    if not contexts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This keyword was checked before Signal started recording who ranks for it. "
+                "Run the check again and the advice will have something to work from."
+            ),
+        )
+
+    pages = [
+        {"url": page.url, "title": _latest_title(session, page.id)}
+        for page in session.exec(select(Page).where(Page.site_id == site.id).order_by(Page.id)).all()
+    ]
+    candidate = visibility_advice.best_page(keyword, pages)
+    content = None
+    if candidate:
+        try:
+            content = _page_text(candidate["url"])
+        except Exception as exc:  # a page we can't fetch shouldn't block the advice
+            logger.info("advice: could not read %s: %s", candidate["url"], exc)
+
+    require_credits(current_user)
+    advice = visibility_advice.generate(
+        keyword=keyword, domain=site.domain, readings=readings, contexts=contexts,
+        page_url=candidate["url"] if candidate else None,
+        page_title=candidate.get("title") if candidate else None,
+        page_content=content, other_pages=pages,
+    )
+    if advice is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The model didn't return usable advice. Try again in a moment.",
+        )
+    deduct_credit(session, current_user, "visibility_advice")
+
+    stored = VisibilityAdvice(
+        site_id=site.id, keyword=keyword, diagnosis=advice.diagnosis,
+        actions=json.dumps(advice.actions), target_page_url=advice.target_page_url,
+        based_on_checked_at=max(r.checked_at for r in rows),
+    )
+    session.add(stored)
+    session.commit()
+    session.refresh(stored)
+    return _advice_read(stored, [])
+
+
+def _latest_title(session: Session, page_id: int) -> Optional[str]:
+    audit = session.exec(
+        select(Audit).where(Audit.page_id == page_id, Audit.extracted_title.is_not(None))
+        .order_by(Audit.id.desc())
+    ).first()
+    return audit.extracted_title if audit else None
+
+
+def _page_text(url: str) -> str:
+    """The page's visible words, for the model to compare against what ranks.
+    Free - Signal fetches it itself."""
+    soup = BeautifulSoup(fetch_html(url), "lxml")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return " ".join(soup.get_text(" ").split())

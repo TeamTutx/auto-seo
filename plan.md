@@ -524,6 +524,22 @@ it changes every reader at once. The test suite pins it to its own value, becaus
 of assertions about credit arithmetic were tracking a product decision they had no
 interest in; the tests that genuinely care assert against the constant itself.
 
+**Per-keyword advice (2026-09-20).** The visibility table answers "am I visible"; this
+answers "what do I do about it". Every suggestion is built from measurements Signal
+already has for that exact search: the pages outranking the site with their titles, the
+sources Google's AI Overview cited and what its answer actually said, what an assistant
+answered instead, and the content of the site's own most relevant page. The model is given
+that and nothing else, and is told explicitly that "improve content quality" and "build
+backlinks" are not acceptable answers - grounding is the entire difference between this
+and filler. Each action says whether it addresses ranking, AI citation, or both, since
+those are different problems.
+
+The evidence is captured into `visibilitycheck.context` during the check, which had
+already fetched it and was throwing it away. That makes advice one credit rather than two,
+and - more importantly - makes it advice about the search actually on screen rather than a
+fresh one that may differ. Advice is stored so re-reading is free, and stamped with the
+reading it came from so the UI can flag it once the keyword is re-checked.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

@@ -27,6 +27,15 @@ don't leave it stale.** Concretely:
   **Don't delete that route** — `OpportunitiesPanel` holds the only "mark as applied"
   button in the app, so the whole fix-then-verify loop (which the landing page sells, and
   `AppliedFix` implements) is unreachable without it.
+- **Visibility advice is only as good as the evidence behind it.** `POST
+  /sites/{id}/visibility/suggest` builds its prompt entirely from what the check measured —
+  the pages that outrank the site, the sources the AI Overview cited, what an assistant
+  answered instead, and the site's own page content — because generic SEO advice is
+  worthless and a model with nothing to work from produces exactly that. That evidence is
+  captured into `visibilitycheck.context` *during the check*, which already fetched it, so
+  advice costs one credit rather than buying the same search twice. A keyword whose stored
+  check predates that capture is refused with a "re-run the check" message rather than
+  being given filler.
 - Anything the site page shows about crawling, index status, keyword ideas or visibility
   is fed by `app/routers/discovery.py`. What each action costs is listed in two places
   the user reads — `CREDIT_COSTS` on the landing page and the "What a credit buys" panel

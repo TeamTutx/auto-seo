@@ -329,9 +329,26 @@ export interface VisibilityEngineResult {
   checked_at: string;
 }
 
+export interface VisibilityAction {
+  title: string;
+  detail: string;
+  /** Ranking in Google and being cited by AI answers are different problems. */
+  addresses: "google" | "ai" | "both";
+}
+
+export interface VisibilityAdvice {
+  diagnosis: string;
+  actions: VisibilityAction[];
+  target_page_url: string | null;
+  created_at: string;
+  /** The keyword has been re-checked since this was written. */
+  stale: boolean;
+}
+
 export interface VisibilityKeyword {
   keyword: string;
   engines: VisibilityEngineResult[];
+  advice: VisibilityAdvice | null;
 }
 
 export interface VisibilityReport {

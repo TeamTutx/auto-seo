@@ -374,7 +374,28 @@ class VisibilityCheck(SQLModel, table=True):
     present: bool = False
     position: Optional[int] = None  # organic rank, google engine only
     detail: Optional[str] = None  # citing URL, or the sentence that mentioned us
+    # JSON: who *did* win this search. Top organic results for the google engine,
+    # cited sources for the AI Overview. Captured here because the check already
+    # fetched them - asking again later would cost another credit and, worse,
+    # would be advice about a different search than the one displayed.
+    context: Optional[str] = None
     checked_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VisibilityAdvice(SQLModel, table=True):
+    """What to actually do to become visible for one keyword.
+
+    Stored rather than regenerated so re-reading costs nothing, and stamped with
+    the reading it was derived from - advice about a search that has since moved
+    is worse than no advice, and the UI says so when the two drift apart."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True)
+    keyword: str
+    diagnosis: str
+    actions: str  # JSON list of {title, detail, addresses}
+    target_page_url: Optional[str] = None
+    based_on_checked_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AdminAuditLog(SQLModel, table=True):

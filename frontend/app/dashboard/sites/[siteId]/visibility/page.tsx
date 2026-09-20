@@ -2,13 +2,20 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatDateTime } from "@/lib/format";
 import { useSiteJobs } from "@/lib/use-site-jobs";
 import JobProgress from "@/components/JobProgress";
-import type { Site, VisibilityEngine, VisibilityEngineResult, VisibilityReport } from "@/lib/types";
+import type {
+  Site,
+  VisibilityAdvice,
+  VisibilityEngine,
+  VisibilityEngineResult,
+  VisibilityKeyword,
+  VisibilityReport,
+} from "@/lib/types";
 
 const ENGINES: { key: VisibilityEngine; label: string; hint: string }[] = [
   { key: "google", label: "Google", hint: "Where you rank in the normal organic results" },
@@ -25,6 +32,8 @@ export default function VisibilityPage() {
   const [report, setReport] = useState<VisibilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  const [advising, setAdvising] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [s, r] = await Promise.all([api.getSite(siteId), api.visibilityReport(siteId)]);
@@ -46,6 +55,25 @@ export default function VisibilityPage() {
   useEffect(() => {
     load().catch((e) => setError(e instanceof ApiError ? e.message : "Could not load visibility."));
   }, [load]);
+
+  async function suggest(keyword: string) {
+    setAdvising(keyword);
+    setError(null);
+    try {
+      const advice = await api.suggestForKeyword(siteId, keyword);
+      setReport((current) =>
+        current
+          ? { ...current, keywords: current.keywords.map((k) => (k.keyword === keyword ? { ...k, advice } : k)) }
+          : current
+      );
+      setOpen(keyword);
+      refreshUser();  // a credit was just spent
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not get suggestions.");
+    } finally {
+      setAdvising(null);
+    }
+  }
 
   async function check() {
     setBusy(true);
@@ -147,20 +175,44 @@ export default function VisibilityPage() {
                         {e.label}
                       </th>
                     ))}
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
                   {report.keywords.map((row) => {
                     const byEngine = Object.fromEntries(row.engines.map((e) => [e.engine, e]));
+                    const expanded = open === row.keyword;
                     return (
-                      <tr key={row.keyword}>
-                        <td className="keyword-name">{row.keyword}</td>
-                        {ENGINES.map((engine) => (
-                          <td key={engine.key}>
-                            <EngineCell result={byEngine[engine.key]} engine={engine.key} />
+                      <Fragment key={row.keyword}>
+                        <tr className={expanded ? "vis-row-open" : ""}>
+                          <td className="keyword-name">{row.keyword}</td>
+                          {ENGINES.map((engine) => (
+                            <td key={engine.key}>
+                              <EngineCell result={byEngine[engine.key]} engine={engine.key} />
+                            </td>
+                          ))}
+                          <td className="num">
+                            <KeywordAction
+                              row={row}
+                              expanded={expanded}
+                              busy={advising === row.keyword}
+                              onToggle={() => setOpen(expanded ? null : row.keyword)}
+                              onGenerate={() => suggest(row.keyword)}
+                            />
                           </td>
-                        ))}
-                      </tr>
+                        </tr>
+                        {expanded && row.advice && (
+                          <tr className="vis-advice-row">
+                            <td colSpan={ENGINES.length + 2}>
+                              <AdvicePanel
+                                advice={row.advice}
+                                busy={advising === row.keyword}
+                                onRegenerate={() => suggest(row.keyword)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -199,5 +251,93 @@ function EngineCell({ result, engine }: { result?: VisibilityEngineResult; engin
         <span className="vis-instead">{result.detail.replace("Cited instead: ", "")}</span>
       )}
     </span>
+  );
+}
+
+
+function KeywordAction({
+  row,
+  expanded,
+  busy,
+  onToggle,
+  onGenerate,
+}: {
+  row: VisibilityKeyword;
+  expanded: boolean;
+  busy: boolean;
+  onToggle: () => void;
+  onGenerate: () => void;
+}) {
+  if (busy) return <span className="muted">Thinking…</span>;
+  if (row.advice) {
+    return (
+      <button className="link-btn" onClick={onToggle}>
+        {expanded ? "Hide" : "How to improve"}
+        {row.advice.stale && !expanded && <span className="advice-stale-dot" title="Re-checked since this was written" />}
+      </button>
+    );
+  }
+  return (
+    <button className="link-btn" onClick={onGenerate} title="1 credit — the search itself is already paid for">
+      How to improve
+    </button>
+  );
+}
+
+function AdvicePanel({
+  advice,
+  busy,
+  onRegenerate,
+}: {
+  advice: VisibilityAdvice;
+  busy: boolean;
+  onRegenerate: () => void;
+}) {
+  return (
+    <div className="advice">
+      {advice.stale && (
+        <div className="advice-stale">
+          This keyword has been checked again since these suggestions were written, so they may describe a
+          search that has moved on.{" "}
+          <button className="link-btn" onClick={onRegenerate} disabled={busy}>
+            Get fresh suggestions
+          </button>
+        </div>
+      )}
+      <p className="advice-diagnosis">{advice.diagnosis}</p>
+
+      {advice.actions.length > 0 && (
+        <ol className="advice-actions">
+          {advice.actions.map((action, i) => (
+            <li key={i}>
+              <div className="advice-action-head">
+                <span className="advice-action-title">{action.title}</span>
+                <span className={`advice-tag ${action.addresses}`}>
+                  {action.addresses === "google" ? "Google" : action.addresses === "ai" ? "AI answers" : "both"}
+                </span>
+              </div>
+              {action.detail && <p className="advice-action-detail">{action.detail}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <div className="advice-foot">
+        {advice.target_page_url ? (
+          <span>
+            Page to change: <a href={advice.target_page_url} target="_blank" rel="noopener noreferrer">{advice.target_page_url}</a>
+          </span>
+        ) : (
+          <span>No existing page fits this keyword — the suggestions describe a new one.</span>
+        )}
+        <button className="link-btn" onClick={onRegenerate} disabled={busy}>
+          Regenerate (1 credit)
+        </button>
+      </div>
+      <p className="advice-caveat">
+        Written by a language model from what Signal measured for this exact search — the pages that outrank you,
+        what the AI answers cited, and your own page&apos;s content. Suggestions, not guarantees.
+      </p>
+    </div>
   );
 }

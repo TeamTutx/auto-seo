@@ -17,6 +17,7 @@ const CREDIT_COSTS: { label: string; credits: number }[] = [
   { label: "A full ranking action plan", credits: 2 },
   { label: "Find keyword ideas for a site", credits: 2 },
   { label: "Check one keyword in Google and in AI answers", credits: 2 },
+  { label: "Suggestions for how to get visible for a keyword", credits: 1 },
 ];
 
 export default function LandingPage({ pricing }: { pricing: Pricing }) {

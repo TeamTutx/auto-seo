@@ -491,9 +491,30 @@ class VisibilityEngineRead(BaseModel):
     checked_at: datetime
 
 
+class VisibilityActionRead(BaseModel):
+    title: str
+    detail: str = ""
+    addresses: str = "both"  # "google" | "ai" | "both" - they're different problems
+
+
+class VisibilityAdviceRead(BaseModel):
+    diagnosis: str
+    actions: List[VisibilityActionRead]
+    target_page_url: Optional[str] = None
+    created_at: datetime
+    # True when the keyword has been re-checked since this was written, so the
+    # UI can say the advice describes a search that has moved on.
+    stale: bool = False
+
+
 class VisibilityKeywordRead(BaseModel):
     keyword: str
     engines: List[VisibilityEngineRead]
+    advice: Optional[VisibilityAdviceRead] = None
+
+
+class VisibilityAdviceRequest(BaseModel):
+    keyword: str = Field(min_length=1, max_length=200)
 
 
 class VisibilityReport(BaseModel):

@@ -18,6 +18,7 @@ consequences this module has to handle:
 
 If a worker is ever provisioned, only `start` needs to change.
 """
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional
@@ -357,6 +358,7 @@ def run_visibility(session: Session, job: SiteJob) -> None:
             session.add(VisibilityCheck(
                 site_id=site.id, keyword=keyword, engine=result.engine,
                 present=result.present, position=result.position, detail=result.detail,
+                context=json.dumps(result.context) if result.context else None,
             ))
         if any(r.present for r in results):
             seen += 1

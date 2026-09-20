@@ -169,6 +169,7 @@ function BillingContent() {
           <li>A full ranking action plan — 2</li>
           <li>Finding keyword ideas for a site — up to 2</li>
           <li>Checking one keyword in Google and in AI answers — 2</li>
+          <li>Suggestions for how to get visible for a keyword — 1</li>
         </ul>
         <div className="admin-hint" style={{ marginTop: 12 }}>
           Audits, scores, the opportunities list, finding your pages, checking which are indexed, and your Search

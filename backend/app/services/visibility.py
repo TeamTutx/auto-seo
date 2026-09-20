@@ -44,12 +44,20 @@ ASK_SYSTEM_PROMPT = (
 )
 
 
+# Enough of the SERP to explain a result and advise on it, without storing a
+# whole page of search results per keyword per run.
+TOP_RESULTS_KEPT = 5
+
+
 @dataclass
 class EngineResult:
     engine: str
     present: bool
     position: Optional[int] = None
     detail: Optional[str] = None
+    # Who won instead, as structured data. Free to keep: the search that
+    # produced the result already returned it.
+    context: Optional[dict] = None
 
 
 def brand_terms(domain: str) -> List[str]:
@@ -92,16 +100,27 @@ def check_google(keyword: str, domain: str, location_code: int = 2356,
         present=position is not None,
         position=position,
         detail=None if position is not None else "Not in the first 100 results",
+        context={
+            "top_results": [
+                {"position": r.position, "title": r.title, "domain": r.domain, "url": r.url}
+                for r in snapshot.results[:TOP_RESULTS_KEPT]
+            ]
+        },
     )
 
     overview = snapshot.ai_overview
     if overview is None or not overview.present:
         ai = EngineResult(engine=AI_OVERVIEW, present=False, detail=NO_AI_OVERVIEW)
-    elif target in overview.sources:
-        ai = EngineResult(engine=AI_OVERVIEW, present=True, detail="Cited as a source")
     else:
-        cited = ", ".join(dict.fromkeys(overview.sources[:3])) or "no sources listed"
-        ai = EngineResult(engine=AI_OVERVIEW, present=False, detail=f"Cited instead: {cited}")
+        sources = list(dict.fromkeys(overview.sources))
+        context = {"sources": sources, "answer": overview.text[:1200]}
+        if target in sources:
+            ai = EngineResult(engine=AI_OVERVIEW, present=True, detail="Cited as a source", context=context)
+        else:
+            cited = ", ".join(sources[:3]) or "no sources listed"
+            ai = EngineResult(
+                engine=AI_OVERVIEW, present=False, detail=f"Cited instead: {cited}", context=context
+            )
     return [organic, ai]
 
 
@@ -113,9 +132,12 @@ def check_chatgpt(keyword: str, domain: str) -> EngineResult:
         return EngineResult(engine=CHATGPT, present=False, detail=f"Could not ask the model: {exc}"[:300])
 
     sentence = mentions(answer, brand_terms(domain))
+    # The whole answer is kept, not just the verdict: "who does it name instead"
+    # is the actionable half, and re-asking later costs another credit.
+    context = {"answer": answer[:1500]}
     if sentence:
-        return EngineResult(engine=CHATGPT, present=True, detail=sentence)
-    return EngineResult(engine=CHATGPT, present=False, detail="Not mentioned in the answer")
+        return EngineResult(engine=CHATGPT, present=True, detail=sentence, context=context)
+    return EngineResult(engine=CHATGPT, present=False, detail="Not mentioned in the answer", context=context)
 
 
 def check_keyword(keyword: str, domain: str, location_code: int = 2356,
