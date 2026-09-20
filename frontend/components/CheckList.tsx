@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useGeneratedResults } from "@/lib/use-generated-results";
 import type { AltTextSuggestion, Check } from "@/lib/types";
 
 const ICON: Record<Check["status"], { cls: string; glyph: string }> = {
@@ -10,17 +11,29 @@ const ICON: Record<Check["status"], { cls: string; glyph: string }> = {
   fail: { cls: "bad", glyph: "✕" },
 };
 
-type TextSuggestable = { label: string; kind: "text"; generate: (pageId: number) => Promise<{ suggestion: string }> };
-type ListSuggestable = { label: string; kind: "list"; generate: (pageId: number) => Promise<AltTextSuggestion[]> };
+type TextSuggestable = {
+  label: string;
+  kind: "text";
+  generate: (pageId: number) => Promise<{ suggestion: string }>;
+  /** What the backend files this under in `generatedresult` — the audit's check
+   *  names and the stored kinds grew up apart and don't all match. */
+  stored: string;
+};
+type ListSuggestable = {
+  label: string;
+  kind: "list";
+  generate: (pageId: number) => Promise<AltTextSuggestion[]>;
+  stored: string;
+};
 
 // Check types with an AI suggestion available, and the generator to call.
 const SUGGESTABLE: Record<string, TextSuggestable | ListSuggestable> = {
-  meta_description: { label: "meta description", kind: "text", generate: api.suggestMetaDescription },
-  title_tag: { label: "title", kind: "text", generate: api.suggestTitleTag },
-  heading_structure: { label: "heading outline", kind: "text", generate: api.suggestHeading },
-  readability: { label: "simpler rewrite", kind: "text", generate: api.suggestReadability },
-  link_analysis: { label: "internal link", kind: "text", generate: api.suggestInternalLinks },
-  image_alt_text: { label: "alt text", kind: "list", generate: api.suggestAltText },
+  meta_description: { label: "meta description", kind: "text", generate: api.suggestMetaDescription, stored: "meta_description" },
+  title_tag: { label: "title", kind: "text", generate: api.suggestTitleTag, stored: "title_tag" },
+  heading_structure: { label: "heading outline", kind: "text", generate: api.suggestHeading, stored: "heading" },
+  readability: { label: "simpler rewrite", kind: "text", generate: api.suggestReadability, stored: "readability" },
+  link_analysis: { label: "internal link", kind: "text", generate: api.suggestInternalLinks, stored: "internal_links" },
+  image_alt_text: { label: "alt text", kind: "list", generate: api.suggestAltText, stored: "alt_text" },
 };
 
 function humanize(checkType: string): string {
@@ -49,6 +62,29 @@ export default function CheckList({ checks, pageId }: { checks: Check[]; pageId:
     Object.fromEntries(checks.map((c) => [c.check_type, c.status !== "pass"]))
   );
   const [bulkAction, setBulkAction] = useState<"collapse" | "expand">("collapse");
+
+  // Restore anything already paid for, so a refresh doesn't cost a credit to
+  // see the same suggestion again.
+  const stored = useGeneratedResults(pageId);
+  useEffect(() => {
+    if (!stored) return;
+    setSuggestions((current) => {
+      const restored: Record<string, SuggestionState> = {};
+      for (const [checkType, config] of Object.entries(SUGGESTABLE)) {
+        if (current[checkType]) continue;  // don't clobber something just generated
+        const payload = stored[config.stored];
+        if (payload === undefined) continue;
+        restored[checkType] = {
+          loading: false,
+          error: null,
+          text: config.kind === "text" ? ((payload as { suggestion?: string }).suggestion ?? null) : null,
+          items: config.kind === "list" ? (payload as AltTextSuggestion[]) : null,
+          copied: null,
+        };
+      }
+      return Object.keys(restored).length ? { ...current, ...restored } : current;
+    });
+  }, [stored]);
 
   function toggleCard(checkType: string) {
     setExpanded((prev) => ({ ...prev, [checkType]: !prev[checkType] }));

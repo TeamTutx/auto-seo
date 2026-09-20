@@ -13,6 +13,7 @@ const SOURCE_LABEL: Record<KeywordIdea["source"], { label: string; title: string
   gsc: { label: "Search Console", title: "Measured: Google already shows your site for this" },
   ai: { label: "From your page", title: "Suggested by reading your page's content" },
   serp: { label: "Related search", title: "Google suggests this alongside your other keywords" },
+  manual: { label: "You added it", title: "Typed in by hand rather than suggested by Signal" },
 };
 
 export default function KeywordsPage() {

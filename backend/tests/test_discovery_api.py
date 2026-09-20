@@ -18,7 +18,7 @@ from app.services.crawler import Discovered
 from app.services.keyword_discovery import Idea
 from app.services.rank_providers.base import AIOverview, SerpResult, SerpSnapshot
 from app.services.visibility import EngineResult
-from tests.conftest import get_user, register_and_login
+from tests.conftest import get_user, make_page, register_and_login
 
 
 def make_site(client, headers, domain="example.com"):
@@ -799,3 +799,136 @@ def test_a_model_that_returns_nothing_usable_does_not_charge(client, db, checked
 
     assert resp.status_code == 502
     assert client.get("/auth/me", headers=headers).json()["credits_balance"] == before  # never charge on failure
+
+
+# --- adding a keyword by hand ---
+
+def test_a_keyword_can_be_added_by_hand_and_is_targeted_immediately(client, db, no_google):
+    """The owner usually knows what they want to rank for without Signal
+    suggesting it first."""
+    headers = register_and_login(client, "manual1@test.dev")
+    site_id = make_site(client, headers)
+
+    resp = client.post(f"/sites/{site_id}/keywords", json={"keyword": "  SEO Audit Tool "}, headers=headers)
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert (body["keyword"], body["source"], body["targeted"]) == ("seo audit tool", "manual", True)
+    assert client.get(f"/sites/{site_id}/visibility", headers=headers).json()["targeted_keywords"] == 1
+
+
+def test_adding_a_keyword_that_already_exists_targets_it_instead_of_erroring(client, db, stub_discovery, no_google):
+    """Typing it again is someone asking for it to be targeted, not a mistake."""
+    headers = register_and_login(client, "manual2@test.dev")
+    site_id = make_site(client, headers)
+    client.post(f"/sites/{site_id}/pages", json={"url": "https://example.com/"}, headers=headers)
+    client.post(f"/sites/{site_id}/keywords/discover", headers=headers)
+    discovered = client.get(f"/sites/{site_id}/keywords/ideas", headers=headers).json()
+    existing = next(i for i in discovered if not i["targeted"])
+
+    resp = client.post(f"/sites/{site_id}/keywords", json={"keyword": existing["keyword"]}, headers=headers)
+
+    assert resp.status_code == 201 and resp.json()["targeted"] is True
+    assert resp.json()["source"] == existing["source"]  # keeps where it really came from
+    ideas = client.get(f"/sites/{site_id}/keywords/ideas", headers=headers).json()
+    assert len(ideas) == len(discovered)  # no duplicate
+
+
+@pytest.mark.parametrize("bad", ["", " ", "a"])
+def test_an_empty_keyword_is_refused(client, db, no_google, bad):
+    headers = register_and_login(client, f"manual3{abs(hash(bad))}@test.dev")
+    site_id = make_site(client, headers)
+
+    assert client.post(f"/sites/{site_id}/keywords", json={"keyword": bad}, headers=headers).status_code == 422
+
+
+def test_adding_a_keyword_to_someone_elses_site_is_404(client, db, no_google):
+    headers = register_and_login(client, "manual4@test.dev")
+    other = register_and_login(client, "manual4b@test.dev")
+    site_id = make_site(client, headers)
+
+    assert client.post(f"/sites/{site_id}/keywords", json={"keyword": "x y"}, headers=other).status_code == 404
+
+
+# --- paid results survive a refresh ---
+
+def test_an_ai_suggestion_is_still_there_after_a_reload(client, db, monkeypatch):
+    """The bug this prevents: spend a credit, refresh, and have to spend
+    another to see the same answer."""
+    import app.routers.suggestions as suggestions
+
+    headers = register_and_login(client, "keep1@test.dev")
+    page_id = make_page(client, headers)
+    monkeypatch.setattr(suggestions, "fetch_html", lambda url: "<html><body>hi</body></html>")
+    monkeypatch.setattr(suggestions, "generate_meta_description", lambda *a: "A better meta description.")
+
+    generated = client.post(f"/pages/{page_id}/suggestions/meta-description", headers=headers)
+    restored = client.get(f"/pages/{page_id}/generated", headers=headers).json()
+
+    assert generated.json()["suggestion"] == "A better meta description."
+    stored = next(r for r in restored if r["kind"] == "meta_description")
+    assert stored["payload"]["suggestion"] == "A better meta description."
+
+
+def test_reading_back_what_was_paid_for_costs_nothing(client, db, monkeypatch):
+    import app.routers.suggestions as suggestions
+
+    headers = register_and_login(client, "keep2@test.dev")
+    page_id = make_page(client, headers)
+    monkeypatch.setattr(suggestions, "fetch_html", lambda url: "<html><body>hi</body></html>")
+    monkeypatch.setattr(suggestions, "generate_title_tag", lambda *a: "A better title")
+    client.post(f"/pages/{page_id}/suggestions/title-tag", headers=headers)
+    after_paying = client.get("/auth/me", headers=headers).json()["credits_balance"]
+
+    client.get(f"/pages/{page_id}/generated", headers=headers)
+    client.get(f"/pages/{page_id}/generated", headers=headers)
+
+    assert client.get("/auth/me", headers=headers).json()["credits_balance"] == after_paying
+
+
+def test_regenerating_replaces_rather_than_piling_up(client, db, monkeypatch):
+    import app.routers.suggestions as suggestions
+
+    headers = register_and_login(client, "keep3@test.dev")
+    page_id = make_page(client, headers)
+    monkeypatch.setattr(suggestions, "fetch_html", lambda url: "<html><body>hi</body></html>")
+    monkeypatch.setattr(suggestions, "generate_meta_description", lambda *a: "first")
+    client.post(f"/pages/{page_id}/suggestions/meta-description", headers=headers)
+    monkeypatch.setattr(suggestions, "generate_meta_description", lambda *a: "second")
+    client.post(f"/pages/{page_id}/suggestions/meta-description", headers=headers)
+
+    rows = [r for r in client.get(f"/pages/{page_id}/generated", headers=headers).json()
+            if r["kind"] == "meta_description"]
+
+    assert len(rows) == 1 and rows[0]["payload"]["suggestion"] == "second"
+
+
+def test_keyword_scoped_results_are_kept_per_keyword(client, db, monkeypatch):
+    """Competitors for "a" must not overwrite competitors for "b"."""
+    import app.services.competitors as competitors_service
+    from app.services.rank_providers.base import SerpResult
+
+    headers = register_and_login(client, "keep4@test.dev")
+    page_id = make_page(client, headers)
+
+    class Provider:
+        def fetch_serp(self, keyword, location_code, language_code, device, num_results=100):
+            return [SerpResult(position=1, title=f"top for {keyword}", domain="rival.com", url="https://rival.com/x")]
+
+    monkeypatch.setattr(competitors_service, "get_rank_provider", lambda: Provider())
+    for kw in ("alpha one", "beta two"):
+        client.post(f"/pages/{page_id}/keywords/competitors", json={"keyword": kw}, headers=headers)
+
+    rows = {r["subject"]: r for r in client.get(f"/pages/{page_id}/generated", headers=headers).json()
+            if r["kind"] == "competitors"}
+
+    assert set(rows) == {"alpha one", "beta two"}
+    assert rows["alpha one"]["payload"][0]["title"] == "top for alpha one"
+
+
+def test_generated_results_of_another_users_page_are_not_readable(client, db):
+    headers = register_and_login(client, "keep5@test.dev")
+    other = register_and_login(client, "keep5b@test.dev")
+    page_id = make_page(client, headers)
+
+    assert client.get(f"/pages/{page_id}/generated", headers=other).status_code == 404

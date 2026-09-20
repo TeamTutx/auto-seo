@@ -24,6 +24,7 @@ from app.services.ai_suggestions import (
     generate_readability_suggestion,
     generate_title_tag,
 )
+from app.services import generated_results
 from app.services.credits import deduct_credit, require_credits
 from app.services.fetcher import fetch_html
 
@@ -36,6 +37,7 @@ def _fetch_and_suggest(
     session: Session,
     generate: Callable[[str, str, str], str],
     ref: str,
+    kind: str,
 ) -> str:
     page = get_owned_page(session, page_id, current_user)
     require_credits(current_user)
@@ -51,6 +53,10 @@ def _fetch_and_suggest(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     deduct_credit(session, current_user, ref)
+    # Stored in the same transaction as the credit that paid for it: a refresh
+    # must never lose an answer the user has already been charged for.
+    generated_results.store(session, page.id, kind, {"suggestion": suggestion})
+    session.commit()
     return suggestion
 
 
@@ -60,7 +66,7 @@ def suggest_meta_description(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_meta_description, "ai_meta_description")
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_meta_description, "ai_meta_description", generated_results.META_DESCRIPTION)
     return MetaDescriptionSuggestion(suggestion=suggestion)
 
 
@@ -70,7 +76,7 @@ def suggest_title_tag(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_title_tag, "ai_title_tag")
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_title_tag, "ai_title_tag", generated_results.TITLE_TAG)
     return TitleTagSuggestion(suggestion=suggestion)
 
 
@@ -80,7 +86,7 @@ def suggest_heading(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_heading_suggestion, "ai_heading")
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_heading_suggestion, "ai_heading", generated_results.HEADING)
     return HeadingSuggestion(suggestion=suggestion)
 
 
@@ -90,7 +96,7 @@ def suggest_readability(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_readability_suggestion, "ai_readability")
+    suggestion = _fetch_and_suggest(page_id, current_user, session, generate_readability_suggestion, "ai_readability", generated_results.READABILITY)
     return ReadabilitySuggestion(suggestion=suggestion)
 
 
@@ -117,6 +123,8 @@ def suggest_alt_text(
         return []
 
     deduct_credit(session, current_user, "ai_alt_text")
+    generated_results.store(session, page.id, generated_results.ALT_TEXT, suggestions)
+    session.commit()
     return [AltTextSuggestion(**s) for s in suggestions]
 
 
@@ -150,4 +158,6 @@ def suggest_internal_links(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     deduct_credit(session, current_user, "ai_internal_links")
+    generated_results.store(session, page.id, generated_results.INTERNAL_LINKS, {"suggestion": suggestion})
+    session.commit()
     return InternalLinkSuggestion(suggestion=suggestion)

@@ -382,6 +382,29 @@ class VisibilityCheck(SQLModel, table=True):
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class GeneratedResult(SQLModel, table=True):
+    """The output of something the user paid a credit for, kept so a refresh
+    doesn't throw it away.
+
+    Without this, every AI suggestion and competitor lookup lived in React state
+    only: you spent a credit, reloaded the page, and had to spend another to see
+    the same answer. One row per (page, kind, subject) - the newest replaces the
+    last, because these are "what should I do now" answers, not a history.
+    `subject` is the keyword for keyword-scoped results and "" for page-scoped
+    ones; an empty string rather than NULL because Postgres treats NULLs as
+    distinct in a unique constraint, which would let duplicates through."""
+    __table_args__ = (
+        UniqueConstraint("page_id", "kind", "subject", name="uq_generatedresult_page_kind_subject"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    page_id: int = Field(foreign_key="page.id", index=True)
+    kind: str  # "meta_description", "competitors", "action_plan", …
+    subject: str = ""
+    payload: str  # JSON, shaped by kind
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class VisibilityAdvice(SQLModel, table=True):
     """What to actually do to become visible for one keyword.
 

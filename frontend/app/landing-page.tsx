@@ -702,6 +702,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
               <li>Unlimited audits, scores and opportunity lists</li>
               <li>Finding your pages, and checking which Google has indexed</li>
               <li>Google Search Console + Analytics, connected free</li>
+              <li>Adding your own keywords, and re-reading any result you already paid for</li>
             </ul>
           </div>
           <div>

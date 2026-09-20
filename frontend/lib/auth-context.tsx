@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, clearToken, getToken, setToken } from "./api";
+import { api, clearToken, getToken, setCreditsListener, setToken } from "./api";
 import type { User } from "./types";
 
 interface AuthContextValue {
@@ -38,6 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Any call that spends a credit refetches the balance, so the sidebar is
+  // right without a reload wherever in the app the spending happened.
+  useEffect(() => {
+    setCreditsListener(() => {
+      if (getToken()) api.me().then(setUser).catch(() => {});
+    });
+    return () => setCreditsListener(null);
   }, []);
 
   async function login(email: string, password: string) {

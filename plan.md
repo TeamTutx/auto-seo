@@ -540,6 +540,26 @@ and - more importantly - makes it advice about the search actually on screen rat
 fresh one that may differ. Advice is stored so re-reading is free, and stamped with the
 reading it came from so the UI can flag it once the keyword is re-checked.
 
+**Paying once per result (2026-09-20).** Nine things a credit buys - the six AI suggestions
+on a page audit, plus competitors, keyword opportunities and the action plan - existed only
+in React state. Refreshing the page threw them away, and the only way back was to pay
+again. They are now written to `generatedresult` in the same transaction as the credit that
+paid for them (one row per page + kind + subject, upserted, so regenerating replaces rather
+than accumulates), and every page seeds itself from `GET /pages/{id}/generated` on mount.
+Reading back costs nothing. Session-generated values win over stored ones while a tab is
+open, so a regenerate is never overwritten by the restore.
+
+Two smaller things landed with it. A keyword can be typed in by hand on the visibility page
+(`POST /sites/{id}/keywords`, `source="manual"`, targeted immediately) rather than only
+arriving via discovery - the empty state was otherwise a dead end for anyone who already
+knows what they want to rank for. And the credit balance in the sidebar now updates without
+a reload: `api.request()` takes a `metered` flag, fires a listener on success only (a 402 or
+a vendor failure charged nothing), and `auth-context` refetches the user. That exposed a
+real bug in `useSiteJobs` - the "don't fire for jobs that already existed when the page
+opened" guard was keyed per job kind, so a site's *first* run of a kind that finished
+before the next poll looked pre-existing and never refreshed anything. The baseline is now
+taken once per site, on the first poll.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

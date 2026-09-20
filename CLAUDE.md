@@ -156,6 +156,18 @@ writing copy for it.
   negative under concurrent requests and the ledger always sums to it. A plain
   `user.credits_balance -= 1` reintroduces a race (12 parallel requests spent a 3-credit
   balance) and leaves the admin panel's ledger inconsistent.
+- **A credit buys a result, not a look at one.** Anything `deduct_credit()` pays for must
+  also be written with `generated_results.store()` (`backend/app/services/generated_results.py`)
+  in that same transaction, or a refresh loses it and the user pays twice. One row per
+  page + kind + subject (`subject` is the keyword, or `""` for page-scoped results — an
+  empty string, not NULL, because Postgres treats NULLs as distinct in a unique
+  constraint), upserted so regenerating replaces. The frontend seeds from
+  `GET /pages/{id}/generated` via `useGeneratedResults()`, and anything generated in the
+  current session wins over the stored copy. So: **a new metered endpoint needs a `store()`
+  call, a `kind` constant, and `metered: true` on its `lib/api.ts` method** — that last flag
+  is what drops the sidebar's credit count without a reload (`setCreditsListener` in
+  `api.ts`, registered by `lib/auth-context.tsx`; it fires on success only, since a 402 or a
+  vendor failure charged nothing).
 - The pytest suite runs on SQLite by default; run it against Postgres with
   `TEST_DATABASE_URL=postgresql://... pytest` (see `backend/README.md`) before shipping a
   schema/migration/billing change — that mode also enables the Postgres-only concurrency

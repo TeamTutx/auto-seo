@@ -311,12 +311,21 @@ export interface KeywordIdea {
   id: number;
   keyword: string;
   /** "gsc" ideas carry real measured numbers; "ai" and "serp" are suggestions. */
-  source: "gsc" | "ai" | "serp";
+  source: "gsc" | "ai" | "serp" | "manual";
   rationale: string | null;
   impressions: number | null;
   clicks: number | null;
   position: number | null;
   targeted: boolean;
+}
+
+/** Something a credit already paid for, read back on load so refreshing never
+ *  costs the same answer twice. `payload`'s shape depends on `kind`. */
+export interface GeneratedResult {
+  kind: string;
+  subject: string;
+  payload: unknown;
+  created_at: string;
 }
 
 export type VisibilityEngine = "google" | "google_ai_overview" | "chatgpt";

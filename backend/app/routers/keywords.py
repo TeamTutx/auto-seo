@@ -17,6 +17,7 @@ from app.schemas import (
 )
 from app.services.ai_providers import AIProviderError
 from app.services.competitors import get_competitors
+from app.services import generated_results
 from app.services.credits import deduct_credit, require_credits
 from app.services.fetcher import fetch_html
 from app.services.keyword_opportunities import generate_keyword_opportunities, generate_ranking_action_plan
@@ -154,6 +155,12 @@ def keyword_competitors(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     deduct_credit(session, current_user, "competitor_lookup")
+    generated_results.store(
+        session, page.id, generated_results.COMPETITORS,
+        [{"position": c.position, "title": c.title, "domain": c.domain, "url": c.url} for c in competitors],
+        subject=payload.keyword,
+    )
+    session.commit()
     return [
         CompetitorResult(position=c.position, title=c.title, domain=c.domain, url=c.url) for c in competitors
     ]
@@ -191,6 +198,10 @@ def keyword_opportunities(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     deduct_credit(session, current_user, "keyword_opportunities_ai")
+    generated_results.store(
+        session, page.id, generated_results.KEYWORD_OPPORTUNITIES, opportunities, subject=payload.keyword,
+    )
+    session.commit()
     return [KeywordOpportunity(**o) for o in opportunities]
 
 
@@ -227,4 +238,8 @@ def keyword_action_plan(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     deduct_credit(session, current_user, "action_plan_ai")
+    generated_results.store(
+        session, page.id, generated_results.ACTION_PLAN, {"plan": plan}, subject=payload.keyword,
+    )
+    session.commit()
     return RankingActionPlan(plan=plan)

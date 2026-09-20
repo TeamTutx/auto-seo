@@ -14,6 +14,7 @@ import type {
   GoogleAuthorizeResponse,
   GoogleConnectionStatus,
   GSCIndexStatus,
+  GeneratedResult,
   GSCQueryRow,
   IndexSummary,
   KeywordIdea,
@@ -61,6 +62,16 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Called after any request that may have spent a credit, so the balance in the
+ *  sidebar updates without a reload. AuthProvider registers the handler; keeping
+ *  it here means a metered call refreshes the balance wherever it's made from,
+ *  rather than every caller having to remember. */
+let onCreditsSpent: (() => void) | null = null;
+
+export function setCreditsListener(handler: (() => void) | null) {
+  onCreditsSpent = handler;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -69,17 +80,21 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit & { metered?: boolean } = {},
+): Promise<T> {
+  const { metered, ...init } = options;
   const token = getToken();
   const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string> | undefined),
+    ...(init.headers as Record<string, string> | undefined),
   };
-  if (options.body && !headers["Content-Type"]) {
+  if (init.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -91,6 +106,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, detail);
   }
+  // Only on success: a 402 or a vendor failure means nothing was charged.
+  if (metered) onCreditsSpent?.();
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -136,6 +153,7 @@ export const api = {
   addKeyword: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
     request<KeywordRank>(`/pages/${pageId}/keywords`, {
       method: "POST",
+      metered: true,
       body: JSON.stringify({
         keyword,
         ...(locationCode !== undefined ? { location_code: locationCode } : {}),
@@ -143,7 +161,7 @@ export const api = {
       }),
     }),
   recheckKeywords: (pageId: number) =>
-    request<KeywordRank[]>(`/pages/${pageId}/keywords/recheck`, { method: "POST" }),
+    request<KeywordRank[]>(`/pages/${pageId}/keywords/recheck`, { method: "POST", metered: true }),
   deleteKeyword: (pageId: number, keyword: string) =>
     request<void>(`/pages/${pageId}/keywords?keyword=${encodeURIComponent(keyword)}`, { method: "DELETE" }),
   keywordHistory: (pageId: number, keyword: string) =>
@@ -151,6 +169,7 @@ export const api = {
   getCompetitors: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
     request<CompetitorResult[]>(`/pages/${pageId}/keywords/competitors`, {
       method: "POST",
+      metered: true,
       body: JSON.stringify({
         keyword,
         ...(locationCode !== undefined ? { location_code: locationCode } : {}),
@@ -159,17 +178,17 @@ export const api = {
     }),
 
   suggestMetaDescription: (pageId: number) =>
-    request<MetaDescriptionSuggestion>(`/pages/${pageId}/suggestions/meta-description`, { method: "POST" }),
+    request<MetaDescriptionSuggestion>(`/pages/${pageId}/suggestions/meta-description`, { method: "POST", metered: true }),
   suggestTitleTag: (pageId: number) =>
-    request<TitleTagSuggestion>(`/pages/${pageId}/suggestions/title-tag`, { method: "POST" }),
+    request<TitleTagSuggestion>(`/pages/${pageId}/suggestions/title-tag`, { method: "POST", metered: true }),
   suggestHeading: (pageId: number) =>
-    request<TextSuggestion>(`/pages/${pageId}/suggestions/heading`, { method: "POST" }),
+    request<TextSuggestion>(`/pages/${pageId}/suggestions/heading`, { method: "POST", metered: true }),
   suggestReadability: (pageId: number) =>
-    request<TextSuggestion>(`/pages/${pageId}/suggestions/readability`, { method: "POST" }),
+    request<TextSuggestion>(`/pages/${pageId}/suggestions/readability`, { method: "POST", metered: true }),
   suggestInternalLinks: (pageId: number) =>
-    request<TextSuggestion>(`/pages/${pageId}/suggestions/internal-links`, { method: "POST" }),
+    request<TextSuggestion>(`/pages/${pageId}/suggestions/internal-links`, { method: "POST", metered: true }),
   suggestAltText: (pageId: number) =>
-    request<AltTextSuggestion[]>(`/pages/${pageId}/suggestions/alt-text`, { method: "POST" }),
+    request<AltTextSuggestion[]>(`/pages/${pageId}/suggestions/alt-text`, { method: "POST", metered: true }),
 
   listAlerts: () => request<Alert[]>("/alerts"),
   markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
@@ -180,11 +199,19 @@ export const api = {
   searchPresence: (siteId: number) => request<SearchPresence>(`/sites/${siteId}/presence`),
   startCrawl: (siteId: number) => request<SiteJob>(`/sites/${siteId}/crawl`, { method: "POST" }),
   indexSummary: (siteId: number) => request<IndexSummary>(`/sites/${siteId}/index-summary`),
-  checkPageIndex: (pageId: number) => request<Page>(`/pages/${pageId}/index-check`, { method: "POST" }),
+  checkPageIndex: (pageId: number) => request<Page>(`/pages/${pageId}/index-check`, { method: "POST", metered: true }),
 
   discoverKeywords: (siteId: number) =>
     request<SiteJob>(`/sites/${siteId}/keywords/discover`, { method: "POST" }),
   keywordIdeas: (siteId: number) => request<KeywordIdea[]>(`/sites/${siteId}/keywords/ideas`),
+  /** Add a keyword by hand, targeted straight away. Free - nothing is looked up
+   *  until a visibility check runs. */
+  addSiteKeyword: (siteId: number, keyword: string) =>
+    request<KeywordIdea>(`/sites/${siteId}/keywords`, {
+      method: "POST",
+      body: JSON.stringify({ keyword }),
+    }),
+  pageGeneratedResults: (pageId: number) => request<GeneratedResult[]>(`/pages/${pageId}/generated`),
   targetKeywords: (siteId: number, ids: number[], targeted: boolean) =>
     request<KeywordIdea[]>(`/sites/${siteId}/keywords/target`, {
       method: "POST",
@@ -199,6 +226,7 @@ export const api = {
   suggestForKeyword: (siteId: number, keyword: string) =>
     request<VisibilityAdvice>(`/sites/${siteId}/visibility/suggest`, {
       method: "POST",
+      metered: true,
       body: JSON.stringify({ keyword }),
     }),
 
@@ -208,6 +236,7 @@ export const api = {
   getKeywordOpportunities: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
     request<KeywordOpportunity[]>(`/pages/${pageId}/keywords/opportunities`, {
       method: "POST",
+      metered: true,
       body: JSON.stringify({
         keyword,
         ...(locationCode !== undefined ? { location_code: locationCode } : {}),
@@ -218,6 +247,7 @@ export const api = {
   getRankingActionPlan: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
     request<RankingActionPlan>(`/pages/${pageId}/keywords/action-plan`, {
       method: "POST",
+      metered: true,
       body: JSON.stringify({
         keyword,
         ...(locationCode !== undefined ? { location_code: locationCode } : {}),

@@ -445,6 +445,19 @@ class BillingSummary(BaseModel):
 
 # --- crawling, keyword discovery, visibility ---
 
+class GeneratedResultRead(BaseModel):
+    """Something a credit already paid for, read back so a refresh doesn't lose
+    it. `payload`'s shape depends on `kind` - the UI casts it."""
+    kind: str
+    subject: str = ""  # the keyword, for keyword-scoped results
+    payload: object
+    created_at: datetime
+
+
+class KeywordAddRequest(BaseModel):
+    keyword: str = Field(min_length=2, max_length=200)
+
+
 class SiteJobRead(BaseModel):
     """What the UI polls while a background run is in flight."""
     id: int

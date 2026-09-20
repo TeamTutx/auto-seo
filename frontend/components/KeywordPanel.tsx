@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useGeneratedResults } from "@/lib/use-generated-results";
 import { LOCATION_OPTIONS, type CompetitorResult, type KeywordOpportunity, type KeywordRank } from "@/lib/types";
 import RankHistoryChart from "./RankHistoryChart";
 
@@ -34,6 +35,34 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [addingOpportunity, setAddingOpportunity] = useState<string | null>(null);
   const [addedOpportunities, setAddedOpportunities] = useState<Set<string>>(new Set());
+
+  // Competitor lookups, opportunity lists and action plans all cost credits.
+  // Seed the caches from what has already been bought so reopening a keyword
+  // after a refresh shows the answer instead of charging for it again.
+  const stored = useGeneratedResults(pageId);
+  useEffect(() => {
+    if (!stored) return;
+    const pick = <T,>(kind: string): Record<string, T> =>
+      Object.fromEntries(
+        Object.entries(stored)
+          .filter(([key]) => key.startsWith(`${kind}::`))
+          .map(([key, payload]) => [key.slice(kind.length + 2), payload as T])
+      );
+
+    const competitors = pick<CompetitorResult[]>("competitors");
+    const opportunities = pick<KeywordOpportunity[]>("keyword_opportunities");
+    const plans = pick<{ plan: string }>("action_plan");
+
+    // Anything generated in this session wins - it is newer than what loaded.
+    if (Object.keys(competitors).length) setCompetitorsCache((c) => ({ ...competitors, ...c }));
+    if (Object.keys(opportunities).length) setOpportunitiesCache((c) => ({ ...opportunities, ...c }));
+    if (Object.keys(plans).length) {
+      setActionPlanCache((c) => ({
+        ...Object.fromEntries(Object.entries(plans).map(([kw, p]) => [kw, p.plan])),
+        ...c,
+      }));
+    }
+  }, [stored]);
 
   async function load() {
     try {

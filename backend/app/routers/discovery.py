@@ -21,6 +21,8 @@ from app.routers.pages import get_owned_page
 from app.routers.sites import _get_owned_site
 from app.schemas import (
     IndexSummary,
+    GeneratedResultRead,
+    KeywordAddRequest,
     SearchPresence,
     TrendPoint,
     VisibilityActionRead,
@@ -35,8 +37,9 @@ from app.schemas import (
     VisibilityKeywordRead,
     VisibilityReport,
 )
-from app.services import gsc, index_status, search_presence, site_jobs, visibility, visibility_advice
+from app.services import generated_results, gsc, index_status, search_presence, site_jobs, visibility, visibility_advice
 from app.services.credits import deduct_credit, require_credits
+from app.services import keyword_discovery
 from app.services.fetcher import fetch_html
 from app.services.gsc import GSCError
 
@@ -245,6 +248,41 @@ def list_keyword_ideas(
         i.keyword,
     ))
     return ideas
+
+
+@router.post("/sites/{site_id}/keywords", response_model=KeywordIdeaRead, status_code=status.HTTP_201_CREATED)
+def add_keyword(
+    site_id: int,
+    payload: KeywordAddRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Add a keyword by hand and target it straight away - the owner usually
+    knows what they want to rank for without Signal suggesting it. Free: nothing
+    is looked up until a visibility check actually runs.
+
+    Adding one that already exists targets it rather than erroring, because
+    that's what someone typing it again is asking for."""
+    site = _get_owned_site(session, site_id, current_user)
+    keyword = keyword_discovery.normalise(payload.keyword)
+    if not keyword:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Enter a keyword.")
+
+    existing = session.exec(
+        select(KeywordIdea).where(KeywordIdea.site_id == site.id, KeywordIdea.keyword == keyword)
+    ).first()
+    if existing is not None:
+        existing.targeted = True
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    idea = KeywordIdea(site_id=site.id, keyword=keyword, source="manual", targeted=True)
+    session.add(idea)
+    session.commit()
+    session.refresh(idea)
+    return idea
 
 
 @router.post("/sites/{site_id}/keywords/target", response_model=List[KeywordIdeaRead])
@@ -464,3 +502,23 @@ def _page_text(url: str) -> str:
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
     return " ".join(soup.get_text(" ").split())
+
+
+@router.get("/pages/{page_id}/generated", response_model=List[GeneratedResultRead])
+def page_generated_results(
+    page_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Everything a credit has already bought for this page - AI suggestions,
+    competitor lookups, action plans. The page reads this on load so refreshing
+    never costs the user the same answer twice. Free."""
+    page = get_owned_page(session, page_id, current_user)
+    rows = generated_results.for_page(session, page.id)
+    return [
+        GeneratedResultRead(
+            kind=row.kind, subject=row.subject, payload=generated_results.decode(row), created_at=row.created_at,
+        )
+        for row in rows
+        if generated_results.decode(row) is not None
+    ]

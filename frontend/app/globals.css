@@ -1944,3 +1944,16 @@ tbody tr.clickable:hover {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: var(--warn); margin-left: 6px; vertical-align: middle;
 }
+
+/* Add a keyword straight from the visibility page - the owner often knows what
+   they want to rank for without Signal suggesting it. */
+.keyword-add {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.keyword-add input {
+  flex: 1; min-width: 240px; max-width: 420px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 12px; color: var(--text); font-size: 13.5px;
+}
+.keyword-add input:focus { outline: none; border-color: var(--accent); }

@@ -173,7 +173,8 @@ function BillingContent() {
         </ul>
         <div className="admin-hint" style={{ marginTop: 12 }}>
           Audits, scores, the opportunities list, finding your pages, checking which are indexed, and your Search
-          Console and Analytics data are all free and unlimited.
+          Console and Analytics data are all free and unlimited. So is adding a keyword by hand, and re-opening
+          anything a credit already paid for — you are charged once per result, not once per look.
         </div>
       </div>
 

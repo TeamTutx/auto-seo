@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatDateTime } from "@/lib/format";
@@ -34,6 +34,8 @@ export default function VisibilityPage() {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [advising, setAdvising] = useState<string | null>(null);
+  const [newKeyword, setNewKeyword] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     const [s, r] = await Promise.all([api.getSite(siteId), api.visibilityReport(siteId)]);
@@ -72,6 +74,23 @@ export default function VisibilityPage() {
       setError(e instanceof ApiError ? e.message : "Could not get suggestions.");
     } finally {
       setAdvising(null);
+    }
+  }
+
+  async function addKeyword(e: FormEvent) {
+    e.preventDefault();
+    const keyword = newKeyword.trim();
+    if (!keyword) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await api.addSiteKeyword(siteId, keyword);
+      setNewKeyword("");
+      await load();  // it joins the table straight away, unchecked
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not add that keyword.");
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -124,12 +143,29 @@ export default function VisibilityPage() {
 
       {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
 
+      <form className="keyword-add" onSubmit={addKeyword}>
+        <input
+          type="text"
+          placeholder="Add a keyword you want to rank for…"
+          value={newKeyword}
+          onChange={(e) => setNewKeyword(e.target.value)}
+          aria-label="Add a keyword"
+        />
+        <button className="btn btn-sm" type="submit" disabled={adding || !newKeyword.trim()}>
+          {adding ? "Adding…" : "Add keyword"}
+        </button>
+        <span className="admin-hint">
+          Free to add — it costs credits only when you check it.
+        </span>
+      </form>
+
       {report.targeted_keywords === 0 ? (
         <div className="panel empty-state">
-          Pick the keywords you want to rank for first — then Signal can check whether you show up for them.
+          Nothing tracked yet. Add a keyword above, or let Signal suggest some from your Search Console and your
+          own pages.
           <div style={{ marginTop: 12 }}>
-            <Link className="btn" href={`/dashboard/sites/${siteId}/keywords`}>
-              Choose keywords →
+            <Link className="btn btn-ghost" href={`/dashboard/sites/${siteId}/keywords`}>
+              Suggest keywords for me →
             </Link>
           </div>
         </div>

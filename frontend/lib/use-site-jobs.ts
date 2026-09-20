@@ -20,18 +20,29 @@ export function useSiteJobs(siteId: number, onFinish?: (kind: JobKind) => void) 
   const finishRef = useRef(onFinish);
   finishRef.current = onFinish;
   const seen = useRef<Partial<Record<JobKind, number>>>({});
+  // The site whose baseline poll has been taken. That first poll is the
+  // baseline — jobs already finished then are the page's starting state, not
+  // news; anything that finishes afterwards is. The baseline is per *hook*,
+  // not per kind: keyed by kind, a site's very first run of some kind that was
+  // already `done` by the poll that discovered it would look pre-existing and
+  // never refresh the page. Stubbed or cached jobs finish that fast.
+  const baselined = useRef<number | null>(null);
 
   const poll = useCallback(async () => {
     try {
       const next = await api.siteJobs(siteId);
       setJobs(next);
+      // Switching sites starts over: another site's job ids mean nothing here.
+      const baseline = baselined.current !== siteId;
+      if (baseline) {
+        seen.current = {};
+        baselined.current = siteId;
+      }
       for (const [kind, job] of Object.entries(next) as [JobKind, SiteJobs[JobKind]][]) {
         if (!job || (job.status !== "done" && job.status !== "failed")) continue;
         if (seen.current[kind] === job.id) continue;
-        const first = seen.current[kind] === undefined;
         seen.current[kind] = job.id;
-        // Don't fire for jobs that already existed when the page opened.
-        if (!first) finishRef.current?.(kind);
+        if (!baseline) finishRef.current?.(kind);
       }
     } catch {
       // a failed poll is not worth showing; the next one will tell the story
