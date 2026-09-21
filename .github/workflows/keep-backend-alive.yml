@@ -1,15 +1,24 @@
 name: Keep Render backend alive
 
-# Render's free web service plan spins down after 15 minutes of no inbound
-# traffic (see backend/README.md "Deploying (Render)"), which means a cold
-# visitor eats a 50+ second wake-up delay. Render's own Cron Jobs need a
-# paid plan - this workflow gets the same "don't sleep" outcome for free by
-# pinging the app's health check often enough that it never sees 15 idle
-# minutes.
+# A BACKSTOP, not the thing that keeps the API awake.
+#
+# Render's free plan spins a web service down after 15 idle minutes. This
+# workflow was meant to prevent that by pinging /health every 10 minutes, and
+# it can't: GitHub runs scheduled workflows on a best-effort basis. Over four
+# days in September 2026 it ran this `*/10` schedule 29 times instead of ~560 -
+# median gap 173 minutes, longest 412 - and every gap was over 15 minutes.
+#
+# What actually keeps the API awake is the API pinging its own public URL
+# (backend/app/services/keep_awake.py). This workflow stays because it runs
+# from *outside*: if the service ever does fall asleep, the in-process loop
+# died with it and can't restart itself, and the next run here wakes it.
+#
+# Off the top of the hour on purpose: GitHub's docs name the start of each
+# hour as peak load, when scheduled runs are most likely to be delayed or dropped.
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "7-59/10 * * * *"
   workflow_dispatch: {}
 
 jobs:

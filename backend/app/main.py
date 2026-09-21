@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from app.routers import (
     suggestions,
     webhooks,
 )
+from app.services import keep_awake
 from app.services.billing import seed_default_products
 
 
@@ -33,7 +35,16 @@ async def lifespan(app: FastAPI):
     create_db_and_tables()
     with Session(engine) as session:
         seed_default_products(session)
+
+    # Keeps Render's free plan from sleeping the API between visitors. Runs only
+    # when there's a public URL to ping, i.e. on Render - see keep_awake.py.
+    pinger = None
+    url = keep_awake.target_url()
+    if url:
+        pinger = asyncio.create_task(keep_awake.ping_forever(url))
     yield
+    if pinger:
+        pinger.cancel()
 
 
 app = FastAPI(title="Signal SEO API", lifespan=lifespan)

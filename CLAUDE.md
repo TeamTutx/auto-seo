@@ -147,6 +147,21 @@ writing copy for it.
   so the original path is still in the address bar for that page to read and forward.
   A free Render **static site** never sleeps; a free Render **web service** spins down
   after 15 minutes and takes ~a minute to wake, which is why the site is not one.
+- **The API keeps itself awake, and that has a budget.** Render's free plan sleeps a web
+  service after 15 idle minutes (the next request waits ~a minute behind Render's loading
+  page — first seen on "Continue with Google"). `app/services/keep_awake.py` pings the
+  service's *own public URL* every 10 minutes from the lifespan, which comes back in
+  through Render's proxy and counts as traffic. It runs only when `RENDER_EXTERNAL_URL`
+  (set by Render) or `KEEP_AWAKE_URL` is present, so it is off in dev and tests;
+  `KEEP_AWAKE=false` disables it. The GitHub workflow `keep-backend-alive.yml` tried the
+  same thing from outside and **cannot** do it: GitHub ran its `*/10` schedule 29 times in
+  four days (median gap 173 min). It stays only as a backstop to wake the service if the
+  loop ever dies with it. The catch is Render's **750 free instance-hours per workspace
+  per month**: always-on costs up to 744, and running out suspends *every* free service,
+  the API included, until the 1st. So `signal-api` must be the workspace's only running
+  free web service — the owner's older ones (`email-finder`, `Glacier`,
+  `psychiatrist-bot-backend`) were suspended for this on 2026-09-22. Resuming any of them
+  means moving `signal-api` to a paid instance first.
 - **Landing-page prices are baked in at build time.** `app/page.tsx` fetches `GET /pricing`
   during the build, so the API has to be up when Render builds, and an edit in
   `/admin/pricing` only reaches visitors once the site rebuilds. The API asks it to:
@@ -166,6 +181,10 @@ writing copy for it.
   adding a column to an existing model, either apply it manually
   (`ALTER TABLE ... ADD COLUMN ...`) against the dev DB or rebuild it — don't
   assume writing the Alembic migration alone fixes the running dev DB.
+- **Only a 401 signs someone out.** `lib/auth-context.tsx` used to delete the token on any
+  failure of `/auth/me`, so an API that was asleep, restarting or briefly unreachable
+  signed everyone out. It now clears the token only on a 401, and retries a network error
+  or 5xx for up to a minute (how long a waking API takes) before giving up.
 - **Background jobs run in the API process**, not a worker: crawling, keyword discovery
   and visibility checks all go through `app/services/site_jobs.py` via FastAPI's
   `BackgroundTasks` (Render's free tier has no worker). Consequences that bite:

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, clearToken, getToken, setCreditsListener, setToken } from "./api";
+import { api, ApiError, clearToken, getToken, setCreditsListener, setToken } from "./api";
 import type { User } from "./types";
 
 interface AuthContextValue {
@@ -15,6 +15,22 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+/** `api.me()`, retried while the API is unreachable rather than wrong. A 401 is
+ *  an answer and is thrown straight away; a network error or 5xx gets up to
+ *  about a minute - how long a restarting or waking API takes to come back. */
+async function fetchMe(): Promise<User> {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try {
+      return await api.me();
+    } catch (err) {
+      const answered = err instanceof ApiError && err.status < 500;
+      if (answered || Date.now() > deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+    }
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,9 +42,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      setUser(await api.me());
-    } catch {
-      clearToken();
+      setUser(await fetchMe());
+    } catch (err) {
+      // Only a 401 means the token is bad. Anything else - offline, the API
+      // restarting, Render waking it - says nothing about the token, and used
+      // to delete it anyway: a sleeping API signed everyone out.
+      if (err instanceof ApiError && err.status === 401) clearToken();
       setUser(null);
     } finally {
       setLoading(false);

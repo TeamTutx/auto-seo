@@ -631,6 +631,29 @@ naming the one thing it could no longer be, and never said *which* page. It now 
 failed page with the reason the server gave ("/pricing — Could not fetch page: Client error
 '404 Not Found'"), trimmed to the first line because httpx appends an MDN link.
 
+**The API no longer sleeps (2026-09-22).** "Continue with Google" was landing people on
+Render's "service waking up" page: the free plan sleeps a web service after 15 idle
+minutes and takes about a minute to wake. There was already a GitHub Actions workflow
+pinging it every ten minutes, and the API slept anyway. Its run history showed why:
+GitHub runs scheduled workflows best-effort, and it had run a `*/10` schedule 29 times in
+four days — median gap 173 minutes, every gap longer than the fifteen that matter. No
+schedule on GitHub could have fixed this.
+
+So the API pings itself: a task in the lifespan requests the service's own public URL every
+ten minutes, which leaves the instance and comes back through Render's proxy as inbound
+traffic. It is keyed off `RENDER_EXTERNAL_URL`, so it needs no configuration in production
+and never runs in dev or tests. The workflow stays, recast as a backstop — it is the only
+thing outside the process that can wake the service if the loop ever dies with it.
+
+Free, with one condition. Render grants 750 free instance-hours per workspace per month;
+always-on uses up to 744; exhausting the pool suspends *every* free service until the 1st.
+Three of the owner's older free services shared that pool and were suspended so the API
+can be the only one drawing on it. That constraint is now written into CLAUDE.md, because
+resuming any of them quietly re-creates the risk.
+
+Found on the way: `auth-context` deleted the session token whenever `/auth/me` failed for
+*any* reason, so a sleeping API signed everyone out. Only a 401 does that now.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

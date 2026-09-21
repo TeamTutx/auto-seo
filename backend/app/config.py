@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Dodo Payments (Merchant of Record) - see app/services/dodo.py. Billing is
     # "enabled" only once both keys are set; until then checkout endpoints
     # answer 503 and the pricing page shows plans without a buy button.
+    # Self-ping so Render's free plan never puts the API to sleep - see
+    # app/services/keep_awake.py. On by default, but it only runs when there is
+    # a URL to ping: KEEP_AWAKE_URL, or RENDER_EXTERNAL_URL (set by Render).
+    keep_awake: bool = True
+    keep_awake_url: str = ""
+
     # Render deploy hook for the marketing site. Set it and a pricing change in
     # /admin/pricing rebuilds the static landing page; leave it blank and prices
     # refresh on the next deploy like any other content change.
