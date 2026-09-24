@@ -91,8 +91,10 @@ services:
         sync: false
       - key: DODO_WEBHOOK_KEY
         sync: false
+      # live_mode since the Dodo account was verified (2026-09-25). It must match
+      # the keys: a live key sent to test.dodopayments.com fails confusingly.
       - key: DODO_ENVIRONMENT
-        value: test_mode
+        value: live_mode
 
   # The frontend: a Next.js static export (frontend/next.config.mjs sets
   # `output: "export"`), served from Render's CDN. Static sites are free and

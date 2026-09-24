@@ -53,6 +53,16 @@ don't leave it stale.** Concretely:
   is fed by `app/routers/discovery.py`. What each action costs is listed in two places
   the user reads — `CREDIT_COSTS` on the landing page and the "What a credit buys" panel
   on `/dashboard/billing` — so a new metered action means editing both.
+- **Billing is built; what switches it on is configuration.** `billing_enabled` is simply
+  `DODO_API_KEY and DODO_WEBHOOK_KEY` being set, and a pack is `purchasable` only when it
+  also has a `dodo_product_id`. The live Dodo products (created 2026-09-25, one-time, USD,
+  tax category SaaS) are `credits_10` → `pdt_0NoK4pdsxtsSYXjueGeWO`, `credits_50` →
+  `pdt_0NoK52cbkjn5e2toJuCqh`, `credits_200` → `pdt_0NoK5BALqfJ4sUsatTvlG`, already saved
+  in `/admin/pricing`. The webhook endpoint `https://api.signal-seo.in/webhooks/dodo` is
+  enabled and subscribed to the payment, refund and dispute events the handler implements.
+  Dodo adds tax **on top** of the listed price (a $2 pack charges $2.20 at 10%), which is
+  why `_usd_amounts()` subtracts tax before recording `amount_cents` — credits always come
+  from the `Product` row, never from the amount paid.
 - Pricing: **Signal sells credits and nothing else** — there are no tiers and nothing
   recurring. The pricing section renders `GET /pricing`, which returns the active rows of
   the `Product` table (credit packs the owner creates, prices, reorders and retires in

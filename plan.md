@@ -654,6 +654,24 @@ resuming any of them quietly re-creates the risk.
 Found on the way: `auth-context` deleted the session token whenever `/auth/me` failed for
 *any* reason, so a sleeping API signed everyone out. Only a 401 does that now.
 
+**Billing switched on (2026-09-25).** The Dodo account passed verification, so the
+integration built in Phase I finally has something to talk to. No code was needed - the
+client, the hosted checkout, Standard Webhooks verification and the credit ledger were all
+written and tested months earlier. Re-checked against Dodo's current API docs before
+trusting it with money: `POST /checkouts`, every field the client sends, and the three
+`webhook-*` signing headers are all still current.
+
+What it took was configuration: three one-time USD products in live mode (tax category
+SaaS), their `pdt_…` ids saved against the packs in `/admin/pricing`, and the existing
+webhook endpoint extended to the dispute events the handler already implements alongside
+payment and refund. The two secrets - the API key and the webhook signing secret - are the
+owner's to paste into Render, which is also what flips `billing_enabled`.
+
+One thing worth knowing about the money: Dodo adds tax **on top** of the listed price, so a
+$2 pack charges $2.20 where tax is 10%. The webhook already subtracts it before recording
+`amount_cents`, and credits come from the `Product` row rather than the amount paid, so a
+customer in a high-VAT country still gets exactly what the pack says.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.
