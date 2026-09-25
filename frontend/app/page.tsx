@@ -31,7 +31,14 @@ function normalise(body: unknown): Pricing {
 
 async function getPricing(): Promise<Pricing> {
   try {
-    const res = await fetch(`${API_URL}/pricing`, { signal: AbortSignal.timeout(8000) });
+    // The cache-buster is load-bearing. Next caches build-time fetches by URL
+    // in .next/cache, Render restores that cache between builds, and the result
+    // was a rebuild that still served the *previous* build's /pricing - the day
+    // billing went live, every pack on the public page still said "Coming soon"
+    // after a successful redeploy. `cache: "no-store"` is the obvious fix and is
+    // wrong here: under `output: "export"` it makes this route dynamic, and the
+    // export then emits no index.html at all.
+    const res = await fetch(`${API_URL}/pricing?build=${Date.now()}`, { signal: AbortSignal.timeout(8000) });
     if (res.ok) return normalise(await res.json());
   } catch {
     // API unreachable (e.g. Render cold start during a build) - use the fallback

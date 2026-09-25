@@ -672,6 +672,16 @@ $2 pack charges $2.20 where tax is 10%. The webhook already subtracts it before 
 `amount_cents`, and credits come from the `Product` row rather than the amount paid, so a
 customer in a high-VAT country still gets exactly what the pack says.
 
+Switching it on surfaced a bug that had been waiting since the static-export move. The API
+said `billing_enabled: true` and all three packs `purchasable: true`, but the public
+pricing page still said "Coming soon" after a green rebuild. Next caches build-time fetches
+by URL in `.next/cache`, Render restores that cache between builds, so the rebuild served
+the *previous* build's `/pricing`. Clearing the build cache fixed the live page; the
+landing page now appends `?build=<timestamp>` so it can't happen again. The obvious fix,
+`cache: "no-store"`, was tried and rejected: under `output: "export"` it turns the route
+dynamic and the export emits no `index.html` at all - caught by checking the build output
+rather than trusting "Compiled successfully".
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

@@ -179,6 +179,13 @@ writing copy for it.
   mutation. That hook is a credential (it spends build minutes), so it lives on the API
   and never in the frontend bundle — anything the browser can send is public. Unset, it's
   a no-op and prices refresh on the next deploy.
+  **A rebuild alone is not enough**: Next caches build-time fetches by URL under
+  `.next/cache` and Render restores that cache between builds, so a redeploy happily
+  served the *previous* build's `/pricing`. That is how, on the day billing went live,
+  every pack on the public page still said "Coming soon" after a green deploy. `app/page.tsx`
+  appends `?build=<timestamp>` so each build misses that cache. Don't "simplify" it to
+  `cache: "no-store"` — under `output: "export"` that makes the route dynamic and the
+  export emits **no `index.html` at all**, which takes the landing page down.
 - **Never run `npm run build` while `npm run dev` is also running against
   the same `.next` directory** — it corrupts webpack chunk references
   (`Cannot find module './NNN.js'`, pages failing to render). Fix: kill both
