@@ -707,9 +707,190 @@ first query after a quiet spell fails in front of a user.
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.
 
+## Phase K — Apply the fix, not just suggest it
+
+**Status: planned**
+
+The goal stated at the top of this file — "diagnosis and fix in one place" — is
+still only half met. Every surface that finds a problem now also writes the fix
+text, and the user copies it somewhere by hand. Phase K removes the copying.
+
+The thing to be clear-eyed about: **the missing piece is not AI.** Signal
+already generates the replacement title, the meta description, the heading
+outline, the alt text, the per-keyword action plan and the visibility advice.
+Four separate things are missing, and only one of them is a model call:
+
+1. **A precise change instead of prose.** `visibility_advice` emits
+   `{title, detail, addresses}` written for a human to read. "Answer the
+   question in the first paragraph, like the pages that outrank you" is not
+   something software can apply. A change has to name a page, a field, the
+   value that is there now, and the value to put there.
+2. **A way to write it.** Signal has no write access to anyone's site. This is
+   the actual product work in this phase.
+3. **Undo.** A write to someone's live site that can't be reversed in one click
+   is not shippable.
+4. **Verification** — already built. `applied_fixes.verify_applied_fixes_for_*`
+   closes the loop on the next audit or rank check and raises `fix_verified`.
+   Auto-applied changes go through `mark_applied()` so this machinery is reused
+   unchanged rather than reimplemented.
+
+### K1 — The change model and the compiler
+
+**No writing at all**, no credentials, works for every site, and worth shipping
+on its own: today the user is told "add a meta description"; afterwards they are
+shown the exact before and after.
+
+A new `ProposedChange` row is the unit of work: which page, which field, the
+value read off the live page at compile time (`before`), the value to set
+(`after`), where the suggestion came from, and a status. It is also the durable
+record of a paid result — see "Credits" below.
+
+Every suggestion in the app sorts into exactly three buckets, and the split is
+the important part of this phase:
+
+- **Deterministic — no model runs, no credit charged.** `canonical_tag` (the
+  page's own normalised URL) and `robots_meta_tag` (drop the directive that is
+  blocking indexing). Both are computable with certainty. Note that these two,
+  plus `structured_data`, are the *most* mechanically fixable checks in the
+  audit and are currently the ones with **no** AI generator and no button at
+  all — `SUGGESTABLE` in `CheckList.tsx` covers the other six. The cheapest
+  wins in this phase are the checks that were skipped.
+- **Model-compiled, one bounded value.** Title, meta description, H1, alt text
+  per image, a JSON-LD block, an internal link with its anchor and insertion
+  point. Reviewable at a glance and reversible exactly.
+- **Not applicable, and never given an Apply button.** "Publish a comparison
+  page", "get cited by the sources the AI Overview used", "earn links". These
+  produce a draft and say plainly that a person has to do the rest. A button
+  that cannot do anything is the same failure as a landing-page claim the
+  product doesn't back.
+
+The compiler is a new service that takes one suggestion plus the page's real
+HTML and returns a `ProposedChange` **or declines**. Declining is a first-class
+outcome: an action that won't compile is shown as advice, exactly as today.
+
+### K2 — WordPress
+
+Chosen first if the audience is other people's sites: it is a third of the web
+and the one CMS with a write API that is already there.
+
+Application Passwords (WP 5.6+, per-user, revocable from the WP profile screen,
+no plugin to install), Basic auth over HTTPS only, stored encrypted with the
+existing `token_crypto` — same reasoning as `GoogleConnection`, since a leaked
+app password is standing write access to the user's site.
+
+**Spike this before committing to it.** `title` and `excerpt` are core REST
+fields and will write cleanly. **The meta description is not core** — it belongs
+to Yoast (`_yoast_wpseo_metadesc`) or Rank Math (`rank_math_description`), and
+whether it is writable over REST depends on the plugin and its version. If a
+test against a real WordPress shows it isn't, there are two honest answers: a
+small Signal companion plugin that registers those fields (one more install
+step for the user), or a WordPress path that only claims the fields core
+exposes. Do not put "we set your meta description" in the UI before that test
+passes. Resolving a page URL to a post id also needs `?slug=` or `wp/v2/search`
+rather than a guess.
+
+### K3 — GitHub
+
+The right path for a code-built site (and the only one that fits Signal's own
+`signal-seo.in`, a Next.js static export in a repo).
+
+**A pull request, never a push to the default branch.** Review before merge is
+what makes writing to a codebase acceptable at all, and it costs nothing to
+offer.
+
+Mapping a URL to the source file that produces it is the hard part — Next.js,
+Hugo, Jekyll and Astro all answer it differently. The trick that avoids
+encoding any of those conventions: search the repo for the **exact current
+value** Signal just read off the live page. A title string is close to unique
+and pins the file and the line. Zero matches or several means ask, not guess.
+
+### K4 — Fix everything
+
+A bulk apply as a `SiteJob` (`kind="apply"`), polled by the existing
+`useSiteJobs` — background jobs run in the API process, so it needs its own
+session from `session_factory()` and must commit progress as it goes, like
+every other job here.
+
+Every change is listed with its diff *before* anything runs. The default is
+review-then-apply. "Apply all without looking" is not the default even once the
+undo works, because the undo is per change and a surprise is still a surprise.
+
+### K5 — Content-level changes
+
+New sections and new pages, as **drafts a person places**. Rewriting someone's
+body copy automatically is a different risk class from setting a meta tag: the
+failure mode is not a wrong tag, it is a page that no longer says what the
+business meant. Signal drafts it and stops.
+
+### Gates
+
+- **Verified sites only.** `Site.verified` must be true before a write target
+  can be attached. Writing to a domain the account hasn't proven it owns is the
+  one mistake in this feature that cannot be walked back.
+- **`before` is captured before every write**, so revert is a one-click,
+  free, exact restore of what was there.
+- **A stale change is refused, not applied.** If the live value no longer
+  matches `before`, someone edited the page after the change was compiled;
+  overwriting them silently is worse than asking. Same reasoning as the `stale`
+  flag on `VisibilityAdvice`.
+
+### Not built, deliberately
+
+**A JavaScript snippet that rewrites title/meta in the browser.** It is the
+easiest possible write path and it would undermine the product's own pitch: AI
+assistants and most non-Google crawlers don't run JS, so the fix would be
+invisible in exactly the places Signal measures visibility — and swapping
+indexed content client-side is cloaking-adjacent. Rejected on the merits, not
+overlooked.
+
+### Credits
+
+One credit per **compiled change** — that is the model call. **Applying is free
+and reverting is free.** Charging to press the button the whole feature exists
+for would make people hesitate over it, and charging for undo is indefensible.
+Deterministic changes (canonical, robots) cost nothing because no model runs.
+
+Per `CLAUDE.md` that means editing `CREDIT_COSTS` in `landing-page.tsx` *and*
+the "What a credit buys" panel on `/dashboard/billing`, and `metered: true` on
+the `lib/api.ts` method so the sidebar's credit count drops without a reload.
+
+`ProposedChange` is the stored result rather than a `generated_results.store()`
+row, which is a deliberate exception to the rule in `CLAUDE.md`. The rule exists
+so a refresh never loses what a credit bought; a durable row with a lifecycle
+(applied, reverted, stale) satisfies that better than a table whose contract is
+"newest replaces, no history". Applying and reverting are history and must not
+be overwritten.
+
+### Schema
+
+Migration 0015, two tables: `SiteWriteTarget` (one per site — kind, config JSON,
+encrypted secret, status, last checked) and `ProposedChange` (site, page,
+origin, field, before, after, status, receipt, applied/reverted timestamps,
+error). Plain string columns for kind/status/field, **not** Postgres enums — see
+the block comment above `Product` in `models.py`; a label mismatch between a
+Python enum name and a Postgres enum label once silently broke every audit in
+production. `alembic check` stays clean, and the suite runs against real
+Postgres before this ships.
+
+### Landing-page and `/auto-seo-tools` parity
+
+This phase falsifies two claims that are currently load-bearing, and they have
+to change in the same commit as K2:
+
+- `/auto-seo-tools`, "What auto SEO tools can't automate" → "**Changing your
+  website.** … Nothing connects to your CMS and nothing edits your pages."
+- `content.ts`, "Can SEO be fully automated?" → "Signal reports and suggests, it
+  does not edit your website for you."
+
+The replacement is a *narrower* claim, not a bigger one: Signal writes the
+mechanical fields to a connected CMS, with a one-click undo, on sites the owner
+has verified — and still does not decide what to publish, and still earns no
+links. That stays true, and the section keeps doing the job it exists for.
+
 ## Not yet scheduled
 
-- **Direct site-write integration** (WordPress/GitHub/etc.) — see Phase D.
+- **Direct site-write integration** (WordPress/GitHub/etc.) — now planned as Phase K
+  above; Phase D is the manual half of it.
 - **Real keyword search volumes** — would come from DataForSEO's Labs API (its credential
   slots already exist in config). Deliberately deferred: it costs per lookup, and labelled
   ideas without volumes are more honest than invented estimates. See Phase J.
