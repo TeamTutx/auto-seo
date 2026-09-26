@@ -70,6 +70,14 @@ don't leave it stale.** Concretely:
   REST fields genuinely cannot set a meta description and a button that fails is
   worse than no button. `writes_immediately` is False for GitHub: a pull request
   is not a live change, and "applied" means something different.
+- **A GitHub write finds the line, not the page.** The file is located by searching
+  the repo for the *exact current value*, which avoids encoding any framework's
+  routing — but a string in a shared layout serves every page that does not
+  override it, so replacing it moves all of them. Signal's own landing-page title
+  is root metadata in `frontend/app/layout.tsx`, shared by fourteen pages. There
+  is no framework-agnostic way to tell the two apart, so the pull request body
+  says so and names the file, and the reviewer is the check — which is why a
+  repository write is a pull request and never a commit.
 - **Four rules hold whichever target is connected**, and they live in
   `app/routers/changes.py` rather than in the targets: a write target attaches
   only to a **verified** site; a credential is **tested before it is stored**; a

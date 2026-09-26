@@ -15,6 +15,13 @@ string or a meta description is close to unique; it pins the file and the line
 without any knowledge of routing. Zero matches or several is a refusal, not a
 guess - editing the wrong file is worse than doing nothing.
 
+**Searching by value locates the line, not the page.** A title in a shared layout
+serves every page that does not override it, so replacing it changes all of them
+- Signal asked to fix one page and the edit moves many. There is no
+framework-agnostic way to tell the two apart from the value alone, so the pull
+request says so and the diff shows the file; the human merging it is the check.
+This is the main reason a repository write is a pull request rather than a commit.
+
 **The consequence: this target replaces, it does not insert.** A value Signal
 cannot find is a value it cannot locate a place for, and the most common audit
 failure - no meta description at all - is exactly that case. Inserting one would
@@ -273,11 +280,16 @@ class GitHubTarget(WriteTarget):
             ))
 
         number = (pr or {}).get("number")
+        changed = ", ".join(e.path for e in edits)
         return Receipt(
             ref=str(number),
             url=(pr or {}).get("html_url"),
-            detail=f"Opened pull request #{number} against {base}. Merge it to apply the change.",
-            extra={"branch": branch, "base": base},
+            detail=(
+                f"Opened pull request #{number} against {base}, changing {changed}. "
+                "Check the diff before merging: one string in a source file can be shared by more "
+                "than one page."
+            ),
+            extra={"branch": branch, "base": base, "paths": changed},
         )
 
     def revert(self, page_url: str, writes: List[FieldWrite], receipt: Optional[dict]) -> Receipt:
@@ -368,7 +380,18 @@ def _pr_body(page_url: str, writes: List[FieldWrite], paths: List[str]) -> str:
     for write in writes:
         before = _short(write.before or "", 80) or "_(not set)_"
         lines.append(f"| {write.field.replace('_', ' ')} | {_md_cell(before)} | {_md_cell(_short(write.value, 80))} |")
-    lines += ["", f"Files changed: {', '.join(paths)}.", "", "Merging this applies the change; closing it discards it."]
+    lines += [
+        "",
+        f"Files changed: {', '.join(paths)}.",
+        "",
+        "> **Check what else uses these values.** Signal found this text by searching the "
+        "repository for what is on the live page, which locates the right line without knowing "
+        "your framework - but a string in a shared layout or template serves every page that "
+        "does not override it, and this change would move all of them. The diff above is the "
+        "whole change; nothing is applied until you merge.",
+        "",
+        "Merging this applies the change; closing it discards it.",
+    ]
     return "\n".join(lines)
 
 

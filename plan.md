@@ -832,6 +832,15 @@ had.
   site; a WordPress without them says so on connection and gets the copy path.
   `robots_meta_tag` is deliberately never written through WordPress - each plugin
   represents noindex differently and guessing wrong deindexes a page.
+- **Searching by value locates the line, not the page.** Found by pointing this
+  at Signal's own repository before opening anything: the live title of
+  `signal-seo.in` lives in `frontend/app/layout.tsx` as *root* metadata, so
+  "fix the home page's title" would have retitled the fourteen pages that do not
+  set their own. Nothing in the value distinguishes a page-specific string from a
+  shared one, and guessing from the file path means encoding framework
+  conventions - the thing this approach exists to avoid. So the pull request says
+  so explicitly and names the file, and the human merging it is the check. It is
+  the main reason a repository write is a pull request and not a commit.
 - **Neither vendor has been exercised against a real install.** Both are covered
   by mock-transport tests, and the whole loop was walked end to end against a
   local mock WordPress (compile, diff, apply, the live page changing, rescan,

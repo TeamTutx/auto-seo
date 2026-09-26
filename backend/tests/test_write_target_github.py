@@ -133,7 +133,8 @@ def test_a_change_becomes_a_branch_a_commit_and_a_pull_request():
     assert name == FILE and "<title>New Title</title>" in content
     assert "about" in message
     assert receipt.url == f"https://github.com/{REPO}/pull/100"
-    assert "Merge it to apply" in receipt.detail
+    assert FILE in receipt.detail, "the receipt names the file, since a source edit can reach further than one page"
+    assert "shared by more than one page" in receipt.detail
 
 
 def test_the_pull_request_body_shows_the_before_and_after():
@@ -279,3 +280,15 @@ def test_an_already_closed_pull_request_is_not_closed_twice():
 
     assert repo.closed == []
     assert "already closed" in receipt.detail
+
+
+def test_the_pull_request_warns_that_a_shared_string_moves_every_page_using_it():
+    """Found by pointing this at a real repository: signal-seo.in's own title
+    lives in the root layout, so "fix the home page title" would have retitled
+    fourteen pages. Nothing in the value says whether it is page-specific, so the
+    pull request says so and the human merging it decides."""
+    repo = _Repo()
+    _target(repo).write("https://acme.test/about", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+    body = repo.opened[0]["body"]
+    assert "shared layout" in body and "override" in body
