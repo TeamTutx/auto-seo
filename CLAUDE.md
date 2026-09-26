@@ -265,7 +265,9 @@ writing copy for it.
   can't get in; and `pool_pre_ping` is on because cross-region idle connections get dropped
   and the failure would otherwise land on a user's request. `DATABASE_URL` is a pasted
   secret now — `render.yaml` deliberately has no `databases:` block, so don't "fix" that by
-  re-adding one.
+  re-adding one. A legacy `postgres://` URL is rewritten in **two** places, `app/database.py`
+  and `alembic/env.py`: Alembic builds its own engine, so fixing only the app leaves the API
+  working and kills every deploy on `alembic upgrade head`.
 - **`docs/DATABASE.md` is the runbook** for creating, moving or rebuilding the database.
   `alembic upgrade head` on an empty Postgres builds the whole schema; `alembic check`
   then proves the live tables match `app/models.py` and must stay clean — if it reports

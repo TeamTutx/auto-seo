@@ -26,9 +26,12 @@ cd backend
 That's the whole migration. It creates every table, every index and the starting
 credit-pack catalog. Then verify it (§4) before sending traffic at it.
 
-> **URL scheme.** Use `postgresql://`, not `postgres://` — SQLAlchemy 2 rejects
-> the older scheme. Some providers hand out `postgres://`; `app/database.py`
-> now rewrites that prefix itself, so either form works in `DATABASE_URL`.
+> **URL scheme.** Aiven (and others) hand out `postgres://`, which SQLAlchemy 2
+> rejects. Both `app/database.py` **and** `alembic/env.py` rewrite that prefix, so
+> either form works in `DATABASE_URL`. Both, because Alembic builds its own
+> engine: fixing only the app left the API happy and killed every deploy on
+> `alembic upgrade head` with `Can't load plugin: sqlalchemy.dialects:postgres`.
+> That is how the Aiven cutover failed the first time.
 > Add `?sslmode=require` when connecting to a managed database from outside its
 > network.
 

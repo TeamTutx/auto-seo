@@ -5,10 +5,19 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 from app import models  # noqa: F401  (registers tables on SQLModel.metadata)
-from app.config import settings
+from app.database import DATABASE_URL
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# DATABASE_URL, not settings.database_url: app/database.py rewrites a legacy
+# `postgres://` prefix, which SQLAlchemy 2 refuses with "Can't load plugin:
+# sqlalchemy.dialects:postgres". Alembic builds its own engine, so taking the
+# raw setting here meant the app tolerated that URL and every deploy still died
+# on `alembic upgrade head` - which is exactly how the Aiven cutover failed,
+# because Aiven's console hands out the `postgres://` form.
+#
+# The %-escaping is for ConfigParser, which would otherwise read a `%` in a
+# generated password as interpolation syntax.
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
