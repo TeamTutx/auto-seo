@@ -33,7 +33,31 @@ export default function WriteTargetPanel({ site }: { site: Site }) {
     };
   }, [site.id]);
 
-  if (!site.verified || !loaded) return null;
+  if (!loaded) return null;
+
+  // An unverified site still gets the panel, saying what it is and what unlocks
+  // it. Returning null here instead sent people in a circle: the fix on a page
+  // tells them to "connect WordPress or GitHub in site settings", and site
+  // settings showed nothing at all, with no hint that verification was the
+  // missing step. The gate itself is right - writing to a domain nobody has
+  // proven they own is the one mistake here that cannot be walked back - but a
+  // gate the user cannot see is just a dead end.
+  if (!site.verified) {
+    return (
+      <div className="panel" style={{ padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <h4 style={{ marginBottom: 0 }}>Applying fixes</h4>
+          <span className="status-pill neutral">Needs verification</span>
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          Signal can set titles, meta descriptions, alt text and the rest on this site itself — but only
+          once you have proved you own <b>{site.domain}</b>, since this writes to your live site. Verify the
+          domain above, then WordPress and GitHub can be connected here. Until then every fix is still
+          written out for you to paste in.
+        </div>
+      </div>
+    );
+  }
 
   function set(key: keyof typeof fields, value: string) {
     setFields((prev) => ({ ...prev, [key]: value }));
