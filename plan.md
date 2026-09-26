@@ -734,6 +734,43 @@ Four separate things are missing, and only one of them is a model call:
    Auto-applied changes go through `mark_applied()` so this machinery is reused
    unchanged rather than reimplemented.
 
+### Sequence (decided 2026-09-26)
+
+K1 → K2 (WordPress) → K3 (GitHub) → K4 → K5. The two write channels are built
+back to back, on purpose: an interface with one implementation is indistinguishable
+from that implementation, and WordPress (a remote API, writes land instantly, undo
+is another write) and GitHub (a repo, writes land as a reviewable PR, undo is
+closing it) are different enough to find a wrong abstraction while it is still
+cheap to move. The `manual` target ships in K1 and never goes away — it is what
+every unconnected site gets.
+
+What K1 touches, concretely:
+
+- `alembic/0015_*` — `SiteWriteTarget`, `ProposedChange`. `alembic check` clean;
+  run the suite against real Postgres (`TEST_DATABASE_URL=...`) before merging,
+  since this is a schema change.
+- `app/services/changes.py` (new) — the compiler. One function per field, each
+  returning a `ProposedChange` or `None`. Deterministic fields (`canonical_tag`,
+  `robots_meta_tag`) resolve without a model; the rest reuse the existing
+  `ai_suggestions` functions and add the `before` value read from the page's real
+  HTML via `fetcher.fetch_html`.
+- `app/services/write_targets/` (new package) — `base.py` with the four-method
+  interface (`test`, `read`, `write`, `revert`) and `manual.py`, the only
+  implementation in K1. Same shape as `ai_providers`/`rank_providers`, except
+  the choice is per *site*, not per config: each site lives somewhere different.
+- `app/routers/changes.py` (new) — compile, list, revert. Ownership through
+  `get_owned_page`, like every other page-scoped route.
+- `app/services/applied_fixes.py` — `mark_applied()` called on apply, so the
+  existing verify loop picks auto-applied changes up with no new code.
+- `frontend/lib/api.ts` — new methods, `metered: true` on the compile one.
+- `frontend/components/CheckList.tsx` — the six `SUGGESTABLE` entries gain a
+  diff view; `canonical_tag`, `robots_meta_tag` and `structured_data` gain their
+  first buttons.
+- `frontend/components/OpportunitiesPanel.tsx`, `KeywordPanel.tsx`, and the
+  visibility page — the same diff component, wherever a suggestion already appears.
+- `CREDIT_COSTS` in `landing-page.tsx` **and** the "What a credit buys" panel on
+  `/dashboard/billing` — one edit is a lie on the other page.
+
 ### K1 — The change model and the compiler
 
 **No writing at all**, no credentials, works for every site, and worth shipping
