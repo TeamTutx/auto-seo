@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Optional
 from urllib.parse import urlparse, urlunparse
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.models import AlertType, CheckStatus, OpportunityType, VerificationMethod
 
@@ -764,3 +764,109 @@ class ProductVerifyResult(BaseModel):
     message: str
     dodo_price_cents: Optional[int] = None
     dodo_currency: Optional[str] = None
+
+
+# --- applying fixes (Phase K in plan.md) ---
+
+
+class WriteTargetKindIn(str, Enum):
+    wordpress = "wordpress"
+    github = "github"
+
+
+class WriteTargetConnect(BaseModel):
+    """What the owner pastes to connect a site.
+
+    `secret` is a WordPress application password or a GitHub token. It is
+    write-only: it is stored encrypted and never returned by any endpoint, so
+    the UI shows a connection's *state*, never its credential."""
+    kind: WriteTargetKindIn
+    secret: str = Field(min_length=8, max_length=500)
+    # WordPress
+    base_url: Optional[str] = Field(default=None, max_length=300)
+    username: Optional[str] = Field(default=None, max_length=200)
+    # GitHub
+    repo: Optional[str] = Field(default=None, max_length=200)
+    branch: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("secret")
+    @classmethod
+    def strip_secret(cls, v: str) -> str:
+        # Copying a token out of GitHub's UI routinely brings whitespace with it,
+        # and a trailing newline in an Authorization header is a 401 with no
+        # explanation anywhere.
+        return v.strip()
+
+    @model_validator(mode="after")
+    def check_kind_fields(self) -> "WriteTargetConnect":
+        if self.kind == WriteTargetKindIn.wordpress:
+            if not (self.base_url or "").strip():
+                raise ValueError("Enter your WordPress site's address")
+            if not (self.username or "").strip():
+                raise ValueError("Enter the WordPress username the application password belongs to")
+            self.base_url = _clean_page_url(self.base_url).rstrip("/")
+            self.username = self.username.strip()
+        else:
+            repo = (self.repo or "").strip().removeprefix("https://github.com/").strip("/")
+            if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repo or ""):
+                raise ValueError('Enter the repository as "owner/name"')
+            self.repo = repo
+            self.branch = (self.branch or "").strip()
+        return self
+
+
+class WriteTargetRead(BaseModel):
+    """A site's connection, without the credential. `capabilities` is what the
+    connect-time probe found this target can genuinely write - the UI reads it to
+    decide which fields get an Apply button and which get a copy box."""
+    kind: str
+    label: str  # "example.com" or "owner/repo" - what the user recognises it by
+    status: str  # "ok" | "failed" | "untested"
+    status_detail: Optional[str] = None
+    capabilities: List[str] = []
+    writes_immediately: bool
+    last_checked_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class ProposedChangeRead(BaseModel):
+    id: int
+    page_id: Optional[int]
+    field: str
+    subject: str
+    before: Optional[str]
+    after: str
+    status: str
+    target_kind: Optional[str] = None
+    receipt_url: Optional[str] = None
+    receipt_detail: Optional[str] = None
+    error: Optional[str] = None
+    created_at: datetime
+    applied_at: Optional[datetime] = None
+    reverted_at: Optional[datetime] = None
+    #: True when the live page no longer matches what this change was built
+    #: against. Only computed where the page was fetched anyway (compile, apply),
+    #: since checking costs an HTTP request per page.
+    stale: bool = False
+    #: Set when the value would still not satisfy the check that asked for it -
+    #: a 113-character meta description where the check wants 120-160. Derived
+    #: from the value, never stored, so it cannot go stale against the rules.
+    warning: Optional[str] = None
+
+
+class CompileChangeRequest(BaseModel):
+    field: str = Field(min_length=1, max_length=60)
+
+
+class ChangeIdsRequest(BaseModel):
+    ids: List[int] = Field(min_length=1, max_length=50)
+
+
+class ApplyChangesResult(BaseModel):
+    """Applied as one unit where the target allows it, so the outcome is one
+    message plus the rows as they now stand."""
+    ok: bool
+    message: str
+    target_kind: Optional[str] = None
+    receipt_url: Optional[str] = None
+    changes: List[ProposedChangeRead] = []

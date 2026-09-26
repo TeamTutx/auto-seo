@@ -165,6 +165,7 @@ function BillingContent() {
           <li>Tracking a keyword, or re-checking its rank — 1 each</li>
           <li>Seeing who outranks you for a keyword — 1</li>
           <li>Any AI fix (title, meta description, headings, alt text, internal links) — 1</li>
+          <li>Setting the canonical or robots tag — free, because no AI is involved</li>
           <li>Keyword opportunities for a page — 2</li>
           <li>A full ranking action plan — 2</li>
           <li>Finding keyword ideas for a site — up to 2</li>
@@ -175,6 +176,9 @@ function BillingContent() {
           Audits, scores, the opportunities list, finding your pages, checking which are indexed, and your Search
           Console and Analytics data are all free and unlimited. So is adding a keyword by hand, and re-opening
           anything a credit already paid for — you are charged once per result, not once per look.
+          {" "}
+          <b>Applying a fix to your site costs nothing, and neither does undoing it</b> — the credit paid for
+          writing the fix, and a button you hesitate over is a button you do not press.
         </div>
       </div>
 

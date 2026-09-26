@@ -2067,3 +2067,178 @@ tbody tr.clickable:hover {
 .vis-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
 .vis-row-actions .link-btn:disabled { opacity: .5; cursor: default; }
 .link-btn.vis-plan-saved { color: var(--accent); }
+
+/* Applying a fix (Phase K in plan.md). Used by FixPanel, which the audit
+   checklist, the opportunities list and the visibility page all render - so the
+   before/after looks the same wherever a suggestion appears. Dashboard styles,
+   deliberately not under the .lp- prefix, which is the landing page's alone. */
+.fix {
+  margin-top: 10px;
+}
+.fix-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--surface-raised);
+  border: 1px dashed var(--accent-dim);
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--font-body), "Inter", sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.fix-cta:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.fix-cta:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.fix-cost {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.fix-diff {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.fix-subject {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+.fix-row {
+  display: flex;
+  gap: 9px;
+  padding: 4px 0;
+}
+.fix-row-label {
+  flex: none;
+  width: 34px;
+  padding-top: 1px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.fix-row-label-new {
+  color: var(--accent);
+}
+.fix-value {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fix-value-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-family: var(--font-body), "Inter", sans-serif;
+}
+.fix-value-new {
+  color: var(--accent);
+}
+.fix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.fix-btn {
+  font-size: 11.5px;
+  padding: 5px 10px;
+}
+.fix-note {
+  flex: 1 1 200px;
+  min-width: 180px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.fix-applied {
+  padding: 10px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--accent-dim);
+  border-radius: 6px;
+}
+.fix-applied-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fix-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.fix-applied-detail {
+  color: var(--text);
+  font-size: 12px;
+}
+.fix-link {
+  display: inline-block;
+  margin-top: 7px;
+  color: var(--accent);
+  font-size: 12px;
+}
+.fix-prior {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.fix-prior-label {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.fix-error {
+  margin-top: 8px;
+  color: var(--bad);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .fix-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .fix-row-label {
+    width: auto;
+  }
+}
+.fix-warning {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 11.5px;
+  line-height: 1.45;
+}

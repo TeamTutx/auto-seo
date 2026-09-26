@@ -13,6 +13,7 @@ const CREDIT_COSTS: { label: string; credits: number }[] = [
   { label: "Track a keyword, or re-check its rank", credits: 1 },
   { label: "See who outranks you for a keyword", credits: 1 },
   { label: "Any AI fix: title, meta, headings, alt text, internal links", credits: 1 },
+  { label: "Applying a fix to your site, and undoing it", credits: 0 },
   { label: "Keyword opportunities for a page", credits: 2 },
   { label: "A full ranking action plan", credits: 2 },
   { label: "Find keyword ideas for a site", credits: 2 },
@@ -367,7 +368,50 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
                 Shop affordable widgets built to last — free shipping on every order, ships same day from Signal.
               </div>
             </div>
-            <div className="lp-copy-affordance">⧉ copy to clipboard</div>
+            <div className="lp-copy-affordance">⧉ copy — or let Signal set it for you</div>
+          </div>
+        </div>
+
+        <div className="lp-feature-row full">
+          <div className="lp-feature-rail">
+            <span className="dot" />
+          </div>
+          <div className="lp-feature-full-body">
+            <div className="lp-feature-copy">
+              <div className="lp-feature-tag">
+                Apply it for you
+                <span className="lp-spotlight-flag">Deep dive</span>
+              </div>
+              <h3>See exactly what changes, then let Signal make the change.</h3>
+              <p>
+                Connect a verified site to WordPress or a GitHub repository and Signal can set the fix itself —
+                the title, the meta description, image alt text, the canonical and robots tags, structured data.
+                You see the value that is on the page now next to the one replacing it, and nothing is written
+                until you say so. On GitHub it is a pull request you review and merge, never a push to your
+                default branch.
+              </p>
+              <ul className="lp-feature-list">
+                <li>Applying is free, and so is undoing it — the credit paid for writing the fix</li>
+                <li>Edited the page since? The change is refused rather than written over your work</li>
+                <li>Nothing connected is a normal setup: every fix is still written out to paste in</li>
+                <li>Signal stops at your copy — a heading outline or a rewritten paragraph is yours to apply</li>
+              </ul>
+            </div>
+            <div className="lp-feature-visual">
+              <div className="lp-visual-label">
+                <span>CANONICAL TAG — /widgets</span>
+                <span>example.com</span>
+              </div>
+              <div className="lp-rewrite-block before">
+                <div className="lp-rewrite-head">Now</div>
+                <div className="lp-rewrite-body">nothing — this is missing from the page</div>
+              </div>
+              <div className="lp-rewrite-block after">
+                <div className="lp-rewrite-head">New</div>
+                <div className="lp-rewrite-body">https://example.com/widgets</div>
+              </div>
+              <div className="lp-copy-affordance">✓ applied to example.com · undo</div>
+            </div>
           </div>
         </div>
 
@@ -715,7 +759,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
             <ul className="lp-credit-costs">
               {CREDIT_COSTS.map((item) => (
                 <li key={item.label}>
-                  <span className="lp-credit-cost lp-mono">{item.credits}</span>
+                  <span className="lp-credit-cost lp-mono">{item.credits === 0 ? "free" : item.credits}</span>
                   {item.label}
                 </li>
               ))}

@@ -49,6 +49,53 @@ don't leave it stale.** Concretely:
   advice costs one credit rather than buying the same search twice. A keyword whose stored
   check predates that capture is refused with a "re-run the check" message rather than
   being given filler.
+- **Signal can apply a fix, and the list of what it can apply is short on purpose.**
+  `APPLICABLE_FIELDS` in `app/models.py` is the whole of it: `title_tag`,
+  `meta_description`, `canonical_tag`, `robots_meta_tag`, `structured_data`,
+  `image_alt_text`. Every one is a meta tag, a link tag, a title or an image
+  attribute — **nothing here edits prose**, because setting a tag wrongly produces
+  a wrong tag while rewriting a paragraph wrongly produces a page that no longer
+  says what the business meant. `heading_structure`, `readability`,
+  `content_length`, `keyword_density` and `link_analysis` are refused by
+  `changes.compile_field` with a sentence the UI shows, and keep the
+  suggestion-only flow. The list lives in three places that must agree:
+  `APPLICABLE_FIELDS`, `NOT_APPLICABLE` in `app/services/changes.py`, and
+  `APPLICABLE_FIELDS` in `frontend/lib/use-fixes.ts`.
+- **Where a site's content lives is a fact about the site, not a config value.**
+  `app/services/write_targets/` mirrors `ai_providers`/`rank_providers` except the
+  choice is per site: one `SiteWriteTarget` row each, and **no row means manual** —
+  the change is shown as a before/after to copy, which is the default and not a
+  degraded mode. A target declares `supports`, and WordPress narrows it per site
+  from a connect-time probe, because a WordPress with no SEO plugin exposing its
+  REST fields genuinely cannot set a meta description and a button that fails is
+  worse than no button. `writes_immediately` is False for GitHub: a pull request
+  is not a live change, and "applied" means something different.
+- **Four rules hold whichever target is connected**, and they live in
+  `app/routers/changes.py` rather than in the targets: a write target attaches
+  only to a **verified** site; a credential is **tested before it is stored**; a
+  change whose live value no longer matches `before` is **refused, not applied**,
+  because someone edited the page in between; and **applying and reverting are
+  free** — the credit paid for the model call, and charging for undo is
+  indefensible. Compiling a deterministic field (`canonical_tag`,
+  `robots_meta_tag`) is free too, since no model runs.
+- **`before` always comes from the live page**, fetched at compile time, never
+  from a stored audit — an audit can be days old, and writing over a value the
+  owner has since changed loses their work rather than Signal's. `ProposedChange`
+  rows are deliberately **not** `generated_results.store()` rows: that table's
+  contract is "newest replaces, no history", and applying and reverting *are*
+  history. Applying calls `applied_fixes.mark_applied()`, so the Phase D
+  verify loop confirms it on the next audit with no new code.
+- **A compiled value is checked against the audit's own constants**
+  (`changes.value_warning`, reading `audit_engine.TITLE_*`/`META_DESC_*`). A model
+  told to write 120–160 characters sometimes writes 113; that is shown as a
+  warning on the diff rather than refused, but it must never be silent — applying
+  a "fix" that leaves the check failing spends a credit for nothing.
+- **Adding a table with a `site_id` or `page_id` means editing
+  `app/services/cascade_delete.py`.** Postgres enforces those foreign keys and
+  SQLite does not, so a missing table passes every local test and fails in
+  production on a user pressing Delete — which is exactly what had happened for
+  seven tables. `tests/test_cascade_delete_covers_every_table.py` walks the
+  metadata and fails if a reachable table is left behind.
 - Anything the site page shows about crawling, index status, keyword ideas or visibility
   is fed by `app/routers/discovery.py`. What each action costs is listed in two places
   the user reads — `CREDIT_COSTS` on the landing page and the "What a credit buys" panel

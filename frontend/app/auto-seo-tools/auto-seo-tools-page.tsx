@@ -273,8 +273,13 @@ export default function AutoSeoToolsPage() {
               Signal has no volume database and won&apos;t invent one.
             </li>
             <li>
-              <b>Changing your website.</b> Signal writes the replacement title, the meta description, the heading
-              outline — you paste them in. Nothing connects to your CMS and nothing edits your pages.
+              <b>Rewriting what your pages say.</b> Signal can set the mechanical parts itself — the title, the
+              meta description, image alt text, the canonical and robots tags, structured data — on a site you
+              have verified and connected to WordPress or a GitHub repository, showing you the before and after
+              first and keeping a one-click undo. It stops at your copy. A heading outline or a clearer opening
+              paragraph is written for you and applied by you, because a wrong tag is a wrong tag while a
+              rewritten paragraph is a page that no longer says what you meant. Sites with nothing connected get
+              every fix written out to paste in, which is how Signal has always worked.
             </li>
             <li>
               <b>Deciding what to publish.</b> A tool can tell you the pages beating you all answer the question in

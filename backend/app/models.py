@@ -421,6 +421,110 @@ class VisibilityAdvice(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+# --- applying fixes (Phase K in plan.md) ---
+#
+# Signal reads a suggestion it already generates, compiles it into an exact
+# before/after, and - where the site is connected to somewhere writable - sets
+# it. Two rules shape both tables below.
+#
+# **Only head-level and attribute-level fields.** Every field in APPLICABLE_FIELDS
+# is a meta tag, a link tag, a title, a JSON-LD block or an image attribute.
+# Nothing here edits prose: rewriting someone's paragraphs has a different
+# failure mode from setting a tag - not a wrong tag, but a page that no longer
+# says what the business meant - so content suggestions stay drafts.
+#
+# **Nothing is written without a way back.** `before` is captured from the live
+# page at compile time, so revert is an exact restore, and a change whose live
+# value no longer matches `before` is refused rather than applied over whoever
+# edited the page in between.
+
+
+class WriteTargetKind(str, Enum):
+    """Where a site's content lives. Plain-string column, as with SiteJob.kind -
+    see the block comment above Product for why these are not Postgres enums."""
+    wordpress = "wordpress"
+    github = "github"
+
+
+class ChangeStatus(str, Enum):
+    proposed = "proposed"
+    applied = "applied"
+    reverted = "reverted"
+    failed = "failed"
+
+
+# What Signal can actually set, mapped to the audit check that asks for it.
+# A field absent from here is advice, and the UI must not offer to apply it.
+APPLICABLE_FIELDS = (
+    "title_tag",
+    "meta_description",
+    "canonical_tag",
+    "robots_meta_tag",
+    "structured_data",
+    "image_alt_text",
+)
+
+
+class SiteWriteTarget(SQLModel, table=True):
+    """Where to write this site's changes. One per site: a site's content lives
+    in one place, and letting two targets claim the same site would mean writing
+    a change twice or silently picking one.
+
+    **No row means manual** - the change is shown as an exact before/after to
+    copy. That is the default for every site and it is not a degraded mode; it
+    is what an unconnected site gets, and it works for all of them.
+
+    The credential is encrypted with the same key as a Google refresh token
+    (app/services/token_crypto.py) and for the same reason: a WordPress
+    application password or a GitHub token is standing write access to the
+    user's site, which is strictly worse than a leaked session."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True, unique=True)
+    kind: str
+    # JSON. WordPress: {base_url, username, capabilities: [...]}. GitHub:
+    # {repo, branch}. `capabilities` is what a connect-time probe found the
+    # target can actually write - a WordPress without an SEO plugin exposing
+    # its REST fields cannot set a meta description, and promising otherwise
+    # would be a button that fails.
+    config: str = Field(default="{}")
+    secret_encrypted: str
+    status: str = Field(default="untested")  # "ok" | "failed" | "untested"
+    status_detail: Optional[str] = Field(default=None)
+    last_checked_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProposedChange(SQLModel, table=True):
+    """One exact edit: this field on this page goes from `before` to `after`.
+
+    This is also the durable record of what a credit bought, deliberately not a
+    GeneratedResult row. That table's contract is "newest replaces, no history",
+    which is right for "what should I do now" answers and wrong here: applying
+    and reverting *are* history, and overwriting them would lose the record of a
+    change made to someone's live site."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    site_id: int = Field(foreign_key="site.id", index=True)
+    # Null for a change that is not about an existing tracked page (a new page
+    # the advice says to publish). Those are drafts, never applied.
+    page_id: Optional[int] = Field(default=None, foreign_key="page.id", index=True)
+    field: str  # one of APPLICABLE_FIELDS
+    # Distinguishes several changes to the same field on one page: the image src
+    # for alt text, "" for everything else. Empty string rather than NULL, as
+    # with GeneratedResult.subject.
+    subject: str = Field(default="")
+    origin: str  # "audit_check" | "visibility_advice" | "keyword_action_plan"
+    origin_ref: Optional[str] = Field(default=None)  # the check_type, or the keyword
+    before: Optional[str] = Field(default=None)  # None = the field is absent from the page
+    after: str
+    status: str = Field(default=ChangeStatus.proposed.value)
+    target_kind: Optional[str] = Field(default=None)  # which channel applied it
+    receipt: Optional[str] = Field(default=None)  # JSON: the WordPress post id, or the PR url
+    error: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    applied_at: Optional[datetime] = Field(default=None)
+    reverted_at: Optional[datetime] = Field(default=None)
+
+
 class AdminAuditLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     actor_id: Optional[int] = Field(default=None, foreign_key="user.id")  # None = system (webhook)

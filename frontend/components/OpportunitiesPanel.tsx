@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import FixPanel from "@/components/FixPanel";
 import { routes } from "@/lib/routes";
+import { fixLabel, isApplicable, useSiteFixes } from "@/lib/use-fixes";
 import type { Opportunity, OpportunitySeverity } from "@/lib/types";
 
 const SEVERITY_ORDER: OpportunitySeverity[] = ["high", "medium", "low"];
@@ -11,6 +13,7 @@ const SEVERITY_LABEL: Record<OpportunitySeverity, string> = { high: "High", medi
 
 export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
   const router = useRouter();
+  const { target, changes, reload: reloadFixes } = useSiteFixes(siteId);
   const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<"all" | OpportunitySeverity>("all");
@@ -32,6 +35,16 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
       cancelled = true;
     };
   }, [siteId]);
+
+  /** After a change is applied, both lists have moved: the change now has a
+   *  receipt, and the opportunity behind it is "applied" because the write
+   *  recorded an AppliedFix for the next audit to verify. */
+  async function refreshAfterFix() {
+    await Promise.all([
+      reloadFixes(),
+      api.getOpportunities(siteId).then(setOpportunities).catch(() => undefined),
+    ]);
+  }
 
   if (opportunities === null) {
     return null; // avoid a layout flash while the first load is in flight
@@ -124,6 +137,20 @@ export default function OpportunitiesPanel({ siteId }: { siteId: number }) {
               {isOpen && (
                 <div className="check-card-content">
                   {opp.suggested_fix && <div className="check-fix">{opp.suggested_fix}</div>}
+
+                  {opp.check_type && isApplicable(opp.check_type) && (
+                    <FixPanel
+                      pageId={opp.page_id}
+                      field={opp.check_type}
+                      label={fixLabel(opp.check_type)}
+                      target={target}
+                      changes={changes.filter(
+                        (c) => c.page_id === opp.page_id && c.field === opp.check_type,
+                      )}
+                      onChanged={refreshAfterFix}
+                    />
+                  )}
+
                   <a
                     className="check-goto"
                     onClick={(e) => {

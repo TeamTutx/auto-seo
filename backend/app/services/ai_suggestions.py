@@ -2,6 +2,7 @@
 suggestion type, each building its own prompt and calling
 get_ai_provider().complete.
 """
+import json
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -51,6 +52,17 @@ ALT_TEXT_SYSTEM_PROMPT = (
     "per image, in the same order, formatted exactly as '<number>. <alt "
     "text>' - concise (under 125 characters), descriptive, and not starting "
     "with \"image of\" or \"picture of\"."
+)
+
+STRUCTURED_DATA_SYSTEM_PROMPT = (
+    "You are a technical SEO adding schema.org structured data to a page. Reply "
+    "with ONLY a single JSON object - no markdown fences, no preamble, no "
+    "explanation. It must have @context \"https://schema.org\" and an @type that "
+    "genuinely fits what the page is (Article, BlogPosting, Product, FAQPage, "
+    "Organization, WebPage). Fill only properties the page content actually "
+    "supports: never invent an author, a date, a price, a rating or a review. "
+    "Structured data that describes something not visible on the page is a "
+    "manual-action risk, so when in doubt leave the property out."
 )
 
 INTERNAL_LINKING_SYSTEM_PROMPT = (
@@ -209,3 +221,37 @@ def generate_internal_linking_suggestions(
 
     provider = get_ai_provider()
     return provider.complete(INTERNAL_LINKING_SYSTEM_PROMPT, user_prompt, max_tokens=200).strip()
+
+
+def generate_structured_data(html: str, page_url: str, target_keyword: Optional[str]) -> Optional[str]:
+    """A JSON-LD block for a page that has none.
+
+    Returns None rather than a broken block when the model's reply is not valid
+    JSON: invalid structured data is worse than none, because Google reports it
+    as an error against the page. The output is re-serialised from the parsed
+    object, so what gets written is formatted consistently rather than however
+    the model happened to indent it."""
+    title, content = _extract_context(html)
+    keyword_line = f"Target keyword: {target_keyword}\n" if target_keyword else ""
+    user_prompt = (
+        f"Page URL: {page_url}\n"
+        f"Page title: {title}\n"
+        f"{keyword_line}"
+        f"Page content (truncated):\n{content}\n\n"
+        "Write the JSON-LD object now."
+    )
+
+    provider = get_ai_provider()
+    raw = provider.complete(STRUCTURED_DATA_SYSTEM_PROMPT, user_prompt, max_tokens=600).strip()
+
+    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict) or "@type" not in parsed:
+        return None
+    parsed.setdefault("@context", "https://schema.org")
+    return json.dumps(parsed, indent=2, ensure_ascii=False)

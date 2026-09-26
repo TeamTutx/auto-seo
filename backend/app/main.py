@@ -11,6 +11,7 @@ from app.routers import (
     admin,
     alerts,
     audits,
+    changes,
     auth,
     auth_google,
     billing,
@@ -69,6 +70,7 @@ app.include_router(keywords.router)
 app.include_router(suggestions.router)
 app.include_router(alerts.router)
 app.include_router(opportunities.router)
+app.include_router(changes.router)
 app.include_router(site_health.router)
 app.include_router(discovery.router)
 app.include_router(google_integration.router)

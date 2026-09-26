@@ -13,6 +13,7 @@ import SearchPresencePanel from "@/components/SearchPresencePanel";
 import ScoreGauge from "@/components/ScoreGauge";
 import SiteHealthPanel from "@/components/SiteHealthPanel";
 import SiteVerification from "@/components/SiteVerification";
+import WriteTargetPanel from "@/components/WriteTargetPanel";
 import type { Audit, IndexSummary, Page, Site } from "@/lib/types";
 
 interface PageRow {
@@ -286,6 +287,10 @@ function SiteOverviewPage() {
 
       <div style={{ marginBottom: 20 }}>
         <SiteVerification site={site} onVerified={loadAll} />
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <WriteTargetPanel site={site} />
       </div>
 
       <div className="overview-grid">

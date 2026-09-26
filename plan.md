@@ -709,7 +709,7 @@ will earn for years.
 
 ## Phase K — Apply the fix, not just suggest it
 
-**Status: planned**
+**Status: K1, K2 and K3 done. K4 and K5 not started.**
 
 The goal stated at the top of this file — "diagnosis and fix in one place" — is
 still only half met. Every surface that finds a problem now also writes the fix
@@ -804,6 +804,53 @@ the important part of this phase:
 The compiler is a new service that takes one suggestion plus the page's real
 HTML and returns a `ProposedChange` **or declines**. Declining is a first-class
 outcome: an action that won't compile is shown as advice, exactly as today.
+
+### What shipped, and what it cannot do
+
+Built as one change: the compiler and the change model (K1), WordPress (K2) and
+GitHub (K3), because an interface with one implementation is indistinguishable
+from that implementation.
+
+**Six fields, all of them head-level or attribute-level**: `title_tag`,
+`meta_description`, `canonical_tag`, `robots_meta_tag`, `structured_data`,
+`image_alt_text`. Nothing here edits prose. `heading_structure`, `readability`,
+`content_length`, `keyword_density` and `link_analysis` are refused by the
+compiler with a sentence the UI shows, and keep the suggestion flow they already
+had.
+
+**Known limits, found by running it rather than by reasoning about it:**
+
+- **GitHub replaces, it does not insert.** Finding the file works by searching
+  the repository for the *exact current value*, so a field the page does not have
+  yet - the commonest audit failure, a missing meta description - has no anchor
+  and is refused with an explanation. Image alt text is the exception: the `src`
+  anchors it, so it works either way. Adding a missing tag needs framework-aware
+  insertion, which is the obvious next increment.
+- **WordPress can only write what a plugin exposes.** `image_alt_text` is core
+  and always works. `title_tag`, `meta_description` and `canonical_tag` need
+  Yoast's or Rank Math's REST fields, which a connect-time probe detects per
+  site; a WordPress without them says so on connection and gets the copy path.
+  `robots_meta_tag` is deliberately never written through WordPress - each plugin
+  represents noindex differently and guessing wrong deindexes a page.
+- **Neither vendor has been exercised against a real install.** Both are covered
+  by mock-transport tests, and the whole loop was walked end to end against a
+  local mock WordPress (compile, diff, apply, the live page changing, rescan,
+  undo, the live page restored). A real WordPress with a real Yoast install is
+  still the outstanding confirmation, especially for the meta-description
+  capability. No pull request has been opened against a real repository.
+- **A compiled value can still fail its own check.** A model told to write
+  120-160 characters sometimes writes 113. That is not refused - the value is
+  usually better than nothing - but the diff says so before the user applies,
+  measured against `audit_engine`'s own constants so the two cannot drift. Found
+  by running the flow and watching the rescan come back at `warning` instead of
+  `pass`.
+
+Also fixed in passing, because this phase made it reachable: `cascade_delete`
+covered audits, checks and keyword ranks and **none of the seven tables added by
+later phases**. Postgres enforces those foreign keys and SQLite does not, so
+deleting any site that had ever been audited or crawled would have failed in
+production while passing every local test. It is now driven by a structural test
+that walks the metadata, so the next table to gain a `site_id` is caught.
 
 ### K2 — WordPress
 

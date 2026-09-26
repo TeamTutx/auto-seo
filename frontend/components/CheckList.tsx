@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import FixPanel from "@/components/FixPanel";
+import { useFixes, fixLabel, isApplicable } from "@/lib/use-fixes";
 import { useGeneratedResults } from "@/lib/use-generated-results";
 import type { AltTextSuggestion, Check } from "@/lib/types";
 
@@ -26,15 +28,33 @@ type ListSuggestable = {
   stored: string;
 };
 
-// Check types with an AI suggestion available, and the generator to call.
+/** Checks whose fix edits the page's *copy*, so Signal drafts it and a person
+ *  applies it. The fields Signal can set itself - title, meta description, alt
+ *  text, canonical, robots, structured data - are not here: they go through
+ *  FixPanel, which shows what is on the page now as well as what would replace
+ *  it, and can write it where the site is connected. Keep this split in step with
+ *  APPLICABLE_FIELDS in lib/use-fixes.ts and backend/app/models.py. */
 const SUGGESTABLE: Record<string, TextSuggestable | ListSuggestable> = {
-  meta_description: { label: "meta description", kind: "text", generate: api.suggestMetaDescription, stored: "meta_description" },
-  title_tag: { label: "title", kind: "text", generate: api.suggestTitleTag, stored: "title_tag" },
   heading_structure: { label: "heading outline", kind: "text", generate: api.suggestHeading, stored: "heading" },
   readability: { label: "simpler rewrite", kind: "text", generate: api.suggestReadability, stored: "readability" },
   link_analysis: { label: "internal link", kind: "text", generate: api.suggestInternalLinks, stored: "internal_links" },
-  image_alt_text: { label: "alt text", kind: "list", generate: api.suggestAltText, stored: "alt_text" },
 };
+
+/** Suggestions an earlier version of Signal charged for, so upgrading does not
+ *  hide something already paid for. Keyed by check type, valued by the
+ *  `generatedresult` kind it was filed under. */
+const PRIOR_SUGGESTION_KIND: Record<string, string> = {
+  title_tag: "title_tag",
+  meta_description: "meta_description",
+};
+
+/** A suggestion the user already paid for under the old flow, if there is one. */
+function priorSuggestion(stored: Record<string, unknown> | null, checkType: string): string | null {
+  const kind = PRIOR_SUGGESTION_KIND[checkType];
+  if (!kind || !stored) return null;
+  const payload = stored[kind] as { suggestion?: string } | undefined;
+  return payload?.suggestion ?? null;
+}
 
 function humanize(checkType: string): string {
   return checkType
@@ -55,7 +75,16 @@ interface SuggestionState {
   copied: string | null; // which item (src, or "text") was last copied
 }
 
-export default function CheckList({ checks, pageId }: { checks: Check[]; pageId: number }) {
+export default function CheckList({
+  checks,
+  pageId,
+  siteId,
+}: {
+  checks: Check[];
+  pageId: number;
+  siteId: number;
+}) {
+  const { target, changes, reload } = useFixes(pageId, siteId);
   const passing = checks.filter((c) => c.status === "pass").length;
   const [suggestions, setSuggestions] = useState<Record<string, SuggestionState>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
@@ -147,6 +176,9 @@ export default function CheckList({ checks, pageId }: { checks: Check[]; pageId:
         {checks.map((check) => {
           const icon = ICON[check.status];
           const suggestable = SUGGESTABLE[check.check_type];
+          // A passing check needs no fix; an applicable one gets the change flow,
+          // and only what is left falls back to a prose suggestion.
+          const applicable = isApplicable(check.check_type) && check.status !== "pass";
           const canSuggest = Boolean(suggestable) && check.status !== "pass";
           const suggestion = suggestions[check.check_type];
           const hasResult = Boolean(suggestion?.text) || Boolean(suggestion?.items);
@@ -166,6 +198,18 @@ export default function CheckList({ checks, pageId }: { checks: Check[]; pageId:
               {isOpen && (
                 <div className="check-card-content">
                   {check.suggested_fix && <div className="check-fix">{check.suggested_fix}</div>}
+
+                  {applicable && (
+                    <FixPanel
+                      pageId={pageId}
+                      field={check.check_type}
+                      label={fixLabel(check.check_type)}
+                      target={target}
+                      changes={changes.filter((c) => c.field === check.check_type)}
+                      onChanged={reload}
+                      priorSuggestion={priorSuggestion(stored, check.check_type)}
+                    />
+                  )}
 
                   {canSuggest && !hasResult && (
                     <div

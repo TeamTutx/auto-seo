@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/format";
 import { useSiteJobs } from "@/lib/use-site-jobs";
 import JobProgress from "@/components/JobProgress";
 import type {
+  Page,
   Site,
   VisibilityAdvice,
   VisibilityEngine,
@@ -28,6 +29,11 @@ function VisibilityPage() {
   const { refresh: refreshUser } = useAuth();
 
   const [site, setSite] = useState<Site | null>(null);
+  // Only so a piece of advice naming a page can link to that page's fixes. The
+  // fixes themselves deliberately live on the page, next to the audit: here there
+  // is no audit to say which fields are actually wrong, and offering all of them
+  // would invite paying to "fix" a title that was already fine.
+  const [pages, setPages] = useState<Page[]>([]);
   const [report, setReport] = useState<VisibilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,9 +69,15 @@ function VisibilityPage() {
   }
 
   const load = useCallback(async () => {
-    const [s, r] = await Promise.all([api.getSite(siteId), api.visibilityReport(siteId)]);
+    const [s, r, p] = await Promise.all([
+      api.getSite(siteId),
+      api.visibilityReport(siteId),
+      // Not having the page list is a missing link, not a broken report.
+      api.listPages(siteId).catch(() => [] as Page[]),
+    ]);
     setSite(s);
     setReport(r);
+    setPages(p);
   }, [siteId]);
 
   const onFinish = useCallback(
@@ -293,6 +305,8 @@ function VisibilityPage() {
                             <td colSpan={ENGINES.length + 2}>
                               <AdvicePanel
                                 advice={row.advice}
+                                trackedPageId={trackedPageId(pages, row.advice.target_page_url)}
+                                siteId={siteId}
                                 busy={advising === row.keyword}
                                 onRegenerate={() => suggest(row.keyword)}
                               />
@@ -376,14 +390,27 @@ function KeywordAction({
   );
 }
 
+/** The tracked page an advice row names, if Signal tracks it. Trailing slash and
+ *  scheme are ignored: a site's own advice routinely spells its URL differently
+ *  from the way the page was added. */
+function trackedPageId(pages: Page[], url: string | null): number | null {
+  if (!url) return null;
+  const key = (value: string) => value.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "").toLowerCase();
+  return pages.find((page) => key(page.url) === key(url))?.id ?? null;
+}
+
 function AdvicePanel({
   advice,
   busy,
   onRegenerate,
+  trackedPageId,
+  siteId,
 }: {
   advice: VisibilityAdvice;
   busy: boolean;
   onRegenerate: () => void;
+  trackedPageId: number | null;
+  siteId: number;
 }) {
   return (
     <div className="advice">
@@ -415,6 +442,12 @@ function AdvicePanel({
         {advice.target_page_url ? (
           <span>
             Page to change: <a href={advice.target_page_url} target="_blank" rel="noopener noreferrer">{advice.target_page_url}</a>
+            {trackedPageId !== null && (
+              <>
+                {" · "}
+                <Link href={routes.page(siteId, trackedPageId)}>Fixes Signal can apply to it →</Link>
+              </>
+            )}
           </span>
         ) : (
           <span>No existing page fits this keyword — the suggestions describe a new one.</span>

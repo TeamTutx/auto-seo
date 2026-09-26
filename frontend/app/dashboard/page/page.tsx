@@ -212,7 +212,7 @@ function PageDetailPage() {
       {!audit ? (
         <div className="panel empty-state" style={{ marginBottom: 32 }}>This page hasn&apos;t been audited yet.</div>
       ) : (
-        <CheckList checks={audit.checks} pageId={pageId} />
+        <CheckList checks={audit.checks} pageId={pageId} siteId={siteId} />
       )}
 
       <KeywordPanel pageId={pageId} />

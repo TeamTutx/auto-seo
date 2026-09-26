@@ -1,9 +1,13 @@
-"""Encrypt OAuth tokens at rest. A leaked Google refresh token is standing
-access to a user's real Search Console/Analytics data (unlike, say, a
-session cookie, it doesn't expire on its own), so GoogleConnection rows
-store ciphertext, not the raw token. Fernet key is derived from SECRET_KEY -
-no extra secret to provision, and it already implies "rotate this and
-sessions/tokens invalidate together."
+"""Encrypt credentials at rest.
+
+A leaked Google refresh token is standing access to a user's real Search
+Console/Analytics data (unlike, say, a session cookie, it doesn't expire on its
+own), so GoogleConnection rows store ciphertext, not the raw token. The same
+applies, and harder, to SiteWriteTarget: a WordPress application password or a
+GitHub token is standing *write* access to the user's site.
+
+Fernet key is derived from SECRET_KEY - no extra secret to provision, and it
+already implies "rotate this and sessions/tokens invalidate together."
 """
 import base64
 import hashlib
@@ -30,4 +34,4 @@ def decrypt_token(value: str) -> str:
     try:
         return _fernet().decrypt(value.encode()).decode()
     except InvalidToken as exc:
-        raise TokenDecryptError("Stored Google token could not be decrypted - SECRET_KEY may have changed.") from exc
+        raise TokenDecryptError("Stored credential could not be decrypted - SECRET_KEY may have changed.") from exc

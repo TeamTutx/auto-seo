@@ -516,3 +516,66 @@ export interface ProductVerifyResult {
   dodo_price_cents: number | null;
   dodo_currency: string | null;
 }
+
+/** --- applying fixes (Phase K in plan.md) --- */
+
+export type WriteTargetKind = "wordpress" | "github";
+
+/** A site's connection to where its content lives. `null` from the API means the
+ *  site is manual: changes are shown to copy, which is the default and not an
+ *  error state. */
+export interface WriteTarget {
+  kind: WriteTargetKind;
+  /** What the owner recognises it by - "blog.example.com" or "owner/repo". */
+  label: string;
+  status: "ok" | "failed" | "untested";
+  status_detail: string | null;
+  /** What a connect-time probe found this target can genuinely write. A field
+   *  absent from here gets a copy box, never an Apply button. */
+  capabilities: string[];
+  /** False for GitHub: the change is a pull request someone still has to merge. */
+  writes_immediately: boolean;
+  last_checked_at: string | null;
+  created_at: string;
+}
+
+export type ChangeStatus = "proposed" | "applied" | "reverted" | "failed";
+
+export interface ProposedChange {
+  id: number;
+  page_id: number | null;
+  field: string;
+  /** The image src for alt text, "" otherwise. */
+  subject: string;
+  before: string | null;
+  after: string;
+  status: ChangeStatus;
+  target_kind: WriteTargetKind | null;
+  receipt_url: string | null;
+  receipt_detail: string | null;
+  error: string | null;
+  created_at: string;
+  applied_at: string | null;
+  reverted_at: string | null;
+  stale: boolean;
+  /** Set when the value would still not satisfy the check that asked for it —
+   *  e.g. a 113-character meta description where the check wants 120–160. */
+  warning: string | null;
+}
+
+export interface ApplyChangesResult {
+  ok: boolean;
+  message: string;
+  target_kind: WriteTargetKind | null;
+  receipt_url: string | null;
+  changes: ProposedChange[];
+}
+
+export interface WriteTargetConnect {
+  kind: WriteTargetKind;
+  secret: string;
+  base_url?: string;
+  username?: string;
+  repo?: string;
+  branch?: string;
+}

@@ -6,16 +6,17 @@ import type {
   Alert,
   AltTextSuggestion,
   AppliedFix,
+  ApplyChangesResult,
   Audit,
   AuditDetail,
   BillingSummary,
   CompetitorResult,
   GAPageMetrics,
+  GSCIndexStatus,
+  GSCQueryRow,
+  GeneratedResult,
   GoogleAuthorizeResponse,
   GoogleConnectionStatus,
-  GSCIndexStatus,
-  GeneratedResult,
-  GSCQueryRow,
   IndexSummary,
   KeywordIdea,
   KeywordOpportunity,
@@ -26,6 +27,7 @@ import type {
   Page,
   Pricing,
   ProductVerifyResult,
+  ProposedChange,
   RankingActionPlan,
   SearchPresence,
   Site,
@@ -39,6 +41,8 @@ import type {
   VerificationMethod,
   VisibilityAdvice,
   VisibilityReport,
+  WriteTarget,
+  WriteTargetConnect,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -335,4 +339,40 @@ export const api = {
     dodo_product_id?: string | null;
   }) => request<AdminProduct>("/admin/products", { method: "POST", body: JSON.stringify(data) }),
   adminVerifyProduct: (id: number) => request<ProductVerifyResult>(`/admin/products/${id}/verify`, { method: "POST" }),
+  // --- applying fixes (Phase K in plan.md) ---
+
+  /** Null when the site has no connection - the normal state, not an error. */
+  getWriteTarget: (siteId: number) => request<WriteTarget | null>(`/sites/${siteId}/write-target`),
+  connectWriteTarget: (siteId: number, body: WriteTargetConnect) =>
+    request<WriteTarget>(`/sites/${siteId}/write-target`, { method: "PUT", body: JSON.stringify(body) }),
+  testWriteTarget: (siteId: number) =>
+    request<WriteTarget>(`/sites/${siteId}/write-target/test`, { method: "POST" }),
+  disconnectWriteTarget: (siteId: number) =>
+    request<void>(`/sites/${siteId}/write-target`, { method: "DELETE" }),
+
+  pageChanges: (pageId: number) => request<ProposedChange[]>(`/pages/${pageId}/changes`),
+  siteChanges: (siteId: number) => request<ProposedChange[]>(`/sites/${siteId}/changes`),
+  /** Metered where a model runs. The deterministic fields (canonical, robots)
+   *  cost nothing, and the API is the one that decides - so this always refreshes
+   *  the balance and the sidebar simply shows the same number when nothing moved. */
+  compileChange: (pageId: number, field: string) =>
+    request<ProposedChange[]>(`/pages/${pageId}/changes/compile`, {
+      method: "POST",
+      metered: true,
+      body: JSON.stringify({ field }),
+    }),
+  /** Free: the credit paid for the compile. */
+  applyChanges: (pageId: number, ids: number[]) =>
+    request<ApplyChangesResult>(`/pages/${pageId}/changes/apply`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+  revertChanges: (pageId: number, ids: number[]) =>
+    request<ApplyChangesResult>(`/pages/${pageId}/changes/revert`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+  discardChange: (pageId: number, changeId: number) =>
+    request<void>(`/pages/${pageId}/changes/${changeId}`, { method: "DELETE" }),
+
 };
