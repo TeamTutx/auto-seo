@@ -37,7 +37,7 @@ export default function FixPanel({
    *  upgrading does not silently hide something the user paid for. */
   priorSuggestion?: string | null;
 }) {
-  const [busy, setBusy] = useState<null | "compile" | "apply" | "revert">(null);
+  const [busy, setBusy] = useState<null | "compile" | "apply" | "revert" | "discard">(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -46,7 +46,7 @@ export default function FixPanel({
   const writable = canApply(target, field);
   const free = isFree(field);
 
-  async function run(kind: "compile" | "apply" | "revert", action: () => Promise<unknown>) {
+  async function run(kind: NonNullable<typeof busy>, action: () => Promise<unknown>) {
     setBusy(kind);
     setError(null);
     try {
@@ -142,12 +142,12 @@ export default function FixPanel({
               className="btn btn-ghost fix-btn"
               disabled={busy !== null}
               onClick={() =>
-                run("compile", async () => {
+                run("discard", async () => {
                   for (const change of proposed) await api.discardChange(pageId, change.id);
                 })
               }
             >
-              Discard
+              {busy === "discard" ? "Discarding…" : "Discard"}
             </button>
           </div>
         </div>
