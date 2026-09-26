@@ -13,11 +13,15 @@
 # easiest to fill in *after* the first deploy once both URLs are known - see
 # backend/README.md "Deploying (Render)".
 
-databases:
-  - name: signal-postgres
-    plan: free
-    region: singapore
-    postgresMajorVersion: "16"
+# No `databases:` block on purpose. Postgres lives on Aiven (free tier,
+# PostgreSQL 18, DigitalOcean Bangalore) since 2026-09-26, because Render's free
+# Postgres is deleted 30 days after it is created - this one was due to go on
+# 18 October. DATABASE_URL is therefore a pasted secret rather than a binding to
+# a database Render owns; see docs/DATABASE.md for the move and how to redo it.
+#
+# The old `signal-postgres` instance is not referenced here any more. Removing
+# it from the blueprint does not delete it - do that in the dashboard once the
+# new database has proven itself.
 
 services:
   - type: web
@@ -34,10 +38,11 @@ services:
     startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
+      # Aiven connection URI, including its password - so Render prompts for it
+      # rather than it living in this file. It must keep `?sslmode=require`:
+      # Aiven refuses plaintext connections.
       - key: DATABASE_URL
-        fromDatabase:
-          name: signal-postgres
-          property: connectionString
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES

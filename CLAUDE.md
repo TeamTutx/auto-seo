@@ -257,6 +257,15 @@ writing copy for it.
   schema/migration/billing change — that mode also enables the Postgres-only concurrency
   tests. The app seeds the default pack catalog on startup when the `product` table is
   empty, so a `create_all` dev DB isn't missing its packs.
+- **Postgres is on Aiven, not Render** (since 2026-09-26): free tier, PostgreSQL **18**,
+  DigitalOcean Bangalore, while the API runs in Singapore. Render's free Postgres is
+  deleted 30 days after creation, which is why it moved. Two consequences live in
+  `app/database.py`: the plan allows **20 connections and Aiven's agents hold ~13**, so the
+  pool is pinned small (2 + 3, not SQLAlchemy's 5 + 10) or a deploy's `alembic upgrade head`
+  can't get in; and `pool_pre_ping` is on because cross-region idle connections get dropped
+  and the failure would otherwise land on a user's request. `DATABASE_URL` is a pasted
+  secret now — `render.yaml` deliberately has no `databases:` block, so don't "fix" that by
+  re-adding one.
 - **`docs/DATABASE.md` is the runbook** for creating, moving or rebuilding the database.
   `alembic upgrade head` on an empty Postgres builds the whole schema; `alembic check`
   then proves the live tables match `app/models.py` and must stay clean — if it reports

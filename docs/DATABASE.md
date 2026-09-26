@@ -27,7 +27,8 @@ That's the whole migration. It creates every table, every index and the starting
 credit-pack catalog. Then verify it (§4) before sending traffic at it.
 
 > **URL scheme.** Use `postgresql://`, not `postgres://` — SQLAlchemy 2 rejects
-> the older scheme. Render hands out `postgres://`, so rewrite the prefix.
+> the older scheme. Some providers hand out `postgres://`; `app/database.py`
+> now rewrites that prefix itself, so either form works in `DATABASE_URL`.
 > Add `?sslmode=require` when connecting to a managed database from outside its
 > network.
 
@@ -92,6 +93,42 @@ Keep the old database around, read-only, until the new one has served real
 traffic for a day. Render's free Postgres **expires 30 days after it is
 created** and is then deleted — so this move is something you will have to do,
 on a deadline, whether you planned to or not.
+
+### How the Aiven move was actually done (2026-09-26)
+
+Production moved off Render's free Postgres (due for deletion on 18 October) to
+**Aiven free tier: PostgreSQL 18, DigitalOcean Bangalore, 1 CPU / 1 GB / 5 GB**.
+The procedure above assumes `pg_dump`/`pg_restore`; neither was installed and
+Docker wasn't running, so the copy ran through Python instead — worth recording
+because it needs no client tools and is re-runnable:
+
+1. `alembic upgrade head` against the empty Aiven database, then `alembic check`
+   to prove the schema matches the models. All 14 migrations ran unchanged on
+   PostgreSQL 18 against a source running 16.
+2. Copy the data table by table in `SQLModel.metadata.sorted_tables` order (that
+   is already foreign-key dependency order) with `COPY ... TO STDOUT` into
+   `COPY ... FROM STDIN`, skipping `alembic_version` because Alembic owns it.
+   Columns are listed explicitly so a schema mismatch fails loudly instead of
+   silently shifting columns.
+3. **Reset every sequence.** The ids arrive as literal values, so each table's
+   identity sequence is still at 1 and the next insert collides with row 1.
+   `setval(pg_get_serial_sequence(...), max(id))` per table.
+4. Verify: per-table row counts on both sides, the credit invariant (each user's
+   `credits_balance` equals the sum of their `credittransaction.delta`), and one
+   insert inside a transaction that is rolled back, to prove sequences are sane.
+
+The script is short enough to rewrite from this description; the important part
+is steps 3 and 4, which a naive `--data-only` dump also needs and usually skips.
+
+### Connection limits are the surprise
+
+Aiven's free plan allows **20 connections and its own agents hold about 13**, so
+roughly 7 are left for Signal. SQLAlchemy's default pool is 5 + 10 overflow per
+process, which would exhaust that under any concurrency — including the
+`alembic upgrade head` that runs on every deploy. `app/database.py` therefore
+pins a small pool and enables `pool_pre_ping`, which also matters because the API
+(Singapore) and the database (Bangalore) are now in different regions and idle
+connections get dropped in between.
 
 ### Starting over from nothing instead
 

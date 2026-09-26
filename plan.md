@@ -682,6 +682,27 @@ landing page now appends `?build=<timestamp>` so it can't happen again. The obvi
 dynamic and the export emits no `index.html` at all - caught by checking the build output
 rather than trusting "Compiled successfully".
 
+**Postgres moved to Aiven (2026-09-26).** Render's free Postgres is deleted 30 days after
+it is created, and this one was dated 18 October - a deadline, not a preference. It now
+runs on Aiven's free tier: PostgreSQL 18, DigitalOcean Bangalore.
+
+The schema went over by running the migrations, not by restoring a dump: all 14 ran
+unchanged on PostgreSQL 18 against a source on 16, and `alembic check` came back clean.
+The data went table by table in foreign-key order, with every identity sequence reset
+afterwards - the step a naive data-only dump skips, and the one that would otherwise make
+the very next insert collide with row 1. Verified three ways: per-table row counts on both
+sides (375 rows, every table matching), the credit invariant still holding on the copy
+(each balance equal to the sum of its ledger), and an insert rolled back to prove the
+sequences.
+
+The interesting constraint is connections. The free plan allows 20 and Aiven's own agents
+hold about 13, leaving roughly 7 for Signal, while SQLAlchemy's default pool is 5 + 10 per
+process. That would have exhausted the plan under mild concurrency - including the
+`alembic upgrade head` that runs on every deploy - so the pool is pinned to 2 + 3.
+`pool_pre_ping` went on at the same time: the API is in Singapore and the database is now
+in Bangalore, so idle connections get dropped between requests and without a pre-ping the
+first query after a quiet spell fails in front of a user.
+
 **Not built, deliberately:** search volumes, backlinks, and anything needing a crawled
 index. See `docs/COMPETITORS.md` — those are index plays that cost more than this product
 will earn for years.

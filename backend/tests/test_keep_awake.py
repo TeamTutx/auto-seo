@@ -5,6 +5,7 @@ No pytest-asyncio in this project, so the async pieces run under asyncio.run.
 import asyncio
 
 import httpx
+import pytest
 
 from app.config import settings
 from app.services import keep_awake
@@ -101,3 +102,54 @@ def test_the_interval_is_inside_renders_idle_window():
     """Render sleeps a free service after 15 idle minutes. The ping has to land
     well inside that, with room for one to fail."""
     assert keep_awake.INTERVAL_SECONDS <= 10 * 60
+
+
+# --- database URL handling (the Aiven move) ---
+
+@pytest.fixture
+def reload_database():
+    """Reload app.database under a patched URL, then put it back.
+
+    Without the restore, the module keeps an engine built from the fake URL and
+    whichever test runs next inherits it - a failure that depends on test order
+    and would be thoroughly confusing to debug."""
+    import importlib
+
+    from app import database
+
+    def _reload():
+        importlib.reload(database)
+        return database
+
+    yield _reload
+    importlib.reload(database)
+
+
+def test_the_legacy_postgres_scheme_is_accepted(monkeypatch, reload_database):
+    """Several providers still hand out `postgres://`; SQLAlchemy 2 only takes
+    `postgresql://`. Pasting the old form into DATABASE_URL used to take the API
+    down with an error naming neither the setting nor the provider."""
+    monkeypatch.setattr(settings, "database_url", "postgres://u:p@host:5432/db?sslmode=require")
+    database = reload_database()
+
+    assert database.DATABASE_URL.startswith("postgresql://")
+    assert database.DATABASE_URL.endswith("@host:5432/db?sslmode=require")
+
+
+def test_postgres_gets_a_pool_small_enough_for_the_plan(monkeypatch, reload_database):
+    """Aiven's free plan allows 20 connections and its own agents hold most of
+    them. SQLAlchemy's default pool (5 + 10 overflow) would exhaust what's left."""
+    monkeypatch.setattr(settings, "database_url", "postgresql://u:p@host:5432/db")
+    database = reload_database()
+
+    assert database.engine.pool.size() + database.engine.pool._max_overflow <= 7
+    assert database.engine.pool._pre_ping is True
+
+
+def test_sqlite_keeps_its_own_connect_args(monkeypatch, reload_database):
+    """Dev and the test suite run on SQLite, which takes none of the pool
+    settings and does need check_same_thread."""
+    monkeypatch.setattr(settings, "database_url", "sqlite:///./signal.db")
+    database = reload_database()
+
+    assert database.engine.dialect.name == "sqlite"
