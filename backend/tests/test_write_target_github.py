@@ -413,3 +413,65 @@ def test_two_real_sources_are_still_a_refusal():
 
     with pytest.raises(WriteTargetError, match="all look like sources"):
         _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+
+# --- the repository running ahead of the deployed site ---
+
+
+def test_a_merged_pull_request_not_yet_deployed_is_named_as_the_cause():
+    """The failure that looked like "this value is generated at build time".
+
+    Between merging a pull request and the site finishing its rebuild, the
+    repository holds the new value while the live page still serves the old one.
+    A fix written from that page therefore looks for a string the repository no
+    longer has - and the staleness check cannot see it, because the live page it
+    compares against is exactly the stale thing. A value Signal itself wrote
+    sitting in the tree is what tells the two apart."""
+    repo = _Repo(files={FILE: '<title>What the merged PR set</title>'})
+
+    with pytest.raises(WriteTargetError, match="has not rebuilt"):
+        _target(repo).write(
+            "https://acme.test/about",
+            [FieldWrite(
+                field="title_tag",
+                value="A third title",
+                before="Old Title",
+                previously_wrote=["What the merged PR set"],
+            )],
+        )
+
+
+def test_a_value_genuinely_absent_still_says_so():
+    """The other cause of the same symptom keeps its own message: nothing Signal
+    wrote is in the tree either, so this really is assembled at build time."""
+    repo = _Repo(files={FILE: "nothing relevant here"})
+
+    with pytest.raises(WriteTargetError, match="assembled at build time"):
+        _target(repo).write(
+            "https://acme.test/about",
+            [FieldWrite(
+                field="title_tag",
+                value="New",
+                before="Old Title",
+                previously_wrote=["Something Signal wrote that is also absent"],
+            )],
+        )
+
+
+def test_an_unmerged_pull_request_does_not_trigger_the_drift_message():
+    """An open pull request has changed nothing yet, so the repository still has
+    the original value and the write should simply work. Treating this as drift
+    would refuse every second fix until the first was merged."""
+    repo = _Repo(files={FILE: CONTENT})
+
+    _target(repo).write(
+        "https://acme.test/about",
+        [FieldWrite(
+            field="title_tag",
+            value="Another title",
+            before="Old Title",
+            previously_wrote=["A title from a pull request nobody merged"],
+        )],
+    )
+
+    assert repo.commits[0][0] == FILE

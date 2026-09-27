@@ -353,7 +353,16 @@ def apply_changes(
             ),
         )
 
-    writes = [FieldWrite(field=r.field, value=r.after, subject=r.subject, before=r.before) for r in rows]
+    writes = [
+        FieldWrite(
+            field=r.field,
+            value=r.after,
+            subject=r.subject,
+            before=r.before,
+            previously_wrote=_already_written(session, page, r),
+        )
+        for r in rows
+    ]
     try:
         receipt = target.write(page.url, writes)
     except WriteTargetError as exc:
@@ -434,6 +443,32 @@ def revert_changes(
         receipt_url=receipt.url,
         changes=[_read_change(r) for r in rows],
     )
+
+
+def _already_written(session: Session, page: Page, change: ProposedChange) -> List[str]:
+    """Values Signal has already applied to this field on this page.
+
+    A repository target needs them to tell two identical-looking failures apart:
+    a value that was never in a file, and one a merged pull request has already
+    replaced while the site has not rebuilt yet. The second is invisible from the
+    live page - which still shows the old value, so the staleness check passes -
+    and it is the normal state for the minutes between a merge and a deploy.
+    """
+    return [
+        row.after
+        for row in session.exec(
+            select(ProposedChange)
+            .where(
+                ProposedChange.page_id == page.id,
+                ProposedChange.field == change.field,
+                ProposedChange.subject == change.subject,
+                ProposedChange.status == ChangeStatus.applied.value,
+                ProposedChange.id != change.id,
+            )
+            .order_by(ProposedChange.applied_at.desc())
+        ).all()
+        if row.after
+    ]
 
 
 def _target_for(session: Session, site: Site):

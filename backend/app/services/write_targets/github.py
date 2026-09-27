@@ -307,6 +307,8 @@ class GitHubTarget(WriteTarget):
                         "repository, so there is nowhere to put the new one. Add the tag once by hand "
                         "and Signal can keep it up to date after that."
                     )
+                if write.before not in "\n".join(files.values()):
+                    self._explain_missing(write, files)
                 anchor = write.before
                 transform = lambda text, w=write: text.replace(w.before, w.value, 1)
 
@@ -332,6 +334,22 @@ class GitHubTarget(WriteTarget):
         if not changed:
             raise WriteTargetError("Nothing in the repository needed changing - the values already match.")
         return changed
+
+    def _explain_missing(self, write: FieldWrite, files: Dict[str, str]) -> None:
+        """Raise the right reason for a value the repository does not contain.
+
+        "Not in any file" and "a merged pull request already replaced it" look
+        identical from the live page, and the answers are opposites: one means
+        Signal can never write this field, the other means wait for the deploy.
+        A value Signal itself wrote sitting in the tree settles which it is."""
+        for earlier in write.previously_wrote:
+            if earlier and any(earlier in text for text in files.values()):
+                raise WriteTargetError(
+                    f"{self.repo} already has the {write.field.replace('_', ' ')} Signal wrote in an "
+                    "earlier pull request, but your site is still serving the one before it - it has "
+                    "not rebuilt since that pull request was merged. Wait for the deploy to finish, "
+                    "rescan the page, and write this fix again so it is based on what is published."
+                )
 
     def write(self, page_url: str, writes: List[FieldWrite]) -> Receipt:
         with self._client() as client:

@@ -54,6 +54,11 @@ class FieldWrite:
     value: str
     subject: str = ""  # the image src, for image_alt_text
     before: Optional[str] = None
+    #: Values Signal has already written to this field on this page. A
+    #: repository target uses them to tell "this value was never in a file" from
+    #: "a pull request changed it and the site has not rebuilt yet" - two causes
+    #: with the same symptom and completely different answers.
+    previously_wrote: List[str] = field(default_factory=list)
 
 
 class WriteTarget(ABC):

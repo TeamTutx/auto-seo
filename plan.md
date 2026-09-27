@@ -860,12 +860,24 @@ had.
   it is still reported, because claiming a value is absent when it plainly is not
   sends someone hunting for a problem that does not exist. Markdown is never
   discounted: a Hugo or Jekyll site's pages are markdown.
-- **Neither vendor has been exercised against a real install.** Both are covered
-  by mock-transport tests, and the whole loop was walked end to end against a
-  local mock WordPress (compile, diff, apply, the live page changing, rescan,
-  undo, the live page restored). A real WordPress with a real Yoast install is
-  still the outstanding confirmation, especially for the meta-description
-  capability. No pull request has been opened against a real repository.
+- **A repository target runs ahead of the site it builds.** The staleness check
+  compares against the *live page*, which is right for a CMS and blind for a
+  repository: between merging a pull request and the site finishing its rebuild,
+  the repo holds the new value while the page still serves the old one. A fix
+  written from that page passes the staleness check and then looks for a string
+  the repository no longer has. It surfaced as "that value is assembled at build
+  time" - the wrong diagnosis with the opposite answer. A `FieldWrite` now
+  carries what Signal has already written to that field, and finding one of those
+  in the tree names the real cause: wait for the deploy, rescan, write it again.
+- **GitHub is confirmed against a real repository; WordPress is not.** Pull
+  requests #1 (meta description) and #2 (title tag) were opened by Signal against
+  `TeamTutx/auto-seo`, reviewed, merged, and are live on signal-seo.in - the
+  first put the meta description check from `fail` to `pass` (154 chars). Each
+  diff was one line in `frontend/app/layout.tsx` with the adjacent metadata
+  untouched. WordPress remains mock-tested only: the whole loop was walked
+  against a local mock (compile, diff, apply, the live page changing, rescan,
+  undo, the live page restored), but a real install with a real Yoast is still
+  the outstanding confirmation, especially for the meta-description capability.
 - **A compiled value can still fail its own check.** A model told to write
   120-160 characters sometimes writes 113. That is not refused - the value is
   usually better than nothing - but the diff says so before the user applies,

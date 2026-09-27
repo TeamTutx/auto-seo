@@ -86,6 +86,14 @@ don't leave it stale.** Concretely:
   plainly in the repo is worse than naming an odd file. Markdown is never
   discounted — a Hugo or Jekyll site's pages *are* markdown. And never put a live
   production string in a test; that is what caused this.
+- **Staleness is measured against the live page, which a repository target can
+  legitimately be ahead of.** Between a merged pull request and the site's
+  rebuild, the repo holds the new value and the page still serves the old one, so
+  a fix written from that page passes the staleness check and then cannot find
+  its anchor. `FieldWrite.previously_wrote` carries what Signal already applied to
+  that field; `GitHubTarget._explain_missing` looks for those in the tree to tell
+  "never in a file" from "merged but not deployed" — identical symptoms, opposite
+  answers. Don't merge those two messages back together.
 - **A GitHub write finds the line, not the page.** The file is located by matching
   the *exact current value*, which avoids encoding any framework's
   routing — but a string in a shared layout serves every page that does not
