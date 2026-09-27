@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "Signal — SEO audits, rank tracking and AI fixes",
   description:
-    "Run on-page SEO audits, track keyword rankings against your competitors, and get AI-written fixes, with real Google Search Console data.",
+    "Discover how Signal's auto SEO tools streamline your SEO audits, rank tracking, and AI fixes, helping you improve your website's performance effortlessly.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
