@@ -7,7 +7,10 @@ which text to change is a refusal rather than a guess - because the failure mode
 is editing the wrong file in somebody's codebase.
 """
 import base64
+import io
 import json
+import tarfile
+import time
 
 import httpx
 import pytest
@@ -38,6 +41,19 @@ class _Repo:
         self.closed = []
         self.deleted_refs = []
 
+    def _tarball(self) -> bytes:
+        """What GitHub's tarball endpoint returns: a gzipped tar whose members
+        all sit under a <owner>-<repo>-<sha>/ directory."""
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as archive:
+            for name, text in self.files.items():
+                raw = text.encode()
+                info = tarfile.TarInfo(name=f"acme-site-abc1234/{name}")
+                info.size = len(raw)
+                info.mtime = int(time.time())
+                archive.addfile(info, io.BytesIO(raw))
+        return buf.getvalue()
+
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
         body = json.loads(request.content) if request.content else {}
@@ -46,10 +62,8 @@ class _Repo:
             return httpx.Response(200, json={
                 "full_name": REPO, "default_branch": "main", "permissions": {"push": self.push},
             })
-        if method == "GET" and path == "/search/code":
-            needle = request.url.params["q"].split('"')[1]
-            hits = [{"path": p} for p, text in self.files.items() if needle in text]
-            return httpx.Response(200, json={"items": hits})
+        if method == "GET" and path == f"/repos/{REPO}/tarball/main":
+            return httpx.Response(200, content=self._tarball(), headers={"Content-Type": "application/gzip"})
         if method == "GET" and path.startswith(f"/repos/{REPO}/contents/"):
             name = path.split("/contents/", 1)[1]
             if name not in self.files:
@@ -181,7 +195,7 @@ def test_a_field_the_page_does_not_have_is_refused_with_what_to_do():
 def test_text_that_appears_twice_in_a_file_is_refused():
     repo = _Repo(files={FILE: "<title>Old Title</title><!-- Old Title again -->"})
 
-    with pytest.raises(WriteTargetError, match="more than once"):
+    with pytest.raises(WriteTargetError, match="appears 2 times"):
         _target(repo).write(
             "https://acme.test/about", [FieldWrite(field="title_tag", value="New", before="Old Title")]
         )
@@ -199,7 +213,7 @@ def test_text_in_several_files_is_refused():
 def test_a_value_generated_at_build_time_is_explained_not_silently_skipped():
     repo = _Repo(files={FILE: "nothing relevant here"})
 
-    with pytest.raises(WriteTargetError, match="generated"):
+    with pytest.raises(WriteTargetError, match="assembled at build time"):
         _target(repo).write(
             "https://acme.test/about", [FieldWrite(field="title_tag", value="New", before="Old Title")]
         )
@@ -292,3 +306,39 @@ def test_the_pull_request_warns_that_a_shared_string_moves_every_page_using_it()
 
     body = repo.opened[0]["body"]
     assert "shared layout" in body and "override" in body
+
+
+def test_a_value_with_punctuation_is_found_where_code_search_missed_it():
+    """The regression that sent this from code search to the tarball. GitHub's
+    code search tokenises, so Signal's own title - an em dash and two commas -
+    matched nothing while it sat in frontend/app/layout.tsx the whole time.
+    Substring matching over the real tree has no query language to lose it in."""
+    title = "Signal — SEO audits, rank tracking and AI fixes"
+    repo = _Repo(files={"frontend/app/layout.tsx": f'  title: "{title}",\n'})
+
+    _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New Title", before=title)])
+
+    name, content, _ = repo.commits[0]
+    assert name == "frontend/app/layout.tsx"
+    assert 'title: "New Title",' in content
+
+
+def test_a_binary_file_in_the_repo_does_not_break_the_search():
+    repo = _Repo(files={FILE: CONTENT})
+    original_tarball = repo._tarball
+
+    def with_binary():
+        import io as _io, tarfile as _tar, time as _time
+        buf = _io.BytesIO()
+        with _tar.open(fileobj=buf, mode="w:gz") as archive:
+            for name, blob in [(FILE, CONTENT.encode()), ("logo.png", b"\x89PNG\r\n\x1a\n\xff\xfe")]:
+                info = _tar.TarInfo(name=f"acme-site-abc1234/{name}")
+                info.size = len(blob)
+                info.mtime = int(_time.time())
+                archive.addfile(info, _io.BytesIO(blob))
+        return buf.getvalue()
+
+    repo._tarball = with_binary
+    _target(repo).write("https://acme.test/about", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+    assert repo.commits[0][0] == FILE

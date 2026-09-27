@@ -257,7 +257,7 @@ def compile_change(
         require_credits(current_user)
 
     try:
-        compiled = change_service.compile_field(session, page, payload.field, html)
+        compiled = change_service.compile_field(session, page, payload.field, html, payload.keyword)
     except change_service.Unsupported as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     except change_service.NothingToChange as exc:

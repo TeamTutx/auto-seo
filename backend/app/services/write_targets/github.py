@@ -9,11 +9,20 @@ is False here - the change is proposed, and a human merges it.
 
 **Finding the file without knowing the framework.** Every static-site generator
 answers "which file produces this URL" differently, and encoding those
-conventions would mean being wrong for the next one. Instead Signal searches the
-repository for the *exact current value* it just read off the live page. A title
-string or a meta description is close to unique; it pins the file and the line
-without any knowledge of routing. Zero matches or several is a refusal, not a
-guess - editing the wrong file is worse than doing nothing.
+conventions would mean being wrong for the next one. Instead Signal looks through
+the repository for the *exact current value* it just read off the live page. A
+title string or a meta description is close to unique; it pins the file and the
+line without any knowledge of routing. Zero matches or several is a refusal, not
+a guess - editing the wrong file is worse than doing nothing.
+
+**It reads the repository tarball rather than asking code search.** The first
+version used `GET /search/code`, and it did not work on the first real repository
+it met: GitHub's code search tokenises, so `"Signal - SEO audits, rank tracking
+and AI fixes"` - an em dash and two commas - matched nothing, while the string sat
+in `frontend/app/layout.tsx` all along. Its index also only covers the default
+branch and lags behind pushes. `GET /repos/{repo}/tarball/{ref}` is one request,
+is exactly the tree being written to, and substring matching over it is byte
+comparison with no query language in between.
 
 **Searching by value locates the line, not the page.** A title in a shared layout
 serves every page that does not override it, so replacing it changes all of them
@@ -32,7 +41,9 @@ which Signal can maintain it forever. Image alt text is the exception and works
 either way, because the `src` is always there to anchor on - see _rewrite_image.
 """
 import base64
+import io
 import re
+import tarfile
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -42,7 +53,9 @@ import httpx
 from .base import FieldWrite, Receipt, TargetStatus, WriteTarget, WriteTargetError
 
 API = "https://api.github.com"
-TIMEOUT = 30.0
+TIMEOUT = 60.0  # a tarball download, not just a JSON call
+MAX_TARBALL_BYTES = 80_000_000
+MAX_FILE_BYTES = 2_000_000
 BRANCH_PREFIX = "signal/seo"
 
 
@@ -162,48 +175,70 @@ class GitHubTarget(WriteTarget):
         repo = self._json(client.get(f"/repos/{self.repo}"))
         return (repo or {}).get("default_branch") or "main"
 
-    def _find_file(self, client: httpx.Client, needle: str, branch: str) -> Tuple[str, str, str]:
-        """(path, sha, content) of the one file containing `needle` exactly once."""
-        found = self._json(
-            client.get("/search/code", params={"q": f'"{needle}" repo:{self.repo}', "per_page": 20})
-        )
-        paths = [
-            item["path"]
-            for item in ((found or {}).get("items") or [])
-            if isinstance(item, dict) and isinstance(item.get("path"), str)
-        ]
-        if not paths:
-            raise WriteTargetError(
-                f'Nothing in {self.repo} contains "{_short(needle)}". Either that value is generated '
-                "at build time rather than written in a file, or it lives on a branch GitHub has not "
-                "indexed (code search only covers the default branch)."
-            )
+    def _text_files(self, client: httpx.Client, branch: str) -> Dict[str, str]:
+        """Every UTF-8 text file in the repo at `branch`, keyed by path.
 
-        matches: List[Tuple[str, str, str]] = []
-        for path in paths:
-            try:
-                content, sha = self._read_file(client, path, branch)
-            except WriteTargetError:
-                continue  # indexed on the default branch but absent from ours
-            if content.count(needle) == 1:
-                matches.append((path, sha, content))
-            elif content.count(needle) > 1:
-                raise WriteTargetError(
-                    f'"{_short(needle)}" appears more than once in {path}. Signal will not guess '
-                    "which occurrence is the one on the page."
-                )
+        Downloaded once per write and reused for every field, so a pull request
+        touching three values costs one tarball rather than three searches."""
+        response = client.get(f"/repos/{self.repo}/tarball/{branch}")
+        if response.status_code >= 400:
+            self._json(response)  # raises with a readable reason
+
+        declared = response.headers.get("content-length")
+        if declared and int(declared) > MAX_TARBALL_BYTES:
+            raise WriteTargetError(
+                f"{self.repo} is {int(declared) // 1_000_000}MB compressed, larger than the "
+                f"{MAX_TARBALL_BYTES // 1_000_000}MB Signal will download to find a value in it."
+            )
+        if len(response.content) > MAX_TARBALL_BYTES:
+            raise WriteTargetError(f"{self.repo} is too large for Signal to search.")
+
+        files: Dict[str, str] = {}
+        try:
+            with tarfile.open(fileobj=io.BytesIO(response.content), mode="r:gz") as archive:
+                for member in archive:
+                    if not member.isfile() or member.size > MAX_FILE_BYTES:
+                        continue
+                    handle = archive.extractfile(member)
+                    if handle is None:
+                        continue
+                    try:
+                        text = handle.read().decode("utf-8")
+                    except (UnicodeDecodeError, OSError):
+                        continue  # a binary or unreadable file is never one we edit
+                    # GitHub wraps everything in <owner>-<repo>-<sha>/; strip it so
+                    # paths match what the Contents API expects.
+                    _, _, path = member.name.partition("/")
+                    if path:
+                        files[path] = text
+        except tarfile.TarError as exc:
+            raise WriteTargetError(f"Could not read {self.repo}'s contents from GitHub: {exc}")
+        return files
+
+    def _find_file(self, needle: str, files: Dict[str, str], branch: str) -> Tuple[str, str]:
+        """(path, occurrences) for the one file holding `needle`."""
+        matches = {path: text.count(needle) for path, text in files.items() if needle in text}
 
         if not matches:
             raise WriteTargetError(
-                f'GitHub\'s index lists {", ".join(paths[:3])} for "{_short(needle)}", but the value is '
-                f"not in any of them on {branch}. The index may be behind the branch."
+                f'Nothing in {self.repo} on {branch} contains "{_short(needle)}", so there is no line '
+                "to change. That usually means the value is assembled at build time rather than "
+                "written in a file."
             )
         if len(matches) > 1:
+            listed = ", ".join(sorted(matches)[:3])
             raise WriteTargetError(
-                f'"{_short(needle)}" is in {len(matches)} files ({", ".join(m[0] for m in matches[:3])}). '
-                "Signal will not guess which one produces this page."
+                f'"{_short(needle)}" is in {len(matches)} files ({listed}). Signal will not guess '
+                "which one produces this page."
             )
-        return matches[0]
+
+        path, count = next(iter(matches.items()))
+        if count > 1:
+            raise WriteTargetError(
+                f'"{_short(needle)}" appears {count} times in {path}. Signal will not guess which '
+                "occurrence is the one on the page."
+            )
+        return path, count
 
     def _read_file(self, client: httpx.Client, path: str, branch: str) -> Tuple[str, str]:
         data = self._json(client.get(f"/repos/{self.repo}/contents/{path}", params={"ref": branch}))
@@ -218,6 +253,7 @@ class GitHubTarget(WriteTarget):
     # --- the edits ---
 
     def _plan_edits(self, client: httpx.Client, writes: List[FieldWrite], branch: str) -> List[_FileEdit]:
+        files = self._text_files(client, branch)
         by_path: Dict[str, _FileEdit] = {}
         for write in writes:
             # The lambdas bind `write` explicitly: they happen to be called
@@ -239,9 +275,20 @@ class GitHubTarget(WriteTarget):
 
             edit = next((e for e in by_path.values() if anchor in e.updated), None)
             if edit is None:
-                path, sha, content = self._find_file(client, anchor, branch)
-                edit = by_path.get(path) or _FileEdit(path=path, sha=sha, original=content, updated=content)
-                by_path[path] = edit
+                path, _ = self._find_file(anchor, files, branch)
+                if path not in by_path:
+                    # Located from the tarball, but read and written through the
+                    # Contents API: that is the copy the commit is based on, and
+                    # it carries the blob sha the update needs.
+                    content, sha = self._read_file(client, path, branch)
+                    if anchor not in content:
+                        raise WriteTargetError(
+                            f'"{_short(anchor)}" is in {path} in the downloaded tree but not in the '
+                            f"copy GitHub is serving for {branch} - the branch moved while Signal was "
+                            "reading it. Try again."
+                        )
+                    by_path[path] = _FileEdit(path=path, sha=sha, original=content, updated=content)
+                edit = by_path[path]
             edit.updated = transform(edit.updated)
 
         changed = [e for e in by_path.values() if e.updated != e.original]

@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
+import FixPanel from "@/components/FixPanel";
+import { fixLabel, useFixes } from "@/lib/use-fixes";
 import { useGeneratedResults } from "@/lib/use-generated-results";
 import { LOCATION_OPTIONS, type CompetitorResult, type KeywordOpportunity, type KeywordRank } from "@/lib/types";
 import RankHistoryChart from "./RankHistoryChart";
@@ -14,7 +16,8 @@ function needsActionPlan(kw: KeywordRank): boolean {
   return kw.rank_position === null || kw.rank_position > LOW_RANK_THRESHOLD;
 }
 
-export default function KeywordPanel({ pageId }: { pageId: number }) {
+export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteId: number }) {
+  const { target, changes, reload: reloadFixes } = useFixes(pageId, siteId);
   const [keywords, setKeywords] = useState<KeywordRank[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -437,6 +440,28 @@ export default function KeywordPanel({ pageId }: { pageId: number }) {
                       }}
                     >
                       {actionPlanCache[kw.keyword]}
+                    </div>
+                  )}
+
+                  {!detailLoading && !detailError && tab === "action-plan" && actionPlanCache[kw.keyword] && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 2 }}>
+                        Of that plan, these are the parts Signal can set for you — written for
+                        &ldquo;{kw.keyword}&rdquo; rather than this page&apos;s usual target. The rest is
+                        content, which is yours to write.
+                      </div>
+                      {["title_tag", "meta_description"].map((field) => (
+                        <FixPanel
+                          key={field}
+                          pageId={pageId}
+                          field={field}
+                          label={fixLabel(field)}
+                          target={target}
+                          changes={changes.filter((c) => c.field === field)}
+                          onChanged={reloadFixes}
+                          keyword={kw.keyword}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>

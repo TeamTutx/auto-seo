@@ -856,6 +856,10 @@ class ProposedChangeRead(BaseModel):
 
 class CompileChangeRequest(BaseModel):
     field: str = Field(min_length=1, max_length=60)
+    #: Write this fix for a specific keyword rather than the page's own target -
+    #: what makes a keyword's action plan actionable. Optional on purpose, so an
+    #: older client that sends only `field` still behaves exactly as before.
+    keyword: Optional[str] = Field(default=None, max_length=200)
 
 
 class ChangeIdsRequest(BaseModel):

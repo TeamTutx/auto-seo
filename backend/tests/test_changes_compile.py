@@ -270,3 +270,59 @@ def test_the_warning_uses_the_audits_own_constants():
     exactly_min = "x" * audit_engine.META_DESC_MIN_LEN
     assert changes.value_warning("meta_description", just_under) is not None
     assert changes.value_warning("meta_description", exactly_min) is None
+
+
+# --- compiling for one keyword rather than the page's own target ---
+
+
+def test_a_keyword_overrides_the_pages_target_for_this_compile(db, page, monkeypatch):
+    """What makes a keyword's action plan actionable: the plan is advice about
+    ranking for that phrase, so the title it suggests is written for it."""
+    seen = {}
+
+    class _Capture(AIProvider):
+        name = "capture"
+
+        def complete(self, system_prompt, user_prompt, max_tokens=300):
+            seen["prompt"] = user_prompt
+            return "A title about auto seo"
+
+    monkeypatch.setattr(ai_suggestions, "get_ai_provider", lambda: _Capture())
+    with _session(db) as session:
+        changes.compile_field(session, page, "title_tag", HTML, keyword="auto seo")
+        session.commit()
+
+    assert "auto seo" in seen["prompt"]
+    assert "widgets" not in seen["prompt"], "the page's own keyword should not be the target here"
+
+
+def test_a_keyword_compile_replaces_the_pages_proposal_rather_than_competing(db, page, monkeypatch):
+    """A page has one title. Two live proposals for the same tag would be a
+    choice nobody can apply both halves of, so the keyword changes the wording
+    and not the slot."""
+    monkeypatch.setattr(ai_suggestions, "get_ai_provider", lambda: _Provider("From the audit"))
+    with _session(db) as session:
+        changes.compile_field(session, page, "title_tag", HTML)
+        session.commit()
+
+    monkeypatch.setattr(ai_suggestions, "get_ai_provider", lambda: _Provider("From the action plan"))
+    with _session(db) as session:
+        changes.compile_field(session, page, "title_tag", HTML, keyword="auto seo")
+        session.commit()
+        rows = session.exec(select(ProposedChange).where(ProposedChange.page_id == page.id)).all()
+
+        assert len(rows) == 1
+        assert rows[0].after == "From the action plan"
+        assert rows[0].origin == "keyword_action_plan"
+        assert rows[0].origin_ref == "auto seo", "which keyword it was written for is worth keeping"
+
+
+def test_alt_text_ignores_a_keyword(db, page, monkeypatch):
+    """Alt text describes an image; a keyword has nothing to contribute and
+    stuffing one in is the oldest bad habit in the field."""
+    monkeypatch.setattr(ai_suggestions, "get_ai_provider", lambda: _Provider("1. A steel widget"))
+    with _session(db) as session:
+        compiled = changes.compile_field(session, page, "image_alt_text", HTML, keyword="auto seo")
+        session.commit()
+        session.refresh(compiled.changes[0])
+        assert compiled.changes[0].after == "A steel widget"

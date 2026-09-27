@@ -355,11 +355,11 @@ export const api = {
   /** Metered where a model runs. The deterministic fields (canonical, robots)
    *  cost nothing, and the API is the one that decides - so this always refreshes
    *  the balance and the sidebar simply shows the same number when nothing moved. */
-  compileChange: (pageId: number, field: string) =>
+  compileChange: (pageId: number, field: string, keyword?: string) =>
     request<ProposedChange[]>(`/pages/${pageId}/changes/compile`, {
       method: "POST",
       metered: true,
-      body: JSON.stringify({ field }),
+      body: JSON.stringify(keyword ? { field, keyword } : { field }),
     }),
   /** Free: the credit paid for the compile. */
   applyChanges: (pageId: number, ids: number[]) =>

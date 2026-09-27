@@ -70,8 +70,15 @@ don't leave it stale.** Concretely:
   REST fields genuinely cannot set a meta description and a button that fails is
   worse than no button. `writes_immediately` is False for GitHub: a pull request
   is not a live change, and "applied" means something different.
-- **A GitHub write finds the line, not the page.** The file is located by searching
-  the repo for the *exact current value*, which avoids encoding any framework's
+- **A GitHub write locates the file by downloading the repository tarball**
+  (`GET /repos/{repo}/tarball/{ref}`, once per write) and substring-matching it.
+  **Not `GET /search/code`** - that was the first implementation and it failed on
+  the first real repo: code search tokenises, so Signal's own title (an em dash
+  and two commas) matched nothing while sitting in `frontend/app/layout.tsx`, and
+  its index only covers the default branch and lags pushes. The tarball is the
+  exact tree being written to, so matching it has no query language in between.
+- **A GitHub write finds the line, not the page.** The file is located by matching
+  the *exact current value*, which avoids encoding any framework's
   routing — but a string in a shared layout serves every page that does not
   override it, so replacing it moves all of them. Signal's own landing-page title
   is root metadata in `frontend/app/layout.tsx`, shared by fourteen pages. There
@@ -86,6 +93,13 @@ don't leave it stale.** Concretely:
   free** — the credit paid for the model call, and charging for undo is
   indefensible. Compiling a deterministic field (`canonical_tag`,
   `robots_meta_tag`) is free too, since no model runs.
+- **A compile can be scoped to one keyword.** `compile_field(..., keyword=...)`
+  writes the fix for that phrase rather than `page.target_keyword`, which is what
+  makes a keyword's action plan actionable. It changes the *wording only*: a page
+  has one title, so the keyword-scoped proposal occupies the same
+  (page, field, subject) slot and replaces any other. Alt text ignores it - alt
+  text describes an image, and keyword-stuffing one is the oldest bad habit in
+  the field.
 - **`before` always comes from the live page**, fetched at compile time, never
   from a stored audit — an audit can be days old, and writing over a value the
   owner has since changed loses their work rather than Signal's. `ProposedChange`

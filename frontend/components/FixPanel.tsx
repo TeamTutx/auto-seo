@@ -24,6 +24,7 @@ export default function FixPanel({
   changes,
   onChanged,
   priorSuggestion,
+  keyword,
 }: {
   pageId: number;
   field: string;
@@ -36,6 +37,9 @@ export default function FixPanel({
   /** A suggestion an earlier version of Signal already charged for, shown so that
    *  upgrading does not silently hide something the user paid for. */
   priorSuggestion?: string | null;
+  /** Write the fix for this keyword instead of the page's own target - used from
+   *  a keyword's action plan, where the advice is about ranking for that phrase. */
+  keyword?: string;
 }) {
   const [busy, setBusy] = useState<null | "compile" | "apply" | "revert" | "discard">(null);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +138,7 @@ export default function FixPanel({
             <button
               className="btn btn-ghost fix-btn"
               disabled={busy !== null}
-              onClick={() => run("compile", () => api.compileChange(pageId, field))}
+              onClick={() => run("compile", () => api.compileChange(pageId, field, keyword))}
             >
               {busy === "compile" ? "Rewriting…" : "Rewrite it"}
             </button>
@@ -167,7 +171,7 @@ export default function FixPanel({
           <button
             className="fix-cta"
             disabled={busy !== null}
-            onClick={() => run("compile", () => api.compileChange(pageId, field))}
+            onClick={() => run("compile", () => api.compileChange(pageId, field, keyword))}
           >
             {busy === "compile" ? "Working…" : `Write the ${label} fix`}
             <span className="fix-cost">{free ? "free" : "1 credit"}</span>

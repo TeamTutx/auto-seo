@@ -215,7 +215,7 @@ function PageDetailPage() {
         <CheckList checks={audit.checks} pageId={pageId} siteId={siteId} />
       )}
 
-      <KeywordPanel pageId={pageId} />
+      <KeywordPanel pageId={pageId} siteId={siteId} />
 
       {site.gsc_property && <GoogleSearchConsolePanel pageId={pageId} />}
       {site.ga_property_id && <GoogleAnalyticsPanel pageId={pageId} />}

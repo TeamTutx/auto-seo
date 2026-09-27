@@ -841,6 +841,15 @@ had.
   conventions - the thing this approach exists to avoid. So the pull request says
   so explicitly and names the file, and the human merging it is the check. It is
   the main reason a repository write is a pull request and not a commit.
+- **GitHub code search could not find the value, so it reads the tarball.** The
+  first version used `GET /search/code` and failed on the first real repository
+  it met: Signal's own title, `Signal - SEO audits, rank tracking and AI fixes`,
+  matched nothing because code search tokenises and the string carries an em dash
+  and two commas - while it sat in `frontend/app/layout.tsx` the whole time. The
+  index also only covers the default branch and lags pushes. It now downloads
+  `GET /repos/{repo}/tarball/{ref}` once per write and substring-matches the real
+  tree: one request (429KB for this repo, 227 text files), exactly the tree being
+  written to, and no query language to lose a character in.
 - **Neither vendor has been exercised against a real install.** Both are covered
   by mock-transport tests, and the whole loop was walked end to end against a
   local mock WordPress (compile, diff, apply, the live page changing, rescan,
@@ -907,6 +916,20 @@ every other job here.
 Every change is listed with its diff *before* anything runs. The default is
 review-then-apply. "Apply all without looking" is not the default even once the
 undo works, because the undo is per change and a surprise is still a surprise.
+
+### A keyword's action plan is partly applicable
+
+`POST /pages/{id}/changes/compile` takes an optional `keyword`, which writes the
+fix for that phrase instead of the page's own target. It is what makes the action
+plan on the keywords panel actionable: a plan for "auto seo" routinely ends with
+"optimise the title tag and meta description to include the keyword", and that
+line is a change Signal can make while the four above it are content.
+
+The keyword changes the wording, never the identity. A page has one title, so a
+title compiled for keyword A occupies the same slot as one compiled for keyword B
+and replaces it - two live proposals for one tag would be a choice nobody can
+apply both halves of. Which keyword it was written for is kept in
+`ProposedChange.origin_ref`, with `origin` set to `keyword_action_plan`.
 
 ### K5 — Content-level changes
 

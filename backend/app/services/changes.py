@@ -141,8 +141,19 @@ def compile_field(
     page: Page,
     field: str,
     html: str,
+    keyword: Optional[str] = None,
 ) -> Compiled:
     """Build the change(s) for one field. Raises Unsupported or NothingToChange.
+
+    `keyword` overrides the page's own target keyword for this one compile, which
+    is what makes a keyword's action plan actionable: the plan is advice about
+    ranking for *that* phrase, so the title it suggests should be written for it
+    rather than for whatever the page was set up to target.
+
+    It changes the wording, never the identity: a page has one title, so a title
+    compiled for keyword A occupies the same slot as one compiled for keyword B
+    and replaces it. Two live proposals for one tag would be a choice nobody can
+    apply both halves of.
 
     Does not commit: the caller writes the credit that paid for it in the same
     transaction, so a result can never exist without its charge or vice versa."""
@@ -152,7 +163,7 @@ def compile_field(
         raise Unsupported(f"Signal has no automatic fix for {field.replace('_', ' ')}.")
 
     if field == "image_alt_text":
-        return _compile_alt_text(session, page, html)
+        return _compile_alt_text(session, page, html)  # alt text describes images, not a keyword
 
     before = read_current(html, field)
 
@@ -161,19 +172,24 @@ def compile_field(
     elif field == "robots_meta_tag":
         after, credits = _robots(before), 0
     else:
-        after, credits = _generate(field, page, html), 1
+        after, credits = _generate(field, page, html, keyword), 1
 
-    return Compiled(changes=[_upsert(session, page, field, "", before, after)], credits=credits)
+    origin = "keyword_action_plan" if keyword else "audit_check"
+    return Compiled(
+        changes=[_upsert(session, page, field, "", before, after, origin=origin, origin_ref=keyword or field)],
+        credits=credits,
+    )
 
 
-def _generate(field: str, page: Page, html: str) -> str:
+def _generate(field: str, page: Page, html: str, keyword: Optional[str] = None) -> str:
+    target = keyword or page.target_keyword
     try:
         if field == "title_tag":
-            value = ai_suggestions.generate_title_tag(html, page.url, page.target_keyword)
+            value = ai_suggestions.generate_title_tag(html, page.url, target)
         elif field == "meta_description":
-            value = ai_suggestions.generate_meta_description(html, page.url, page.target_keyword)
+            value = ai_suggestions.generate_meta_description(html, page.url, target)
         elif field == "structured_data":
-            value = ai_suggestions.generate_structured_data(html, page.url, page.target_keyword)
+            value = ai_suggestions.generate_structured_data(html, page.url, target)
         else:  # pragma: no cover - APPLICABLE_FIELDS and this branch list are checked above
             raise Unsupported(f"No generator for {field}.")
     except AIProviderError as exc:
@@ -215,6 +231,8 @@ def _upsert(
     subject: str,
     before: Optional[str],
     after: str,
+    origin: str = "audit_check",
+    origin_ref: Optional[str] = None,
 ) -> ProposedChange:
     """Replace an outstanding proposal for the same field, but never an applied
     one. Recompiling is "give me a better suggestion"; an applied row is the
@@ -234,6 +252,8 @@ def _upsert(
         existing.after = after
         existing.status = ChangeStatus.proposed.value
         existing.error = None
+        existing.origin = origin
+        existing.origin_ref = origin_ref or field
         existing.created_at = datetime.utcnow()
         session.add(existing)
         return existing
@@ -243,8 +263,8 @@ def _upsert(
         page_id=page.id,
         field=field,
         subject=subject,
-        origin="audit_check",
-        origin_ref=field,
+        origin=origin,
+        origin_ref=origin_ref or field,
         before=before,
         after=after,
     )
