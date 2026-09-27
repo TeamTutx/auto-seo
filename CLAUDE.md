@@ -49,6 +49,26 @@ don't leave it stale.** Concretely:
   advice costs one credit rather than buying the same search twice. A keyword whose stored
   check predates that capture is refused with a "re-run the check" message rather than
   being given filler.
+- **A tracked search is a keyword, a country *and* a device** — `tracked_key()` in
+  `app/models.py`, mirrored by `keyOf()` in `KeywordPanel.tsx`. Keying by the
+  keyword alone is not a simplification, it is a data bug: "coffee beans" in
+  India and in the United States are different searches, so the second replaced
+  the first in the list, silently stopped being re-checked, drew both as one line
+  on the history chart, and made the opportunities list invent a
+  `keyword_rank_drop` for a fall that never happened. Anything grouping or
+  looking up ranks groups by all three.
+- **Countries are rows, not a constant.** `SearchLocation`, edited at
+  `/admin/locations`, served by `GET /locations` and fetched with `useLocations`.
+  They used to be a hardcoded array in the frontend bundle, so a new market meant
+  a deploy. Retire one with `active`, never delete it — readings store the code,
+  and a reading whose country cannot be named is worse than one from a market no
+  longer offered. The code itself is not editable, because changing it would
+  relabel history as measured somewhere else. Seeded on startup when the table is
+  empty, exactly like the credit packs, since dev and the test suite build their
+  schema with `create_all` and run no migration.
+- **A site has a market** (`Site.default_location_code`): what a visibility check
+  searches from and what the keyword form starts on. Visibility used to pass no
+  location at all, so every reading in the product was Indian and nothing said so.
 - **Signal can apply a fix, and the list of what it can apply is short on purpose.**
   `APPLICABLE_FIELDS` in `app/models.py` is the whole of it: `title_tag`,
   `meta_description`, `canonical_tag`, `robots_meta_tag`, `structured_data`,

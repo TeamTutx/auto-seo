@@ -19,6 +19,7 @@ from app.routers import (
     google_data,
     google_integration,
     keywords,
+    locations,
     opportunities,
     pages,
     pricing,
@@ -28,6 +29,7 @@ from app.routers import (
     webhooks,
 )
 from app.services import keep_awake
+from app.routers.locations import seed_default_locations
 from app.services.billing import seed_default_products
 
 
@@ -36,6 +38,7 @@ async def lifespan(app: FastAPI):
     create_db_and_tables()
     with Session(engine) as session:
         seed_default_products(session)
+        seed_default_locations(session)
 
     # Keeps Render's free plan from sleeping the API between visitors. Runs only
     # when there's a public URL to ping, i.e. on Render - see keep_awake.py.
@@ -67,6 +70,7 @@ app.include_router(sites.router)
 app.include_router(pages.router)
 app.include_router(audits.router)
 app.include_router(keywords.router)
+app.include_router(locations.router)
 app.include_router(suggestions.router)
 app.include_router(alerts.router)
 app.include_router(opportunities.router)

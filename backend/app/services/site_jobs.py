@@ -354,7 +354,10 @@ def run_visibility(session: Session, job: SiteJob, keyword: Optional[str] = None
     for i, keyword in enumerate(keywords, start=1):
         _spend(session, job, site.user_id, "visibility_google")
         session.commit()
-        results = visibility.check_google(keyword, site.domain)
+        # The site's own market, not the service default. Every reading in the
+        # product was previously Indian because this call passed no location and
+        # nothing recorded which country it meant.
+        results = visibility.check_google(keyword, site.domain, site.default_location_code)
 
         try:
             _spend(session, job, site.user_id, "visibility_ai")
@@ -366,6 +369,7 @@ def run_visibility(session: Session, job: SiteJob, keyword: Optional[str] = None
         for result in results:
             session.add(VisibilityCheck(
                 site_id=site.id, keyword=keyword, engine=result.engine,
+                location_code=site.default_location_code,
                 present=result.present, position=result.position, detail=result.detail,
                 context=json.dumps(result.context) if result.context else None,
             ))

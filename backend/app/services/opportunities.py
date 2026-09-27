@@ -2,7 +2,7 @@ from typing import Dict, List, Set, Tuple
 
 from sqlmodel import Session, select
 
-from app.models import AppliedFix, Audit, Check, CheckStatus, KeywordRank, OpportunityType, Page
+from app.models import AppliedFix, Audit, Check, CheckStatus, KeywordRank, OpportunityType, Page, tracked_key
 from app.schemas import Opportunity, OpportunitySeverity
 
 LOW_RANK_THRESHOLD = 10  # outside the first page of results
@@ -66,19 +66,24 @@ def _audit_opportunities(session: Session, page: Page, applied_keys: Set[Applied
     return opportunities
 
 
-def _ranks_by_keyword(session: Session, page_id: int) -> Dict[str, List[KeywordRank]]:
+def _ranks_by_tracked(session: Session, page_id: int) -> Dict[tuple, List[KeywordRank]]:
+    """Grouped by keyword *and* country and device, not by keyword alone.
+
+    Mixing countries here produced invented rank drops: a reading from India
+    followed by one from the United States looked like the same search falling
+    thirty places, and raised a keyword_rank_drop opportunity for it."""
     ranks = session.exec(
         select(KeywordRank).where(KeywordRank.page_id == page_id).order_by(KeywordRank.checked_at.desc())
     ).all()
-    by_keyword: Dict[str, List[KeywordRank]] = {}
+    grouped: Dict[tuple, List[KeywordRank]] = {}
     for rank in ranks:  # already newest first
-        by_keyword.setdefault(rank.keyword, []).append(rank)
-    return by_keyword
+        grouped.setdefault(tracked_key(rank), []).append(rank)
+    return grouped
 
 
 def _keyword_opportunities(session: Session, page: Page, applied_keys: Set[AppliedKey]) -> List[Opportunity]:
     opportunities = []
-    for history in _ranks_by_keyword(session, page.id).values():
+    for history in _ranks_by_tracked(session, page.id).values():
         latest = history[0]
         previous = history[1] if len(history) > 1 else None
 

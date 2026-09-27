@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/pricing", label: "Credit packs" },
+  { href: "/admin/locations", label: "Countries" },
 ];
 
 export default function AdminSidebar() {

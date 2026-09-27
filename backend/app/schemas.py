@@ -104,6 +104,9 @@ class SiteUpdate(BaseModel):
     # other "pick from a server-supplied list" field in this app.
     gsc_property: Optional[str] = None
     ga_property_id: Optional[str] = None
+    #: The country this site's visibility is measured in, and what the keyword
+    #: form starts on. Picked from GET /locations.
+    default_location_code: Optional[int] = Field(default=None, gt=0, lt=100_000)
 
     @field_validator("domain")
     @classmethod
@@ -120,6 +123,7 @@ class SiteRead(BaseModel):
     created_at: datetime
     gsc_property: Optional[str]
     ga_property_id: Optional[str]
+    default_location_code: int = 2356
 
 
 class SiteVerifyRequest(BaseModel):
@@ -903,3 +907,35 @@ class ApplyChangesResult(BaseModel):
     target_kind: Optional[str] = None
     receipt_url: Optional[str] = None
     changes: List[ProposedChangeRead] = []
+
+
+# --- search locations (countries) ---
+
+
+class SearchLocationRead(BaseModel):
+    id: int
+    code: int
+    label: str
+    active: bool
+    sort_order: int
+
+
+class SearchLocationCreate(BaseModel):
+    """`code` is the provider's location id — SerpApi and DataForSEO both use
+    Google's numbering, so 2356 is India and 2840 the United States. Getting it
+    wrong measures a real country, just not the one on the label, which is why
+    the admin page links to the provider's list rather than guessing."""
+    code: int = Field(gt=0, lt=100_000)
+    label: str = Field(min_length=2, max_length=60)
+    sort_order: int = Field(default=0, ge=0, le=10_000)
+
+
+class SearchLocationUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=2, max_length=60)
+    active: Optional[bool] = None
+    sort_order: Optional[int] = Field(default=None, ge=0, le=10_000)
+
+
+class SiteMarketUpdate(BaseModel):
+    """Which country this site is measured in by default."""
+    default_location_code: int = Field(gt=0, lt=100_000)

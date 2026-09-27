@@ -5,7 +5,8 @@ import { api, ApiError } from "@/lib/api";
 import FixPanel from "@/components/FixPanel";
 import { fixLabel, useFixes } from "@/lib/use-fixes";
 import { useGeneratedResults } from "@/lib/use-generated-results";
-import { LOCATION_OPTIONS, type CompetitorResult, type KeywordOpportunity, type KeywordRank } from "@/lib/types";
+import { locationLabel, useLocations } from "@/lib/use-locations";
+import type { CompetitorResult, KeywordOpportunity, KeywordRank } from "@/lib/types";
 import RankHistoryChart from "./RankHistoryChart";
 
 type DetailTab = "history" | "competitors" | "opportunities" | "action-plan";
@@ -16,12 +17,23 @@ function needsActionPlan(kw: KeywordRank): boolean {
   return kw.rank_position === null || kw.rank_position > LOW_RANK_THRESHOLD;
 }
 
+/** What identifies a tracked search in this component's state.
+ *
+ *  Keyword alone is not enough: the same phrase in two countries, or on desktop
+ *  and mobile, are different searches with different answers. Keying caches and
+ *  the expanded row by name meant opening one country showed the other's
+ *  history. Mirrors `tracked_key` in backend/app/models.py. */
+function keyOf(kw: KeywordRank): string {
+  return `${kw.keyword}|${kw.location_code}|${kw.device}`;
+}
+
 export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteId: number }) {
   const { target, changes, reload: reloadFixes } = useFixes(pageId, siteId);
   const [keywords, setKeywords] = useState<KeywordRank[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const { locations } = useLocations();
   const [locationCode, setLocationCode] = useState(2356);
   const [device, setDevice] = useState("desktop");
   const [submitting, setSubmitting] = useState(false);
@@ -114,12 +126,19 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
   }
 
   async function handleDelete(kw: KeywordRank) {
-    if (!confirm(`Stop tracking "${kw.keyword}"? This removes its rank history.`)) return;
+    const where = locationLabel(locations, kw.location_code);
+    if (
+      !confirm(
+        `Stop tracking "${kw.keyword}" in ${where}${kw.device === "mobile" ? " on mobile" : ""}? ` +
+          "This removes its rank history. Other countries for this keyword are kept.",
+      )
+    )
+      return;
     setError(null);
-    setDeletingKeyword(kw.keyword);
+    setDeletingKeyword(keyOf(kw));
     try {
-      await api.deleteKeyword(pageId, kw.keyword);
-      if (expanded === kw.keyword) setExpanded(null);
+      await api.deleteKeyword(pageId, kw.keyword, kw.location_code, kw.device);
+      if (expanded === keyOf(kw)) setExpanded(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not delete keyword.");
@@ -129,18 +148,18 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
   }
 
   async function toggleExpand(kw: KeywordRank) {
-    if (expanded === kw.keyword) {
+    if (expanded === keyOf(kw)) {
       setExpanded(null);
       return;
     }
-    setExpanded(kw.keyword);
+    setExpanded(keyOf(kw));
     setTab("history");
     setDetailError(null);
-    if (!historyCache[kw.keyword]) {
+    if (!historyCache[keyOf(kw)]) {
       setDetailLoading(true);
       try {
-        const history = await api.keywordHistory(pageId, kw.keyword);
-        setHistoryCache((prev) => ({ ...prev, [kw.keyword]: history }));
+        const history = await api.keywordHistory(pageId, kw.keyword, kw.location_code, kw.device);
+        setHistoryCache((prev) => ({ ...prev, [keyOf(kw)]: history }));
       } catch (err) {
         setDetailError(err instanceof ApiError ? err.message : "Could not load history.");
       } finally {
@@ -156,33 +175,33 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
     }
     setTab(nextTab);
     setDetailError(null);
-    if (nextTab === "competitors" && !competitorsCache[kw.keyword]) {
+    if (nextTab === "competitors" && !competitorsCache[keyOf(kw)]) {
       setDetailLoading(true);
       try {
         const competitors = await api.getCompetitors(pageId, kw.keyword, kw.location_code, kw.device);
-        setCompetitorsCache((prev) => ({ ...prev, [kw.keyword]: competitors }));
+        setCompetitorsCache((prev) => ({ ...prev, [keyOf(kw)]: competitors }));
       } catch (err) {
         setDetailError(err instanceof ApiError ? err.message : "Could not load competitors.");
       } finally {
         setDetailLoading(false);
       }
     }
-    if (nextTab === "opportunities" && !opportunitiesCache[kw.keyword]) {
+    if (nextTab === "opportunities" && !opportunitiesCache[keyOf(kw)]) {
       setDetailLoading(true);
       try {
         const opportunities = await api.getKeywordOpportunities(pageId, kw.keyword, kw.location_code, kw.device);
-        setOpportunitiesCache((prev) => ({ ...prev, [kw.keyword]: opportunities }));
+        setOpportunitiesCache((prev) => ({ ...prev, [keyOf(kw)]: opportunities }));
       } catch (err) {
         setDetailError(err instanceof ApiError ? err.message : "Could not load keyword opportunities.");
       } finally {
         setDetailLoading(false);
       }
     }
-    if (nextTab === "action-plan" && !actionPlanCache[kw.keyword]) {
+    if (nextTab === "action-plan" && !actionPlanCache[keyOf(kw)]) {
       setDetailLoading(true);
       try {
         const { plan } = await api.getRankingActionPlan(pageId, kw.keyword, kw.location_code, kw.device);
-        setActionPlanCache((prev) => ({ ...prev, [kw.keyword]: plan }));
+        setActionPlanCache((prev) => ({ ...prev, [keyOf(kw)]: plan }));
       } catch (err) {
         setDetailError(err instanceof ApiError ? err.message : "Could not load an action plan.");
       } finally {
@@ -253,7 +272,7 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
               fontSize: 12,
             }}
           >
-            {LOCATION_OPTIONS.map((opt) => (
+            {locations.map((opt) => (
               <option key={opt.code} value={opt.code}>
                 {opt.label}
               </option>
@@ -289,17 +308,23 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
           {keywords.map((kw) => (
             <div key={kw.id}>
               <div
-                className={`tracked-kw-row${expanded === kw.keyword ? " open" : ""}`}
+                className={`tracked-kw-row${expanded === keyOf(kw) ? " open" : ""}`}
                 onClick={() => toggleExpand(kw)}
               >
-                <div className="kw-name">{kw.keyword}</div>
+                <div className="kw-name">
+                  {kw.keyword}
+                  <span className="kw-where">
+                    {locationLabel(locations, kw.location_code)}
+                    {kw.device === "mobile" ? " · mobile" : ""}
+                  </span>
+                </div>
                 <div className="kw-rank">{kw.rank_position !== null ? `#${kw.rank_position}` : "Not found"}</div>
                 <div className="kw-chevron">▾</div>
                 <button
                   className="kw-delete"
                   title="Stop tracking this keyword"
                   aria-label="Stop tracking this keyword"
-                  disabled={deletingKeyword === kw.keyword}
+                  disabled={deletingKeyword === keyOf(kw)}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleDelete(kw);
@@ -315,7 +340,7 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
                 </button>
               </div>
 
-              {expanded === kw.keyword && (
+              {expanded === keyOf(kw) && (
                 <div className="kw-detail">
                   <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                     <button
@@ -353,16 +378,16 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
                   {detailLoading && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</div>}
                   {detailError && <div style={{ color: "var(--bad)", fontSize: 12 }}>{detailError}</div>}
 
-                  {!detailLoading && !detailError && tab === "history" && historyCache[kw.keyword] && (
-                    <RankHistoryChart history={historyCache[kw.keyword]} />
+                  {!detailLoading && !detailError && tab === "history" && historyCache[keyOf(kw)] && (
+                    <RankHistoryChart history={historyCache[keyOf(kw)]} />
                   )}
 
-                  {!detailLoading && !detailError && tab === "competitors" && competitorsCache[kw.keyword] && (
+                  {!detailLoading && !detailError && tab === "competitors" && competitorsCache[keyOf(kw)] && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {competitorsCache[kw.keyword].length === 0 ? (
+                      {competitorsCache[keyOf(kw)].length === 0 ? (
                         <div style={{ color: "var(--text-muted)", fontSize: 12 }}>No competitors found.</div>
                       ) : (
-                        competitorsCache[kw.keyword].map((c) => (
+                        competitorsCache[keyOf(kw)].map((c) => (
                           <a
                             key={c.position}
                             href={c.url}
@@ -380,14 +405,14 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
                     </div>
                   )}
 
-                  {!detailLoading && !detailError && tab === "opportunities" && opportunitiesCache[kw.keyword] && (
+                  {!detailLoading && !detailError && tab === "opportunities" && opportunitiesCache[keyOf(kw)] && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {opportunitiesCache[kw.keyword].length === 0 ? (
+                      {opportunitiesCache[keyOf(kw)].length === 0 ? (
                         <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
                           No keyword opportunities found.
                         </div>
                       ) : (
-                        opportunitiesCache[kw.keyword].map((opp) => {
+                        opportunitiesCache[keyOf(kw)].map((opp) => {
                           const alreadyTracked =
                             addedOpportunities.has(opp.keyword) ||
                             keywords?.some((k) => k.keyword.toLowerCase() === opp.keyword.toLowerCase());
@@ -428,7 +453,7 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
                     </div>
                   )}
 
-                  {!detailLoading && !detailError && tab === "action-plan" && actionPlanCache[kw.keyword] && (
+                  {!detailLoading && !detailError && tab === "action-plan" && actionPlanCache[keyOf(kw)] && (
                     <div
                       style={{
                         padding: "10px 12px",
@@ -439,11 +464,11 @@ export default function KeywordPanel({ pageId, siteId }: { pageId: number; siteI
                         whiteSpace: "pre-wrap",
                       }}
                     >
-                      {actionPlanCache[kw.keyword]}
+                      {actionPlanCache[keyOf(kw)]}
                     </div>
                   )}
 
-                  {!detailLoading && !detailError && tab === "action-plan" && actionPlanCache[kw.keyword] && (
+                  {!detailLoading && !detailError && tab === "action-plan" && actionPlanCache[keyOf(kw)] && (
                     <div style={{ marginTop: 12 }}>
                       <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 2 }}>
                         Of that plan, these are the parts Signal can set for you — written for

@@ -30,6 +30,7 @@ import type {
   ProductVerifyResult,
   ProposedChange,
   RankingActionPlan,
+  SearchLocation,
   SearchPresence,
   Site,
   SiteHealth,
@@ -133,7 +134,16 @@ export const api = {
   listSites: () => request<Site[]>("/sites"),
   createSite: (domain: string) => request<Site>("/sites", { method: "POST", body: JSON.stringify({ domain }) }),
   getSite: (id: number) => request<Site>(`/sites/${id}`),
-  updateSite: (id: number, data: { domain?: string; gsc_property?: string | null; ga_property_id?: string | null }) =>
+  updateSite: (
+    id: number,
+    data: {
+      domain?: string;
+      gsc_property?: string | null;
+      ga_property_id?: string | null;
+      /** The country this site's visibility is measured in. From GET /locations. */
+      default_location_code?: number;
+    },
+  ) =>
     request<Site>(`/sites/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteSite: (id: number) => request<void>(`/sites/${id}`, { method: "DELETE" }),
   verifySite: (id: number, method: VerificationMethod) =>
@@ -167,10 +177,23 @@ export const api = {
     }),
   recheckKeywords: (pageId: number) =>
     request<KeywordRank[]>(`/pages/${pageId}/keywords/recheck`, { method: "POST", metered: true }),
-  deleteKeyword: (pageId: number, keyword: string) =>
-    request<void>(`/pages/${pageId}/keywords?keyword=${encodeURIComponent(keyword)}`, { method: "DELETE" }),
-  keywordHistory: (pageId: number, keyword: string) =>
-    request<KeywordRank[]>(`/pages/${pageId}/keywords/history?keyword=${encodeURIComponent(keyword)}`),
+  /** Omitting country and device removes every market for this keyword, which is
+   *  what this route always meant. The UI passes them, so one country goes. */
+  deleteKeyword: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
+    request<void>(
+      `/pages/${pageId}/keywords?keyword=${encodeURIComponent(keyword)}` +
+        (locationCode !== undefined ? `&location_code=${locationCode}` : "") +
+        (device !== undefined ? `&device=${encodeURIComponent(device)}` : ""),
+      { method: "DELETE" },
+    ),
+  /** One tracked search's readings. Country and device are part of what makes a
+   *  search: without them the chart mixes markets, so a keyword tracked in two
+   *  countries reads as a rank collapse. */
+  keywordHistory: (pageId: number, keyword: string, locationCode: number, device: string) =>
+    request<KeywordRank[]>(
+      `/pages/${pageId}/keywords/history?keyword=${encodeURIComponent(keyword)}` +
+        `&location_code=${locationCode}&device=${encodeURIComponent(device)}`,
+    ),
   getCompetitors: (pageId: number, keyword: string, locationCode?: number, device?: string) =>
     request<CompetitorResult[]>(`/pages/${pageId}/keywords/competitors`, {
       method: "POST",
@@ -196,6 +219,14 @@ export const api = {
     request<AltTextSuggestion[]>(`/pages/${pageId}/suggestions/alt-text`, { method: "POST", metered: true }),
 
   listAlerts: () => request<Alert[]>("/alerts"),
+  /** The countries a search can be measured in — owner-managed, so this is
+   *  fetched rather than shipped in the bundle. */
+  listLocations: () => request<SearchLocation[]>("/locations"),
+  adminLocations: () => request<SearchLocation[]>("/admin/locations"),
+  adminCreateLocation: (body: { code: number; label: string; sort_order?: number }) =>
+    request<SearchLocation>("/admin/locations", { method: "POST", body: JSON.stringify(body) }),
+  adminUpdateLocation: (id: number, body: { label?: string; active?: boolean; sort_order?: number }) =>
+    request<SearchLocation>(`/admin/locations/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   markAlertRead: (id: number) => request<Alert>(`/alerts/${id}/read`, { method: "POST" }),
 
   // crawl, keyword discovery, visibility - all three start a background run and

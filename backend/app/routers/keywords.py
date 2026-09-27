@@ -1,11 +1,11 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import ACCOUNT_LIMITS, KeywordRank, User
+from app.models import ACCOUNT_LIMITS, KeywordRank, User, tracked_key
 from app.routers.pages import get_owned_page
 from app.schemas import (
     CompetitorResult,
@@ -33,14 +33,34 @@ def _all_ranks(session: Session, page_id: int) -> List[KeywordRank]:
     ).all()
 
 
-def _latest_per_keyword(ranks: List[KeywordRank]) -> List[KeywordRank]:
+def _latest_per_tracked(ranks: List[KeywordRank]) -> List[KeywordRank]:
+    """The newest reading for each tracked search.
+
+    Keyed by `tracked_key` - keyword, country and device together - not by the
+    keyword alone. "coffee beans" in India and in the United States are different
+    searches with different answers, and keying by name meant the second one
+    replaced the first in this list, stopped being re-checked with it, and drew
+    both as a single line on the history chart."""
     seen = set()
     latest = []
     for rank in ranks:  # already ordered newest first
-        if rank.keyword not in seen:
-            seen.add(rank.keyword)
+        key = tracked_key(rank)
+        if key not in seen:
+            seen.add(key)
             latest.append(rank)
     return latest
+
+
+def _matching(ranks: List[KeywordRank], keyword: str, location_code: Optional[int], device: Optional[str]):
+    """Rows for one tracked search. A missing country or device means *every* one
+    for this keyword, which is what the old keyword-only routes meant and keeps
+    an older client working."""
+    return [
+        r for r in ranks
+        if r.keyword == keyword
+        and (location_code is None or r.location_code == location_code)
+        and (device is None or r.device == device)
+    ]
 
 
 @router.post("/pages/{page_id}/keywords", response_model=KeywordRankRead, status_code=status.HTTP_201_CREATED)
@@ -52,8 +72,11 @@ def add_keyword(
 ):
     page = get_owned_page(session, page_id, current_user)
 
-    existing = _latest_per_keyword(_all_ranks(session, page.id))
-    is_new_keyword = payload.keyword not in {r.keyword for r in existing}
+    existing = _latest_per_tracked(_all_ranks(session, page.id))
+    # Tracking the same phrase in a second country is a new tracked search and
+    # counts against the limit: it is another paid lookup on every re-check.
+    wanted = (payload.keyword, payload.location_code, payload.device)
+    is_new_keyword = wanted not in {tracked_key(r) for r in existing}
 
     if is_new_keyword:
         max_keywords = ACCOUNT_LIMITS["max_keywords_per_page"]
@@ -79,33 +102,40 @@ def list_tracked_keywords(
     page_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
 ):
     page = get_owned_page(session, page_id, current_user)
-    return _latest_per_keyword(_all_ranks(session, page.id))
+    return _latest_per_tracked(_all_ranks(session, page.id))
 
 
 @router.get("/pages/{page_id}/keywords/history", response_model=List[KeywordRankRead])
 def keyword_history(
     page_id: int,
     keyword: str = Query(...),
+    location_code: Optional[int] = Query(None),
+    device: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    """One tracked search's readings, oldest first.
+
+    Country and device narrow it, and the UI always sends them: without that, a
+    keyword tracked in two countries drew one line mixing both, so a move from
+    #4 in India to #38 in the United States read as a rank collapse."""
     page = get_owned_page(session, page_id, current_user)
-    return [r for r in _all_ranks(session, page.id) if r.keyword == keyword][::-1]
+    return _matching(_all_ranks(session, page.id), keyword, location_code, device)[::-1]
 
 
 @router.delete("/pages/{page_id}/keywords", status_code=status.HTTP_204_NO_CONTENT)
 def delete_keyword(
     page_id: int,
     keyword: str = Query(...),
+    location_code: Optional[int] = Query(None),
+    device: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """Stop tracking a keyword entirely - removes every historical rank row
     for it on this page, not just the latest."""
     page = get_owned_page(session, page_id, current_user)
-    ranks = session.exec(
-        select(KeywordRank).where(KeywordRank.page_id == page.id, KeywordRank.keyword == keyword)
-    ).all()
+    ranks = _matching(_all_ranks(session, page.id), keyword, location_code, device)
     if not ranks:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keyword not tracked")
     for rank in ranks:
@@ -118,7 +148,7 @@ def recheck_keywords(
     page_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
 ):
     page = get_owned_page(session, page_id, current_user)
-    existing = _latest_per_keyword(_all_ranks(session, page.id))
+    existing = _latest_per_tracked(_all_ranks(session, page.id))
     if not existing:
         return []
 

@@ -1082,6 +1082,44 @@ notice to one customer from the admin panel. Anything sent to a list needs
 unsubscribe handling and a sending reputation, which is a different feature with
 legal obligations attached.
 
+## Phase M — More than one country
+
+**Status: done**
+
+Rank tracking always stored a location per measurement, and the UI always let you
+pick one of five countries, so this looked built. It was not: **a keyword was
+identified by its name alone**, so tracking the same phrase in a second country
+replaced the first in the list, stopped it being re-checked, drew both markets as
+a single line on the history chart, and raised a `keyword_rank_drop` opportunity
+for the imaginary fall between them. Numbers that looked real and were not, which
+is worse than a missing feature.
+
+The unit is now a *tracked search* - keyword, country and device together
+(`tracked_key`, mirrored by `keyOf` in the frontend). Device matters for the same
+reason countries do: desktop and mobile answer differently. Every group-by,
+cache, lookup and delete keys on all three, and the keyword row shows which
+market it is, because two rows reading "coffee beans" are otherwise
+indistinguishable.
+
+The country list moved out of the frontend bundle into `SearchLocation` rows,
+managed at `/admin/locations`. Adding a market is a form, not a deploy. Countries
+are retired rather than deleted and their codes are immutable, because readings
+point at the code: a reading whose country cannot be named is worse than one from
+a market no longer sold, and editing a code would relabel history as measured
+somewhere else. Seeded on startup when the table is empty, like the credit packs,
+since `create_all` databases run no migration.
+
+Visibility finally takes a location. It had a default of India in the service
+signature that no caller ever overrode, so every AI Overview and ChatGPT reading
+in the product was Indian and nothing recorded it. A site now has a market
+(`Site.default_location_code`), and `VisibilityCheck` stores where each reading
+was taken.
+
+**Found while building it:** `tools/tour/api.py` stubbed the AI vendor but not
+the rank vendor, so setting the tour up spent two real SerpApi searches. Both
+paid vendors are stubbed now - patched on every module that imports
+`get_rank_provider`, since each holds its own reference.
+
 ## Not yet scheduled
 
 - **Direct site-write integration** (WordPress/GitHub/etc.) — now planned as Phase K

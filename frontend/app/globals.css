@@ -2346,3 +2346,19 @@ tbody tr.clickable:hover {
   width: 100%;
   box-sizing: border-box;
 }
+
+/* Which country (and device) a tracked search was measured in. Without this two
+   rows for the same phrase in different markets are indistinguishable. */
+.kw-where {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  vertical-align: middle;
+  white-space: nowrap;
+}

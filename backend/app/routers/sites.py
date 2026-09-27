@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.deps import get_current_user
-from app.models import ACCOUNT_LIMITS, Site, User, VerificationMethod
+from app.models import ACCOUNT_LIMITS, SearchLocation, Site, User, VerificationMethod
 from app.schemas import SiteCreate, SiteRead, SiteUpdate, SiteVerificationResult, SiteVerifyRequest
 from app.services.cascade_delete import delete_site
 from app.services.site_verification import verify_dns_txt, verify_file_upload, verify_meta_tag
@@ -66,6 +66,20 @@ def update_site(
         site.gsc_property = payload.gsc_property or None
     if payload.ga_property_id is not None:
         site.ga_property_id = payload.ga_property_id or None
+    if payload.default_location_code is not None:
+        # Checked against the list rather than taken on trust: an unknown code
+        # measures a real country, just not one anything can name afterwards.
+        known = session.exec(
+            select(SearchLocation).where(
+                SearchLocation.code == payload.default_location_code, SearchLocation.active.is_(True)
+            )
+        ).first()
+        if known is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{payload.default_location_code} is not one of the countries Signal offers.",
+            )
+        site.default_location_code = payload.default_location_code
     session.add(site)
     session.commit()
     session.refresh(site)

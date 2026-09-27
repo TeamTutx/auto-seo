@@ -99,6 +99,11 @@ class Site(SQLModel, table=True):
     # way to guess which one maps to this site's domain.
     gsc_property: Optional[str] = Field(default=None)  # e.g. "sc-domain:example.com" or "https://example.com/"
     ga_property_id: Optional[str] = Field(default=None)  # GA4 numeric property id
+    # Which country this site is measured in by default: what a visibility run
+    # asks Google from, and what the keyword form starts on. Per site because one
+    # account can own a UK shop and an Indian one, and a rank is meaningless
+    # without knowing where it was measured.
+    default_location_code: int = Field(default=2356)
 
     user: Optional[User] = Relationship(back_populates="sites")
     pages: List["Page"] = Relationship(back_populates="site")
@@ -147,6 +152,16 @@ class Check(SQLModel, table=True):
     suggested_fix: Optional[str] = Field(default=None)
 
     audit: Optional[Audit] = Relationship(back_populates="checks")
+
+
+#: What makes two rank measurements the *same tracked search*. A keyword alone is
+#: not enough: "coffee beans" in India and in the United States are different
+#: searches with different answers, and so are desktop and mobile. Keying by name
+#: alone meant the second country silently replaced the first in the list, stopped
+#: being re-checked, and drew both countries as one line on the history chart -
+#: numbers that looked real and were not.
+def tracked_key(rank: "KeywordRank") -> tuple:
+    return (rank.keyword, rank.location_code, rank.device)
 
 
 class KeywordRank(SQLModel, table=True):
@@ -215,6 +230,27 @@ class AppliedFix(SQLModel, table=True):
     applied_at: datetime = Field(default_factory=datetime.utcnow)
     resolved: bool = Field(default=False)
     resolved_at: Optional[datetime] = Field(default=None)
+
+
+class SearchLocation(SQLModel, table=True):
+    """A country Signal can measure a search in.
+
+    A row rather than a constant so the owner can add one without a deploy - the
+    list used to be a hardcoded array in the frontend bundle, which meant every
+    new market was a code change. `code` is the provider's location id (SerpApi
+    and DataForSEO share Google's numbering: 2356 India, 2840 United States).
+
+    Retired with `active` rather than deleted, because historical KeywordRank and
+    VisibilityCheck rows point at the code and a reading whose country cannot be
+    named is worse than one from a country no longer offered."""
+    __table_args__ = (UniqueConstraint("code", name="uq_searchlocation_code"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    code: int = Field(index=True)
+    label: str
+    active: bool = Field(default=True)
+    sort_order: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class GoogleConnection(SQLModel, table=True):
@@ -395,6 +431,10 @@ class VisibilityCheck(SQLModel, table=True):
     site_id: int = Field(foreign_key="site.id", index=True)
     keyword: str
     engine: str
+    # Where the search was made. Previously fixed at India in the service
+    # default and never passed by the caller, so every reading was Indian and
+    # nothing said so.
+    location_code: int = Field(default=2356)
     present: bool = False
     position: Optional[int] = None  # organic rank, google engine only
     detail: Optional[str] = None  # citing URL, or the sentence that mentioned us

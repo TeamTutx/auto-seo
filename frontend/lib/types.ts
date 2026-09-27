@@ -18,6 +18,9 @@ export interface Site {
   created_at: string;
   gsc_property: string | null;
   ga_property_id: string | null;
+  /** The country this site's visibility is measured in, and what the keyword
+   *  form starts on. */
+  default_location_code: number;
 }
 
 export type IndexStatus = "indexed" | "not_indexed" | "unknown";
@@ -108,13 +111,21 @@ export interface LocationOption {
   label: string;
 }
 
-export const LOCATION_OPTIONS: LocationOption[] = [
-  { code: 2356, label: "India" },
-  { code: 2840, label: "United States" },
-  { code: 2826, label: "United Kingdom" },
-  { code: 2124, label: "Canada" },
-  { code: 2036, label: "Australia" },
-];
+/** The countries Signal can measure a search in, as rows the owner edits in
+ *  /admin rather than a constant here. This list used to be hardcoded, so adding
+ *  a market meant a code change and a deploy. Fetch it with `useLocations`. */
+export interface SearchLocation {
+  id: number;
+  code: number;
+  label: string;
+  active: boolean;
+  sort_order: number;
+}
+
+/** Shown only until GET /locations answers, and when it cannot be reached — a
+ *  keyword form with an empty country dropdown is unusable, and this is the
+ *  market the rest of the product defaults to anyway. */
+export const FALLBACK_LOCATION: LocationOption = { code: 2356, label: "India" };
 
 export type AlertType = "score_drop" | "new_fail" | "fix_verified" | "message";
 
