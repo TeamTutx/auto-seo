@@ -107,7 +107,7 @@ export default function AutoSeoToolsPage() {
           </Link>
           <div className="lp-nav-links">
             <Link href="/#features">Features</Link>
-            <Link href="/#how">How it works</Link>
+            <Link href="/how-it-works">How it works</Link>
             <Link href="/#plans">Pricing</Link>
           </div>
           <div className="lp-nav-actions">

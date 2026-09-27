@@ -1,0 +1,12 @@
+{
+  "name": "signal-tour-capture",
+  "private": true,
+  "type": "module",
+  "description": "Screenshot capture for /how-it-works. Deliberately its own package: Render runs `npm ci` in frontend/ on every static build, and Playwright there would download a browser each time for a script nobody runs during a deploy.",
+  "scripts": {
+    "capture": "node capture.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}

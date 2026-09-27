@@ -166,6 +166,19 @@ don't leave it stale.** Concretely:
   provisioned.
 - A concept gets renamed or removed (e.g. "Opportunities" becomes something
   else) → update the matching `lp-feature-tag` and copy.
+- **`/how-it-works` is the end-to-end walkthrough, and it is made of real
+  screenshots** — not the landing page's stylized recreations. That is the whole
+  point of it and also its risk: an image cannot be kept honest by reading the
+  code, so **when the dashboard UI changes, re-run `tools/tour/capture.mjs`** or
+  the page starts quietly showing a product that no longer exists. Its steps live
+  in `app/how-it-works/content.ts` so the visible walkthrough and the `HowTo`
+  structured data cannot drift. The capture is reproducible on purpose: a demo
+  site (`tools/tour/demo_site.py`, deliberately full of SEO faults), invented data
+  (`tools/tour/seed.py`, its own SQLite file — never the dev or production
+  database), and a stubbed AI vendor (`tools/tour/api.py`, because a screenshot is
+  not worth a real OpenAI bill). The audits in those shots are genuine output.
+  Playwright is in `tools/tour/package.json`, **not** `frontend/`: Render runs
+  `npm ci` there on every static build and would download a browser each time.
 - **`/auto-seo-tools` makes product claims too**, and is the more detailed of the two —
   it lists the audit checklist item by item, what Signal automates, and an explicit "what
   it can't automate" section (no link building, no search volumes, doesn't edit your

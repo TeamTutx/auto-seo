@@ -953,6 +953,19 @@ and replaces it - two live proposals for one tag would be a choice nobody can
 apply both halves of. Which keyword it was written for is kept in
 `ProposedChange.origin_ref`, with `origin` set to `keyword_action_plan`.
 
+### The walkthrough page
+
+`/how-it-works` shows the whole flow in nine steps with screenshots of the real
+dashboard, because the landing page's stylized recreations are good at conveying
+a feeling and bad at answering "what will I actually see". Its screenshots are
+captured by `tools/tour/capture.mjs` against a demo account, which is committed
+rather than run once: an image goes stale silently, so re-running the capture is
+the entire cost of keeping the page honest when the UI moves.
+
+The landing page was falsified by Phase K in two more places and both were fixed
+with it: step 3 of "how it works" said "apply the fix yourself, tell Signal", and
+the "alerts on verified fixes" strip item assumed a human had applied it.
+
 ### K5 — Content-level changes
 
 New sections and new pages, as **drafts a person places**. Rewriting someone's

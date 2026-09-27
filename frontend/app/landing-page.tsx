@@ -37,7 +37,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           </Link>
           <div className="lp-nav-links">
             <a href="#features">Features</a>
-            <a href="#how">How it works</a>
+            <Link href="/how-it-works">How it works</Link>
             <a href="#plans">Pricing</a>
             <Link href="/auto-seo-tools">Auto SEO</Link>
           </div>
@@ -666,7 +666,10 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           </div>
           <div>
             <h4>Alerts on verified fixes</h4>
-            <p>Mark a fix as applied and Signal alerts you in-app the moment your next scan confirms it worked.</p>
+            <p>
+              However a fix got applied — by Signal or by you — the next scan confirms whether the check
+              actually passes, and Signal alerts you in-app the moment it does.
+            </p>
           </div>
         </div>
         <div className="lp-strip-item">
@@ -719,7 +722,10 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           <div className="lp-step">
             <div className="lp-step-num">3</div>
             <h4>Fix it, mark it applied</h4>
-            <p>Apply the fix yourself, tell Signal, and the next scan confirms whether it actually worked.</p>
+            <p>
+              Signal writes the change, applies it to your CMS or opens a pull request, and the next scan
+              confirms it worked. Not connected? It writes the fix out for you to paste.
+            </p>
           </div>
         </div>
       </section>

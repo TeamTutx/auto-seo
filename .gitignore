@@ -12,3 +12,9 @@ dump.rdb
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Product-tour capture (tools/tour): its own node_modules and the throwaway
+# database the screenshots are taken against.
+/tools/tour/node_modules/
+/tools/tour/package-lock.json
+tour.db
