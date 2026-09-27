@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { PROOF_CHANGES, PROOF_SCORE, REPO_URL } from "./proof";
 import { formatRate, formatUsd, limitLabel } from "@/lib/format";
 import { SUPPORT_EMAIL } from "@/lib/site";
 import type { Pricing, PricingCreditPack } from "@/lib/types";
@@ -726,6 +727,70 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
               Signal writes the change, applies it to your CMS or opens a pull request, and the next scan
               confirms it worked. Not connected? It writes the fix out for you to paste.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Proof, not testimonials. Signal has three accounts and nobody to quote,
+          and an invented quote is the first thing a sceptical reader checks - a
+          reverse image search on a stock headshot ends a sale. What it does have
+          is a public record of fixing its own site, every part of which the
+          reader can verify: the pull requests are open on the repository, and
+          the values below are what view-source returns right now. Content and
+          the numbers live in app/proof.ts; re-check them when this page moves. */}
+      <section id="proof" className="lp-section lp-proof">
+        <div className="lp-section-head">
+          <div className="lp-eyebrow">Signal, on Signal</div>
+          <h2>It fixed this page. Here is the diff.</h2>
+          <p>
+            The site you are reading is audited by Signal. It found the title and the meta description,
+            wrote replacements, and opened two pull requests against{" "}
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer">its own public repository</a>.
+            Both were reviewed and merged. Nothing below is a mock-up — view the source of this page, or
+            open the pull requests.
+          </p>
+        </div>
+
+        <div className="lp-proof-grid">
+          {PROOF_CHANGES.map((change) => (
+            <div className="lp-proof-card" key={change.field}>
+              <div className="lp-proof-head">
+                <span className="lp-proof-field">{change.field}</span>
+                <a
+                  className="lp-proof-pr lp-mono"
+                  href={change.pr.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  #{change.pr.number} merged ↗
+                </a>
+              </div>
+              <div className="lp-rewrite-block before">
+                <div className="lp-rewrite-head">Before</div>
+                <div className="lp-rewrite-body">{change.before}</div>
+              </div>
+              <div className="lp-rewrite-block after">
+                <div className="lp-rewrite-head">Signal wrote</div>
+                <div className="lp-rewrite-body">{change.after}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="lp-proof-foot">
+          <div className="lp-proof-stat">
+            <span className="lp-proof-number lp-mono">{PROOF_SCORE.now}</span>
+            <span>this page&apos;s score today, out of 100</span>
+          </div>
+          <div className="lp-proof-stat">
+            <span className="lp-proof-number lp-mono">2</span>
+            <span>pull requests opened by Signal, reviewed and merged by a person</span>
+          </div>
+          <div className="lp-proof-stat">
+            <span className="lp-proof-number lp-mono">0</span>
+            <span>
+              changes it made without showing the before and after first — and every one can be undone
+            </span>
           </div>
         </div>
       </section>
