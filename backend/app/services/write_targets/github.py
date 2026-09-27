@@ -56,6 +56,32 @@ API = "https://api.github.com"
 TIMEOUT = 60.0  # a tarball download, not just a JSON call
 MAX_TARBALL_BYTES = 80_000_000
 MAX_FILE_BYTES = 2_000_000
+
+# Paths that can hold a page's text without being what produces the page: a test
+# asserting on the title, a committed build output, a vendored dependency. They
+# are only ever used to break a tie - if the sole match is in one of these, it is
+# still reported, because being wrong about that is better than pretending the
+# value does not exist.
+#
+# This is a heuristic, and a deliberately narrow one. "A file under tests/ does
+# not serve a web page" holds nearly everywhere; "a Next.js route lives in app/"
+# does not, which is why the search never assumes anything about routing.
+_IGNORED_SEGMENTS = {
+    "node_modules", ".git", "dist", "build", "out", ".next", ".nuxt", ".output",
+    "coverage", "vendor", "__pycache__", ".venv", "venv", "site-packages",
+    "test", "tests", "__tests__", "spec", "specs", "e2e", "fixtures", "__snapshots__",
+}
+_IGNORED_SUFFIXES = (".lock", ".min.js", ".min.css", ".map", ".snap")
+_TEST_BASENAME = re.compile(r"(^test_|_test\.|\.test\.|\.spec\.)")
+
+
+def _unlikely_source(path: str) -> bool:
+    """Whether this path is somewhere a page's text lives without producing it."""
+    segments = path.split("/")
+    if any(s in _IGNORED_SEGMENTS for s in segments[:-1]):
+        return True
+    name = segments[-1]
+    return name.endswith(_IGNORED_SUFFIXES) or bool(_TEST_BASENAME.search(name))
 BRANCH_PREFIX = "signal/seo"
 
 
@@ -225,11 +251,22 @@ class GitHubTarget(WriteTarget):
                 "to change. That usually means the value is assembled at build time rather than "
                 "written in a file."
             )
+
+        # A test asserting on the title, or a committed build output, holds the
+        # same string without being the thing that serves it. Discount those
+        # before giving up - but only as a tie-breaker, never to hide the only
+        # match there is.
         if len(matches) > 1:
-            listed = ", ".join(sorted(matches)[:3])
+            likely = {p: c for p, c in matches.items() if not _unlikely_source(p)}
+            if likely:
+                matches = likely
+
+        if len(matches) > 1:
+            listed = ", ".join(sorted(matches)[:4])
             raise WriteTargetError(
-                f'"{_short(needle)}" is in {len(matches)} files ({listed}). Signal will not guess '
-                "which one produces this page."
+                f'"{_short(needle)}" is in {len(matches)} files that all look like sources '
+                f"({listed}). Signal will not guess which one produces this page - remove the "
+                "duplicate, or change this value by hand."
             )
 
         path, count = next(iter(matches.items()))

@@ -850,6 +850,16 @@ had.
   `GET /repos/{repo}/tarball/{ref}` once per write and substring-matches the real
   tree: one request (429KB for this repo, 227 text files), exactly the tree being
   written to, and no query language to lose a character in.
+- **A repository quotes its own pages, so matches need a tie-breaker.** The very
+  next failure after the tarball fix: the regression test written for it quoted
+  Signal's live title, so pointing Signal at this repository matched two files and
+  refused. Paths that hold a page's text without producing it - anything under
+  `tests/`, `__tests__/`, `spec/`, `fixtures/`, plus `node_modules`, `dist`,
+  `build`, `out`, `.next`, `vendor`, lockfiles, minified and snapshot files - are
+  now discounted *when breaking a tie only*. If the sole match is in one of them
+  it is still reported, because claiming a value is absent when it plainly is not
+  sends someone hunting for a problem that does not exist. Markdown is never
+  discounted: a Hugo or Jekyll site's pages are markdown.
 - **Neither vendor has been exercised against a real install.** Both are covered
   by mock-transport tests, and the whole loop was walked end to end against a
   local mock WordPress (compile, diff, apply, the live page changing, rescan,

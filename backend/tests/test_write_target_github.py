@@ -310,10 +310,14 @@ def test_the_pull_request_warns_that_a_shared_string_moves_every_page_using_it()
 
 def test_a_value_with_punctuation_is_found_where_code_search_missed_it():
     """The regression that sent this from code search to the tarball. GitHub's
-    code search tokenises, so Signal's own title - an em dash and two commas -
-    matched nothing while it sat in frontend/app/layout.tsx the whole time.
-    Substring matching over the real tree has no query language to lose it in."""
-    title = "Signal — SEO audits, rank tracking and AI fixes"
+    code search tokenises, so a title carrying an em dash and two commas matched
+    nothing while sitting in the repository the whole time. Substring matching
+    over the real tree has no query language to lose it in.
+
+    Deliberately not Signal's own title. A test quoting the live string becomes a
+    second match the moment Signal is pointed at this very repository - which is
+    exactly what happened, and is the tie the tests below cover breaking."""
+    title = "Acme — Widgets, Gadgets and Gizmos"
     repo = _Repo(files={"frontend/app/layout.tsx": f'  title: "{title}",\n'})
 
     _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New Title", before=title)])
@@ -342,3 +346,70 @@ def test_a_binary_file_in_the_repo_does_not_break_the_search():
     _target(repo).write("https://acme.test/about", [FieldWrite(field="title_tag", value="New", before="Old Title")])
 
     assert repo.commits[0][0] == FILE
+
+
+# --- telling a source apart from something that merely quotes it ---
+
+
+def test_a_test_file_holding_the_same_string_does_not_block_the_real_one():
+    """Found by pointing Signal at its own repository: the regression test above
+    quoted the live title, so the scan matched two files and refused to guess.
+    A file under tests/ does not serve a web page."""
+    repo = _Repo(files={
+        "frontend/app/layout.tsx": '  title: "Old Title",\n',
+        "backend/tests/test_write_target_github.py": 'assert title == "Old Title"\n',
+    })
+
+    _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+    assert repo.commits[0][0] == "frontend/app/layout.tsx"
+    assert len(repo.commits) == 1
+
+
+@pytest.mark.parametrize("noise_path", [
+    "frontend/out/index.html",
+    "node_modules/pkg/readme.js",
+    "dist/bundle.min.js",
+    "src/__tests__/layout.spec.tsx",
+    "app/layout.test.tsx",
+])
+def test_build_output_and_vendored_code_are_discounted_too(noise_path):
+    repo = _Repo(files={
+        "frontend/app/layout.tsx": '  title: "Old Title",\n',
+        noise_path: "<title>Old Title</title>",
+    })
+
+    _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+    assert repo.commits[0][0] == "frontend/app/layout.tsx"
+
+
+def test_markdown_content_is_never_discounted():
+    """A Hugo or Jekyll site's pages *are* markdown, so treating .md as noise
+    would make this useless for a whole category of site."""
+    repo = _Repo(files={"content/about.md": "# Old Title\n"})
+
+    _target(repo).write("https://acme.test/about", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+    assert repo.commits[0][0] == "content/about.md"
+
+
+def test_a_match_only_in_a_test_file_is_still_reported():
+    """The discount breaks ties; it never hides the only match there is. Saying
+    "not found" for a value plainly in the repository would send someone hunting
+    for a problem that does not exist."""
+    repo = _Repo(files={"backend/tests/test_pages.py": 'assert title == "Old Title"\n'})
+
+    _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New", before="Old Title")])
+
+    assert repo.commits[0][0] == "backend/tests/test_pages.py"
+
+
+def test_two_real_sources_are_still_a_refusal():
+    repo = _Repo(files={
+        "frontend/app/layout.tsx": '  title: "Old Title",\n',
+        "frontend/app/other/layout.tsx": '  title: "Old Title",\n',
+    })
+
+    with pytest.raises(WriteTargetError, match="all look like sources"):
+        _target(repo).write("https://acme.test/", [FieldWrite(field="title_tag", value="New", before="Old Title")])

@@ -77,6 +77,15 @@ don't leave it stale.** Concretely:
   and two commas) matched nothing while sitting in `frontend/app/layout.tsx`, and
   its index only covers the default branch and lags pushes. The tarball is the
   exact tree being written to, so matching it has no query language in between.
+- **Discount test and build paths only to break a tie.** A repository routinely
+  quotes its own pages - a test asserting on the title, a committed `out/`. When
+  several files match, `_unlikely_source` in `write_targets/github.py` drops
+  anything under `tests/`/`__tests__/`/`spec/`/`fixtures/`, plus `node_modules`,
+  `dist`, `build`, `out`, `.next`, `vendor`, lockfiles and minified/snapshot
+  files. **Never** when it is the only match: saying "not found" for a value
+  plainly in the repo is worse than naming an odd file. Markdown is never
+  discounted — a Hugo or Jekyll site's pages *are* markdown. And never put a live
+  production string in a test; that is what caused this.
 - **A GitHub write finds the line, not the page.** The file is located by matching
   the *exact current value*, which avoids encoding any framework's
   routing — but a string in a shared layout serves every page that does not
