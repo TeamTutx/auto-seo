@@ -1,4 +1,5 @@
 import type {
+  AdminMessageResult,
   AdminProduct,
   AdminStats,
   AdminUserDetail,
@@ -312,8 +313,25 @@ export const api = {
     return request<AdminUserList>(`/admin/users?${qs.toString()}`);
   },
   adminUser: (id: number) => request<AdminUserDetail>(`/admin/users/${id}`),
-  adminAdjustCredits: (id: number, delta: number, note: string) =>
-    request<AdminUserDetail>(`/admin/users/${id}/credits`, { method: "POST", body: JSON.stringify({ delta, note }) }),
+  /** Message a customer: their alerts bell, and their inbox when SMTP is set up.
+   *  Resolves even when the email failed — the in-app half is the delivery, and
+   *  `email_status` says what happened to the copy. */
+  adminMessageUser: (id: number, body: { subject: string; body: string; send_email: boolean }) =>
+    request<AdminMessageResult>(`/admin/users/${id}/message`, { method: "POST", body: JSON.stringify(body) }),
+  /** `note` is the internal ledger reason. `notify` also tells the customer, and
+   *  `message` is what they read — leave it blank for a plain statement of the
+   *  change and their new balance. */
+  adminAdjustCredits: (
+    id: number,
+    delta: number,
+    note: string,
+    notify = false,
+    message?: string,
+  ) =>
+    request<AdminUserDetail>(`/admin/users/${id}/credits`, {
+      method: "POST",
+      body: JSON.stringify({ delta, note, notify, ...(message ? { message } : {}) }),
+    }),
   adminRecordPayment: (id: number, data: { amount_cents: number; credits: number; note: string }) =>
     request<AdminUserDetail>(`/admin/users/${id}/payments`, { method: "POST", body: JSON.stringify(data) }),
   adminProducts: () => request<AdminProduct[]>("/admin/products"),

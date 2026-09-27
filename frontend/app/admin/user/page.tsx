@@ -35,6 +35,26 @@ function AdminUserPage() {
     }
   }
 
+  /** Not `run`: the message endpoint answers with a delivery report rather than
+   *  the user, and a failed email must be reported as what it is - the message
+   *  arrived in-app, the copy did not - instead of a flat "sent" or "failed". */
+  async function sendMessage(subject: string, body: string, sendEmail: boolean): Promise<boolean> {
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.adminMessageUser(userId, { subject, body, send_email: sendEmail });
+      if (result.email_status === "failed" || result.email_status === "disabled") {
+        setError(result.detail);
+      } else {
+        setNotice(result.detail);
+      }
+      return true;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "That didn't work. Try again.");
+      return false;
+    }
+  }
+
   if (error && !detail) return <div className="form-error">{error}</div>;
   if (!detail) return <div className="loading-state">Loading…</div>;
 
@@ -86,10 +106,21 @@ function AdminUserPage() {
       </div>
 
       <div className="admin-grid-2 admin-section">
-        <CreditsForm onSubmit={(delta, note) => run(() => api.adminAdjustCredits(userId, delta, note), "Credits updated.")} />
+        <CreditsForm
+          onSubmit={(delta, note, notify, message) =>
+            run(
+              () => api.adminAdjustCredits(userId, delta, note, notify, message),
+              notify ? "Credits updated and the customer told." : "Credits updated.",
+            )
+          }
+        />
         <PaymentForm
           onSubmit={(data) => run(() => api.adminRecordPayment(userId, data), "Payment recorded.")}
         />
+      </div>
+
+      <div className="admin-section">
+        <MessageForm email={detail.email} onSubmit={sendMessage} />
       </div>
 
       <div className="admin-section">
@@ -238,9 +269,15 @@ function AdminUserPage() {
   );
 }
 
-function CreditsForm({ onSubmit }: { onSubmit: (delta: number, note: string) => Promise<boolean> }) {
+function CreditsForm({
+  onSubmit,
+}: {
+  onSubmit: (delta: number, note: string, notify: boolean, message?: string) => Promise<boolean>;
+}) {
   const [delta, setDelta] = useState("");
   const [note, setNote] = useState("");
+  const [notify, setNotify] = useState(false);
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const n = Number(delta);
   const valid = Number.isInteger(n) && n !== 0 && Math.abs(n) <= 10000 && note.trim().length >= 3;
@@ -249,9 +286,11 @@ function CreditsForm({ onSubmit }: { onSubmit: (delta: number, note: string) => 
     e.preventDefault();
     if (!valid) return;
     setBusy(true);
-    if (await onSubmit(n, note.trim())) {
+    if (await onSubmit(n, note.trim(), notify, message.trim() || undefined)) {
       setDelta("");
       setNote("");
+      setMessage("");
+      setNotify(false);
     }
     setBusy(false);
   }
@@ -280,6 +319,88 @@ function CreditsForm({ onSubmit }: { onSubmit: (delta: number, note: string) => 
           Apply
         </button>
       </div>
+
+      <label className="admin-check">
+        <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+        Tell the customer — in their alerts, and by email if SMTP is set up
+      </label>
+      {notify && (
+        <label style={{ display: "block", marginTop: 8 }}>
+          <span className="admin-hint">
+            What they read. Leave blank to send the change and their new balance. The reason above is
+            internal and is never shown to them.
+          </span>
+          <textarea
+            className="admin-input admin-input-full"
+            rows={2}
+            style={{ marginTop: 4, resize: "vertical" }}
+            placeholder="e.g. Sorry about the outage yesterday."
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+          />
+        </label>
+      )}
+    </form>
+  );
+}
+
+function MessageForm({
+  email,
+  onSubmit,
+}: {
+  email: string;
+  onSubmit: (subject: string, body: string, sendEmail: boolean) => Promise<boolean>;
+}) {
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [sendEmail, setSendEmail] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const valid = subject.trim().length >= 3 && body.trim().length >= 3;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    if (await onSubmit(subject.trim(), body.trim(), sendEmail)) {
+      setSubject("");
+      setBody("");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <form className="panel" onSubmit={submit}>
+      <div className="section-title" style={{ marginBottom: 12 }}>
+        Send a message
+      </div>
+      <label style={{ display: "block", marginBottom: 10 }}>
+        <span className="admin-hint">Subject</span>
+        <input
+          className="admin-input admin-input-full"
+          style={{ marginTop: 4 }}
+          placeholder="e.g. About your account"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+        />
+      </label>
+      <label style={{ display: "block", marginBottom: 10 }}>
+        <span className="admin-hint">Message</span>
+        <textarea
+          className="admin-input admin-input-full"
+          rows={4}
+          style={{ marginTop: 4, resize: "vertical" }}
+          placeholder={`What ${email} should read.`}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </label>
+      <label className="admin-check">
+        <input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)} />
+        Email it too — it is saved to their alerts either way
+      </label>
+      <button className="btn" style={{ marginTop: 12 }} disabled={!valid || busy}>
+        {busy ? "Sending…" : "Send"}
+      </button>
     </form>
   );
 }

@@ -2319,3 +2319,30 @@ tbody tr.clickable:hover {
   .tour-contents { grid-template-columns: 1fr; }
   .tour-step-head { align-items: flex-start; }
 }
+
+/* Admin checkbox rows (sending a customer a message, notifying on a credit
+   grant). Not in the .lp- namespace: this is the owner-only panel. */
+.admin-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.admin-check input {
+  flex: none;
+  margin-top: 1px;
+  accent-color: var(--accent);
+}
+
+/* A field that should fill its row. Without this an <input> is ~20 characters
+   wide and a <textarea> 20 columns - the browser default, which looks like a
+   broken layout next to a full-width label. */
+.admin-input-full {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}

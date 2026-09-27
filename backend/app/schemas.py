@@ -377,12 +377,33 @@ class GAPageMetrics(BaseModel):
 
 class AlertRead(BaseModel):
     id: int
-    page_id: int
-    site_id: int  # not on the Alert row itself - joined from Page so the frontend can link straight to the page
+    # Null for a message about the account rather than a page - there is nothing
+    # to link to, and borrowing an unrelated page would link somewhere wrong.
+    page_id: Optional[int] = None
+    site_id: Optional[int] = None  # not on the Alert row - joined from Page, when there is one
     alert_type: AlertType
+    subject: Optional[str] = None
     message: str
     read: bool
     created_at: datetime
+
+
+class AdminMessageRequest(BaseModel):
+    """A message the owner sends a customer from the admin panel."""
+    subject: str = Field(min_length=3, max_length=150)
+    body: str = Field(min_length=3, max_length=4000)
+    #: False writes the in-app alert only. Default True, because someone sending
+    #: a message generally means it to arrive.
+    send_email: bool = True
+
+
+class AdminMessageResult(BaseModel):
+    alert_id: int
+    #: None = no email attempted. "sent" | "failed" | "disabled".
+    email_status: Optional[str] = None
+    #: Exactly what happened, including why an email did not go, so the panel can
+    #: never imply a delivery it did not make.
+    detail: str
 
 
 # --- pricing (public) / billing (signed-in user) ---
@@ -697,7 +718,15 @@ class AdminPackSales(BaseModel):
 
 class CreditAdjustRequest(BaseModel):
     delta: int
+    #: The ledger reason. Internal: it is what an admin reads in the audit log,
+    #: not what the customer is told - see `message` below.
     note: str = Field(min_length=3, max_length=500)
+    #: Tell the customer, in-app and by email. Off by default: a correction the
+    #: owner is making to their own books is not always news for the customer.
+    notify: bool = False
+    #: What to say. Blank with `notify` on sends a plain statement of the change
+    #: and the new balance, which is the right message most of the time.
+    message: Optional[str] = Field(default=None, max_length=2000)
 
     @field_validator("delta")
     @classmethod

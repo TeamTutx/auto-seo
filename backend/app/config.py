@@ -40,6 +40,20 @@ class Settings(BaseSettings):
     # refresh on the next deploy like any other content change.
     render_deploy_hook_url: str = ""
 
+    # Outgoing email (app/services/mailer.py). Only the occasional account
+    # message from the owner goes through this, so it is plain SMTP rather than a
+    # vendor SDK - any mailbox or relay works. Unset means no email is sent and
+    # the admin panel says so, rather than implying a delivery it cannot make.
+    smtp_host: str = ""
+    smtp_port: int = 587  # 465 is treated as implicit TLS, anything else STARTTLS
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""  # the envelope sender, e.g. "signal@signal-seo.in"
+    smtp_from_name: str = "Signal"
+    smtp_reply_to: str = ""
+    smtp_starttls: bool = True
+    smtp_timeout: float = 15.0
+
     dodo_api_key: str = ""
     dodo_webhook_key: str = ""
     dodo_environment: str = "test_mode"  # "test_mode" | "live_mode"

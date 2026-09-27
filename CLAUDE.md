@@ -139,6 +139,20 @@ don't leave it stale.** Concretely:
   is fed by `app/routers/discovery.py`. What each action costs is listed in two places
   the user reads — `CREDIT_COSTS` on the landing page and the "What a credit buys" panel
   on `/dashboard/billing` — so a new metered action means editing both.
+- **The owner can message a customer, and the in-app alert is the delivery.**
+  `POST /admin/users/{id}/message`, or `notify: true` on a credit adjustment.
+  Both go through `app/services/notifications.py`, which writes an `Alert` and
+  *then* tries to email it — so SMTP being down, misconfigured or absent never
+  costs the customer the message; `email_status` ("sent" | "failed" | "disabled")
+  records what happened to the copy and the panel reports it honestly rather than
+  implying a delivery. **`Alert.page_id` is nullable** for exactly this, so
+  anything listing alerts must **outer**-join Page: an inner join silently drops
+  every account message instead of failing. The credit `note` is the internal
+  ledger reason and is deliberately never shown to the customer — the message
+  they read is written separately or generated from the delta and new balance.
+  Email is plain `smtplib` (`app/services/mailer.py`), sent synchronously with a
+  timeout because an admin acting on one user wants to be told "sent", not
+  "queued"; unset SMTP settings mean in-app only.
 - **Billing is built; what switches it on is configuration.** `billing_enabled` is simply
   `DODO_API_KEY and DODO_WEBHOOK_KEY` being set, and a pack is `purchasable` only when it
   also has a `dodo_product_id`. The live Dodo products (created 2026-09-25, one-time, USD,

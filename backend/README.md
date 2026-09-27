@@ -522,3 +522,38 @@ Steps:
 - Not provisioned on the Render deployment at all (see "Deploying (Render)"
   below) - deliberately deferred since Render has no free tier for
   Background Workers/Cron Jobs and nothing else uses Celery yet.
+
+## Sending email
+
+Signal sends one kind of email: an account notice from the owner to one customer,
+via the admin panel — a message, or a note attached to a credit grant. It uses
+plain SMTP (`app/services/mailer.py`), so any mailbox or relay works and there is
+no vendor SDK or API key involved.
+
+**With nothing configured, email is simply off.** The message still reaches the
+customer in their alerts, and the admin panel says the email did not go rather
+than implying it did. That is the intended fallback, not a broken state.
+
+To switch it on, set these on the API service (Render → Environment):
+
+| Variable | Example | Notes |
+| --- | --- | --- |
+| `SMTP_HOST` | `smtp.gmail.com` | Required |
+| `SMTP_PORT` | `587` | `465` is treated as implicit TLS; anything else uses STARTTLS |
+| `SMTP_USERNAME` | `you@yourdomain.com` | Omit for a relay that needs no auth |
+| `SMTP_PASSWORD` | — | **An app-specific password.** Gmail, Zoho and Outlook all reject the account password |
+| `SMTP_FROM` | `signal@signal-seo.in` | Required. Must be an address the server is allowed to send as |
+| `SMTP_FROM_NAME` | `Signal` | Display name |
+| `SMTP_REPLY_TO` | `support@signal-seo.in` | Optional |
+
+Two things worth knowing before pointing this at a consumer mailbox:
+
+- **Deliverability.** Mail sent as `@signal-seo.in` through an unrelated provider
+  is likely to be filtered unless SPF and DKIM for the domain name that provider.
+  Sending as an address at the provider's own domain avoids the problem entirely.
+- **Rate limits.** Consumer accounts cap daily sends (Gmail is 500/day, lower for
+  new accounts). Fine for account notices; not a basis for anything bulk.
+
+A failed send is never silent: it is recorded on the alert and shown in the admin
+panel with the reason, and `SMTPAuthenticationError` is reported specifically,
+because an app password is the fix nearly every time.

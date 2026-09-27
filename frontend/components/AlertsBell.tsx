@@ -48,6 +48,9 @@ export default function AlertsBell() {
         // non-critical - the alert just stays marked unread until next load
       }
     }
+    // A message from the owner is about the account, not a page. Navigating
+    // somewhere arbitrary would be worse than staying put, so it just opens.
+    if (alert.site_id === null || alert.page_id === null) return;
     setOpen(false);
     router.push(routes.page(alert.site_id, alert.page_id));
   }
@@ -105,12 +108,26 @@ export default function AlertsBell() {
               style={{
                 padding: "8px 10px",
                 borderRadius: 6,
-                cursor: "pointer",
+                cursor: alert.page_id === null ? "default" : "pointer",
                 background: alert.read ? "transparent" : "var(--surface-raised)",
                 marginBottom: 4,
               }}
             >
-              <div style={{ fontSize: 12, color: "var(--text)", wordBreak: "break-word" }}>{alert.message}</div>
+              {alert.subject && (
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
+                  {alert.subject}
+                </div>
+              )}
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text)",
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {alert.message}
+              </div>
               <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 3 }}>
                 {new Date(alert.created_at).toLocaleString()}
               </div>

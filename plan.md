@@ -1038,6 +1038,50 @@ mechanical fields to a connected CMS, with a one-click undo, on sites the owner
 has verified — and still does not decide what to publish, and still earns no
 links. That stays true, and the section keeps doing the job it exists for.
 
+## Phase L — Telling a customer something
+
+**Status: done**
+
+Granting credits from the admin panel already worked; what was missing was any
+way to tell the customer it had happened. `POST /admin/users/{id}/message` sends
+a message, and `notify: true` on a credit adjustment sends one about the grant.
+
+The design rule is that **the in-app alert is the delivery and the email is a
+copy of it**. `notifications.notify()` writes the `Alert` first and then attempts
+the email, recording `email_status` as "sent", "failed" or "disabled". Losing a
+message because a mail server was unreachable would be the worst possible failure
+for a feature whose whole job is to tell someone something, and the admin panel
+reports a failed send as exactly that rather than as a failed message.
+
+Email is plain `smtplib` rather than a vendor SDK: the only thing Signal sends is
+the occasional account notice, and a dependency plus an API key is a poor trade
+for that. Any mailbox or relay works. It sends synchronously with a timeout,
+because an admin acting on one user would rather wait a second and be told "sent"
+than be told "queued" and have to go and look.
+
+Two things this needed in the schema (migration 0016):
+
+- **`Alert.page_id` became nullable.** A message about an account is not about a
+  page, and forcing it to borrow one would have made the bell link somewhere
+  misleading. The alerts listing inner-joined Page, which would have hidden every
+  account message silently — that join is now an outer join, and a test pins it.
+- **A `message` value joined the `alerttype` enum.** Safe here in a way migration
+  0007 was not: the Python member is named `message` and valued `"message"`,
+  identical strings. SQLAlchemy stores an Enum column by member *name*, and a
+  name differing from its value is what broke every audit in production before.
+
+The migration also had to be written twice over for SQLite, which has no ALTER
+COLUMN and cannot add a column carrying a foreign key: Alembic rebuilds the
+table, refuses to copy a constraint it cannot name, and refuses to *add* an
+unnamed one. So the table definition is handed to `batch_alter_table` via
+`copy_from` and the new foreign key is named explicitly. Postgres needed none of
+that, and the dev database is SQLite — so this is not an academic path.
+
+**Deliberately not built:** marketing or bulk email. This sends one account
+notice to one customer from the admin panel. Anything sent to a list needs
+unsubscribe handling and a sending reputation, which is a different feature with
+legal obligations attached.
+
 ## Not yet scheduled
 
 - **Direct site-write integration** (WordPress/GitHub/etc.) — now planned as Phase K

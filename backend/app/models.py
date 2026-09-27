@@ -33,6 +33,12 @@ class AlertType(str, Enum):
     score_drop = "score_drop"
     new_fail = "new_fail"
     fix_verified = "fix_verified"
+    # From the owner rather than from a scan - a note attached to a credit grant,
+    # or a message sent from the admin panel. **The member name and its value are
+    # identical on purpose**: SQLAlchemy stores an Enum column by member *name*,
+    # and a mismatch between the two is what silently broke every audit in
+    # production once (see migration 0007, and CLAUDE.md).
+    message = "message"
 
 
 class OpportunityType(str, Enum):
@@ -161,16 +167,34 @@ class KeywordRank(SQLModel, table=True):
 
 
 class Alert(SQLModel, table=True):
-    """In-app notifications for scheduled audits (REQUIREMENTS.md §2.7, §3.1
-    "Scheduled automated audits + alerts" - paid-tier only). Email delivery
-    needs a Resend/SendGrid key we don't have yet, so this is the in-app
-    substitute for now - see app/workers/tasks.py."""
+    """Everything Signal tells a user about, in one place: a score that dropped,
+    a check that started failing, a fix confirmed working - and, since the owner
+    can now write to them directly, a message from the admin panel.
+
+    **`page_id` is optional.** Scan alerts are about a page; a message about
+    someone's account is not, and forcing one to borrow an unrelated page would
+    have made the alert link somewhere misleading. Anything reading alerts must
+    therefore outer-join Page, not inner-join it - an inner join silently drops
+    every account-level message rather than failing loudly.
+
+    Email delivery is best-effort and recorded here rather than in its own table:
+    the alert is the durable record, and `email_status` says what happened to the
+    copy that was posted. A failed send is never allowed to lose the message."""
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
-    page_id: int = Field(foreign_key="page.id", index=True)
+    page_id: Optional[int] = Field(default=None, foreign_key="page.id", index=True)
     alert_type: AlertType
+    #: Email subject. None for scan alerts, which are never emailed.
+    subject: Optional[str] = Field(default=None)
     message: str
     read: bool = Field(default=False)
+    #: The admin who sent it, for a message. None for anything a scan raised.
+    actor_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    #: None = no email was attempted. Otherwise "sent", "failed" or "disabled"
+    #: (no SMTP configured), so the admin panel can show what actually happened
+    #: instead of implying delivery it cannot promise.
+    email_status: Optional[str] = Field(default=None)
+    email_error: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

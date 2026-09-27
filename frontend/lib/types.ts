@@ -116,16 +116,28 @@ export const LOCATION_OPTIONS: LocationOption[] = [
   { code: 2036, label: "Australia" },
 ];
 
-export type AlertType = "score_drop" | "new_fail" | "fix_verified";
+export type AlertType = "score_drop" | "new_fail" | "fix_verified" | "message";
 
 export interface Alert {
   id: number;
-  page_id: number;
-  site_id: number;
+  /** Null for a message about the account rather than a page — there is nothing
+   *  to link to, so the bell must not try. */
+  page_id: number | null;
+  site_id: number | null;
   alert_type: AlertType;
+  /** Set only on a message from the owner; scan alerts have none. */
+  subject: string | null;
   message: string;
   read: boolean;
   created_at: string;
+}
+
+export interface AdminMessageResult {
+  alert_id: number;
+  /** Null = no email attempted. "sent" | "failed" | "disabled". */
+  email_status: "sent" | "failed" | "disabled" | null;
+  /** Exactly what happened, including why an email did not go. */
+  detail: string;
 }
 
 export type OpportunityType =

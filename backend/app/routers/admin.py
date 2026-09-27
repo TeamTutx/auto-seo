@@ -14,7 +14,7 @@ from sqlmodel import Session, func, select
 from app.config import settings
 from app.database import get_session
 from app.deps import is_admin_user, require_admin
-from app.services import site_rebuild
+from app.services import notifications, site_rebuild
 from app.models import (
     AdminAuditLog,
     Audit,
@@ -30,6 +30,8 @@ from app.models import (
 )
 from app.schemas import (
     AdminAuditRow,
+    AdminMessageRequest,
+    AdminMessageResult,
     AdminLedgerRow,
     AdminPackSales,
     AdminPaymentRow,
@@ -319,9 +321,50 @@ def adjust_credits(
             detail=f"{user.email} has {user.credits_balance} credits - can't remove {abs(payload.delta)}.",
         )
     log_admin_action(session, admin.id, "credits_adjusted", user.id, {"delta": payload.delta, "note": payload.note})
+
+    if payload.notify:
+        # refresh first: the customer is told their new balance, so it has to be
+        # the balance the grant actually produced.
+        session.refresh(user)
+        subject, body = notifications.credit_grant_message(payload.delta, user.credits_balance, payload.message)
+        notifications.notify(session, user, subject, body, actor_id=admin.id)
+
     session.commit()
     session.refresh(user)
     return _detail(session, user)
+
+
+@router.post("/users/{user_id}/message", response_model=AdminMessageResult, status_code=status.HTTP_201_CREATED)
+def message_user(
+    user_id: int,
+    payload: AdminMessageRequest,
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """Send a customer a message: in their alerts bell, and by email if SMTP is
+    configured.
+
+    Answers 201 whether or not the email went out, because the message *was*
+    delivered - to the app, which is the durable half. `email_status` and
+    `detail` say what happened to the copy, so the panel can report a failed send
+    without pretending the whole thing failed."""
+    user = _get_user_or_404(session, user_id)
+    alert = notifications.notify(
+        session, user, payload.subject, payload.body, actor_id=admin.id, send_email=payload.send_email
+    )
+    log_admin_action(
+        session, admin.id, "message_sent", user.id,
+        {"subject": payload.subject, "email_status": alert.email_status},
+    )
+    session.commit()
+    session.refresh(alert)
+
+    detail = f"Saved to {user.email}'s alerts."
+    if alert.email_status == "sent":
+        detail = f"Emailed {user.email} and saved it to their alerts."
+    elif alert.email_status in ("failed", "disabled"):
+        detail = f"Saved to {user.email}'s alerts, but the email did not go: {alert.email_error}"
+    return AdminMessageResult(alert_id=alert.id, email_status=alert.email_status, detail=detail)
 
 
 @router.post("/users/{user_id}/payments", response_model=AdminUserDetail, status_code=status.HTTP_201_CREATED)
