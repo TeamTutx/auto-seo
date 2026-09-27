@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { PROOF_CHANGES, PROOF_SCORE, REPO_URL } from "./proof";
+import { REVIEWS } from "./reviews";
+import { useReveal } from "@/lib/use-reveal";
 import { formatRate, formatUsd, limitLabel } from "@/lib/format";
 import { SUPPORT_EMAIL } from "@/lib/site";
 import type { Pricing, PricingCreditPack } from "@/lib/types";
@@ -24,6 +26,7 @@ const CREDIT_COSTS: { label: string; credits: number }[] = [
 
 export default function LandingPage({ pricing }: { pricing: Pricing }) {
   const { user } = useAuth();
+  useReveal();
 
   const primaryHref = user ? "/dashboard" : "/login?mode=register";
   const primaryLabel = user ? "Go to dashboard" : "Get started free";
@@ -149,7 +152,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
         </div>
       </div>
 
-      <section id="features" className="lp-section lp-features">
+      <section id="features" data-reveal className="lp-section lp-features">
         <div className="lp-feature-row">
           <div className="lp-feature-rail">
             <span className="dot" />
@@ -700,7 +703,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
         </div>
       </div>
 
-      <section id="how" className="lp-section lp-steps">
+      <section id="how" data-reveal className="lp-section lp-steps">
         <div className="lp-section-head center">
           <div className="lp-kicker">How it works</div>
           <h2>From a bare domain to a prioritized fix list in three steps.</h2>
@@ -709,7 +712,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
             full on-page checklist Signal runs, and where the automation stops.
           </p>
         </div>
-        <div className="lp-steps-grid">
+        <div className="lp-steps-grid" data-reveal>
           <div className="lp-step">
             <div className="lp-step-num">1</div>
             <h4>Add your site and pages</h4>
@@ -738,7 +741,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           reader can verify: the pull requests are open on the repository, and
           the values below are what view-source returns right now. Content and
           the numbers live in app/proof.ts; re-check them when this page moves. */}
-      <section id="proof" className="lp-section lp-proof">
+      <section id="proof" data-reveal className="lp-section lp-proof">
         <div className="lp-section-head">
           <div className="lp-eyebrow">Signal, on Signal</div>
           <h2>It fixed this page. Here is the diff.</h2>
@@ -751,7 +754,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           </p>
         </div>
 
-        <div className="lp-proof-grid">
+        <div className="lp-proof-grid" data-reveal>
           {PROOF_CHANGES.map((change) => (
             <div className="lp-proof-card" key={change.field}>
               <div className="lp-proof-head">
@@ -777,7 +780,7 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
           ))}
         </div>
 
-        <div className="lp-proof-foot">
+        <div className="lp-proof-foot" data-reveal>
           <div className="lp-proof-stat">
             <span className="lp-proof-number lp-mono">{PROOF_SCORE.now}</span>
             <span>this page&apos;s score today, out of 100</span>
@@ -795,7 +798,38 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
         </div>
       </section>
 
-      <section id="plans" className="lp-section lp-plans">
+      {/* Renders only when app/reviews.ts holds a real, permitted quote. Signal
+          has a handful of accounts and nobody has been asked yet, and an
+          invented testimonial is both dishonest and the first thing a sceptical
+          reader checks - so the section stays absent rather than filled with
+          people who do not exist. Add one to REVIEWS and it appears here. */}
+      {REVIEWS.length > 0 && (
+        <section id="reviews" data-reveal className="lp-section lp-reviews">
+          <div className="lp-section-head">
+            <div className="lp-eyebrow">In their words</div>
+            <h2>What people using Signal say.</h2>
+          </div>
+          <div className="lp-review-grid" data-reveal>
+            {REVIEWS.map((review) => (
+              <figure className="lp-review-card" key={review.name}>
+                <blockquote className="lp-review-quote">“{review.quote}”</blockquote>
+                <figcaption className="lp-review-who">
+                  <span className="lp-review-name">
+                    {review.url ? (
+                      <a href={review.url} target="_blank" rel="noopener noreferrer">{review.name}</a>
+                    ) : (
+                      review.name
+                    )}
+                  </span>
+                  {review.role && <span className="lp-review-role">{review.role}</span>}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section id="plans" data-reveal className="lp-section lp-plans">
         <div className="lp-section-head center">
           <div className="lp-kicker">Pricing</div>
           <h2>Free to use. Pay only for the expensive parts.</h2>
