@@ -3,7 +3,9 @@ See app/services/google_oauth.py for why this can't be fully exercised
 without a real registered Google OAuth client and a human completing the
 consent screen.
 """
+import logging
 from datetime import timedelta
+from typing import List
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,6 +23,8 @@ from app.services.ga import GAError
 from app.services.google_connection import disconnect, get_connection, get_valid_access_token, save_connection
 from app.services.google_oauth import GoogleOAuthError, build_authorize_url, exchange_code
 from app.services.gsc import GSCError
+
+logger = logging.getLogger("signal.google")
 
 router = APIRouter(prefix="/integrations/google", tags=["google-integration"])
 
@@ -79,20 +83,35 @@ def connection_status(current_user: User = Depends(get_current_user), session: S
         # since from the user's perspective there's effectively no connection.
         return GoogleConnectionStatus(connected=False)
 
+    # Each half is reported separately: Search Console and Analytics are
+    # different APIs with different enablement and different scopes, and one
+    # failing is no reason to hide the other. The reason is kept rather than
+    # discarded - an empty dropdown with no explanation is indistinguishable
+    # from "you own nothing", which is what sent someone hunting for a bug in
+    # Signal when their domain simply was not in Search Console yet.
+    gsc_properties: List[str] = []
+    gsc_error = None
     try:
         gsc_properties = gsc.list_properties(access_token)
-    except GSCError:
-        gsc_properties = []
+    except GSCError as exc:
+        gsc_error = str(exc)
+        logger.info("search console properties unavailable for user %s: %s", current_user.id, exc)
+
+    ga_properties: List[GAPropertyOption] = []
+    ga_error = None
     try:
         ga_properties = [GAPropertyOption(**p) for p in ga.list_properties(access_token)]
-    except GAError:
-        ga_properties = []
+    except GAError as exc:
+        ga_error = str(exc)
+        logger.info("analytics properties unavailable for user %s: %s", current_user.id, exc)
 
     return GoogleConnectionStatus(
         connected=True,
         connected_at=connection.connected_at,
         gsc_properties=gsc_properties,
         ga_properties=ga_properties,
+        gsc_error=gsc_error,
+        ga_error=ga_error,
     )
 
 

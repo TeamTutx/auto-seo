@@ -353,6 +353,13 @@ class GoogleConnectionStatus(BaseModel):
     connected_at: Optional[datetime] = None
     gsc_properties: List[str] = []
     ga_properties: List[GAPropertyOption] = []
+    #: Why the matching list is empty, when it is empty because the call failed
+    #: rather than because the account genuinely has nothing. These used to be
+    #: swallowed, so a revoked grant, a disabled API and an account with no
+    #: properties all produced the same silent empty dropdown - and the only way
+    #: to tell them apart was to read the server's code.
+    gsc_error: Optional[str] = None
+    ga_error: Optional[str] = None
 
 
 class GSCQueryRow(BaseModel):

@@ -118,11 +118,35 @@ function SettingsContent() {
           <>
             <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14 }}>
               Connected{status.connected_at ? ` on ${new Date(status.connected_at).toLocaleDateString()}` : ""}.
-              {status.gsc_properties.length === 0 && status.ga_properties.length === 0 && (
-                <> No Search Console or Analytics properties were found on this account.</>
-              )}
             </div>
-            <button className="btn-ghost btn" onClick={handleDisconnect} disabled={disconnecting} style={{ color: "var(--bad)" }}>
+
+            {/* Each API reported separately, and an empty list distinguished from
+                a failed call. They used to share one line that said neither: a
+                domain missing from Search Console looked exactly like a revoked
+                grant, and the only way to tell was to read the server's code. */}
+            <PropertyNote
+              label="Search Console"
+              count={status.gsc_properties.length}
+              error={status.gsc_error}
+              emptyHint={
+                <>
+                  Nothing is verified on this Google account yet. Add your domain in{" "}
+                  <a href="https://search.google.com/search-console" target="_blank" rel="noopener noreferrer">
+                    Search Console
+                  </a>{" "}
+                  and verify it there — a Domain property covers www and non-www at once — then reload this
+                  page. Signal can only offer what Google reports.
+                </>
+              }
+            />
+            <PropertyNote
+              label="Analytics"
+              count={status.ga_properties.length}
+              error={status.ga_error}
+              emptyHint={<>No GA4 properties were found on this account.</>}
+            />
+
+            <button className="btn-ghost btn" onClick={handleDisconnect} disabled={disconnecting} style={{ color: "var(--bad)", marginTop: 14 }}>
               {disconnecting ? "Disconnecting…" : "Disconnect"}
             </button>
           </>
@@ -207,6 +231,49 @@ function SettingsContent() {
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Why a property dropdown is empty.
+ *
+ *  Three outcomes that used to look identical: properties found (say nothing),
+ *  none found (tell them where to add one), and the call to Google failed (show
+ *  the reason Google gave). Collapsing those into one silent empty list is what
+ *  made a domain missing from Search Console indistinguishable from a revoked
+ *  grant or a disabled API. */
+function PropertyNote({
+  label,
+  count,
+  error,
+  emptyHint,
+}: {
+  label: string;
+  count: number;
+  error: string | null;
+  emptyHint: React.ReactNode;
+}) {
+  if (count > 0) return null;
+
+  return (
+    <div
+      className={error ? "form-error" : undefined}
+      style={{
+        marginBottom: 10,
+        fontSize: 12.5,
+        lineHeight: 1.55,
+        color: error ? undefined : "var(--text-muted)",
+      }}
+    >
+      <b>{label}:</b>{" "}
+      {error ? (
+        <>
+          Google refused the request — {error} Reconnecting the account below often fixes it; if it
+          persists, the API may be disabled for this project.
+        </>
+      ) : (
+        emptyHint
       )}
     </div>
   );

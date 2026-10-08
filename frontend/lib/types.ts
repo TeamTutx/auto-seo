@@ -233,6 +233,11 @@ export interface GoogleConnectionStatus {
   connected_at: string | null;
   gsc_properties: string[];
   ga_properties: GAPropertyOption[];
+  /** Why the list is empty, when it is empty because the call to Google failed
+   *  rather than because the account has nothing. Null when the list is simply
+   *  empty — the two look identical in the UI otherwise. */
+  gsc_error: string | null;
+  ga_error: string | null;
 }
 
 export interface GSCQueryRow {
