@@ -195,3 +195,58 @@ def test_editing_a_page_url_normalises_it_too(client, db):
     updated = client.patch(f"/pages/{page['id']}", json={"url": "EXAMPLE.com/b#top"}, headers=headers)
 
     assert updated.json()["url"] == "https://example.com/b"
+
+
+# --- linking and unlinking Google properties ---
+
+
+def _site_id(client, headers, domain="props.example"):
+    return client.post("/sites", json={"domain": domain}, headers=headers).json()["id"]
+
+
+def test_a_google_property_can_be_unlinked_again(client):
+    """It could be set and then never removed. The frontend sends null for "Not
+    linked", and the handler only applied a field that was *not* null - so the
+    request answered 200, the dropdown snapped back, and nothing changed. That
+    left people stuck reading one site's traffic under another's name."""
+    headers = register_and_login(client, "unlink@test.dev")
+    site_id = _site_id(client, headers)
+
+    client.patch(f"/sites/{site_id}", json={"ga_property_id": "554947110"}, headers=headers)
+    assert client.get(f"/sites/{site_id}", headers=headers).json()["ga_property_id"] == "554947110"
+
+    resp = client.patch(f"/sites/{site_id}", json={"ga_property_id": None}, headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["ga_property_id"] is None
+    assert client.get(f"/sites/{site_id}", headers=headers).json()["ga_property_id"] is None
+
+
+def test_an_empty_string_clears_a_property_too(client):
+    """What a <select> with a blank "Not linked" option actually submits."""
+    headers = register_and_login(client, "unlink2@test.dev")
+    site_id = _site_id(client, headers, "props2.example")
+    client.patch(f"/sites/{site_id}", json={"gsc_property": "sc-domain:props2.example"}, headers=headers)
+
+    resp = client.patch(f"/sites/{site_id}", json={"gsc_property": ""}, headers=headers)
+
+    assert resp.json()["gsc_property"] is None
+
+
+def test_omitting_a_field_still_leaves_it_alone(client):
+    """The other half of the same distinction: a request that says nothing about
+    a property must not wipe it, or editing the domain would clear both links."""
+    headers = register_and_login(client, "unlink3@test.dev")
+    site_id = _site_id(client, headers, "props3.example")
+    client.patch(
+        f"/sites/{site_id}",
+        json={"gsc_property": "sc-domain:props3.example", "ga_property_id": "999"},
+        headers=headers,
+    )
+
+    resp = client.patch(f"/sites/{site_id}", json={"domain": "renamed3.example"}, headers=headers)
+
+    body = resp.json()
+    assert body["domain"] == "renamed3.example"
+    assert body["gsc_property"] == "sc-domain:props3.example"
+    assert body["ga_property_id"] == "999"

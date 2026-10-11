@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useSites } from "@/lib/sites-context";
-import type { GoogleConnectionStatus } from "@/lib/types";
+import type { GoogleConnectionStatus, Site } from "@/lib/types";
 
 export default function SettingsPage() {
   return (
@@ -18,6 +18,10 @@ function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { sites, refreshSites } = useSites();
+  // Two sites reading one property show identical numbers with nothing saying
+  // why - which is how one site's traffic ended up displayed under another's.
+  const sharedGsc = sharedProperties(sites ?? [], "gsc_property");
+  const sharedGa = sharedProperties(sites ?? [], "ga_property_id");
 
   const [status, setStatus] = useState<GoogleConnectionStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -202,6 +206,9 @@ function SettingsContent() {
                         </option>
                       ))}
                     </select>
+                    <SharedNote
+                      others={(sharedGsc[site.gsc_property ?? ""] ?? []).filter((d) => d !== site.domain)}
+                    />
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <select
@@ -225,6 +232,9 @@ function SettingsContent() {
                         </option>
                       ))}
                     </select>
+                    <SharedNote
+                      others={(sharedGa[site.ga_property_id ?? ""] ?? []).filter((d) => d !== site.domain)}
+                    />
                   </td>
                 </tr>
               ))}
@@ -275,6 +285,41 @@ function PropertyNote({
       ) : (
         emptyHint
       )}
+    </div>
+  );
+}
+
+/** Sites sharing one Google property, keyed by property.
+ *
+ *  Sharing is not always wrong - one `sc-domain:` property covers every
+ *  subdomain, so tracking example.com and blog.example.com as two Signal sites
+ *  and pointing both at it is correct. But it is usually a mistake, and when it
+ *  is, the wrong site shows the right-looking numbers: two sites read identical
+ *  traffic and nothing says why. So this warns and never blocks. */
+function sharedProperties(
+  sites: Site[],
+  field: "gsc_property" | "ga_property_id",
+): Record<string, string[]> {
+  const byProperty: Record<string, string[]> = {};
+  for (const site of sites) {
+    const value = site[field];
+    if (!value) continue;
+    byProperty[value] = [...(byProperty[value] ?? []), site.domain];
+  }
+  const shared: Record<string, string[]> = {};
+  for (const [value, domains] of Object.entries(byProperty)) {
+    if (domains.length > 1) shared[value] = domains;
+  }
+  return shared;
+}
+
+/** The warning under a property that more than one site is reading. */
+function SharedNote({ others }: { others: string[] }) {
+  if (others.length === 0) return null;
+  return (
+    <div style={{ fontSize: 11.5, color: "var(--warn)", marginTop: 5, lineHeight: 1.45 }}>
+      Also used by {others.join(", ")}. Both sites will show the same numbers — correct only if this
+      property really covers them all.
     </div>
   );
 }

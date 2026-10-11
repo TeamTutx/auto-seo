@@ -57,14 +57,22 @@ def update_site(
     session: Session = Depends(get_session),
 ):
     site = _get_owned_site(session, site_id, current_user)
+
+    # Which keys the caller actually sent, rather than which are non-null.
+    # `None` means two different things on this body - "leave it alone" and
+    # "clear it" - and treating them the same made unlinking a property
+    # impossible: the request answered 200, the dropdown snapped back, and
+    # nothing changed. A property could be set and then never removed.
+    sent = payload.model_fields_set
+
     if payload.domain is not None and payload.domain != site.domain:
         site.domain = payload.domain
         # A domain change invalidates whatever was verified before.
         site.verified = False
         site.verification_method = None
-    if payload.gsc_property is not None:
+    if "gsc_property" in sent:
         site.gsc_property = payload.gsc_property or None
-    if payload.ga_property_id is not None:
+    if "ga_property_id" in sent:
         site.ga_property_id = payload.ga_property_id or None
     if payload.default_location_code is not None:
         # Checked against the list rather than taken on trust: an unknown code

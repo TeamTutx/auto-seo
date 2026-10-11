@@ -66,6 +66,18 @@ don't leave it stale.** Concretely:
   relabel history as measured somewhere else. Seeded on startup when the table is
   empty, exactly like the credit packs, since dev and the test suite build their
   schema with `create_all` and run no migration.
+- **On `PATCH /sites/{id}`, `None` means "leave it alone" and only a *sent* key
+  means "change it".** The handler reads `payload.model_fields_set`, not
+  `is not None`. It used to do the latter, which made a Google property
+  impossible to *un*link: the UI sends `null` for "Not linked", the handler
+  skipped it, the request answered 200 and the dropdown snapped back. Someone
+  spent a week reading one site's traffic under another site's name. Any new
+  nullable field on that body needs the same treatment.
+- **Two sites may legitimately share one Google property**, so the settings page
+  *warns* and never blocks: one `sc-domain:` property covers every subdomain, so
+  pointing example.com and blog.example.com at it is correct. When it is not
+  correct, both sites show identical numbers and nothing says why — which is
+  exactly how it went unnoticed.
 - **A site has a market** (`Site.default_location_code`): what a visibility check
   searches from and what the keyword form starts on. Visibility used to pass no
   location at all, so every reading in the product was Indian and nothing said so.
