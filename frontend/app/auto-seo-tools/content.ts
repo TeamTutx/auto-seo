@@ -10,7 +10,7 @@ export const FAQ: { q: string; a: string }[] = [
   {
     q: "Can SEO be fully automated?",
     a:
-      "No, but more of it than you would think. Auditing, rank tracking, index checks and drafting a title or meta description can be automated, and Signal automates all of them. It can also apply the mechanical fixes for you — title, meta description, alt text, canonical, robots and structured data — on a site you have verified and connected to WordPress or a GitHub repository, with the before and after shown first and one-click undo. What cannot be automated is deciding what your site should say, and earning links.",
+      "No, but more of it than you would think. Auditing, rank tracking, index checks and drafting a title or meta description can be automated, and Signal automates all of them. It can also apply the mechanical fixes for you — title, meta description, alt text, canonical, robots and structured data — on a site you have verified and connected to WordPress or a GitHub repository, with the before and after shown first and a way back for every change. That includes adding a tag the page never had: in a repository it locates the right file from text already on the page, and opens a pull request for you to review. What cannot be automated is deciding what your site should say, and earning links.",
   },
   {
     q: "Do auto SEO tools build backlinks?",

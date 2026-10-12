@@ -326,3 +326,45 @@ def test_alt_text_ignores_a_keyword(db, page, monkeypatch):
         session.commit()
         session.refresh(compiled.changes[0])
         assert compiled.changes[0].after == "A steel widget"
+
+
+# --- what a repository write anchors on when the field is absent ---
+
+
+def test_page_anchors_puts_the_pages_own_title_ahead_of_its_description():
+    """Order is not cosmetic. A page that sets no description of its own serves
+    the layout's, so searching for the description finds the layout - the one
+    file a page's canonical tag must never go into. The page's own half of its
+    title finds the page, so it is tried first."""
+    html = """
+    <html><head><title>About us | Acme</title>
+    <meta name="description" content="Who we are and what we build.">
+    </head><body><h1>About Acme</h1></body></html>
+    """
+
+    anchors = changes.page_anchors(html)
+
+    assert anchors == ["About us | Acme", "About us", "Who we are and what we build.", "About Acme"]
+
+
+def test_page_anchors_includes_the_halves_of_a_templated_title():
+    """"Sign in · QuickFit CV" is a layout's template and a page's title
+    joined at build time, so it is in no file while "Sign in" is in one."""
+    anchors = changes.page_anchors("<html><head><title>Sign in · QuickFit CV</title></head></html>")
+
+    assert anchors[0] == "Sign in · QuickFit CV"
+    assert "QuickFit CV" in anchors
+
+
+def test_page_anchors_drops_strings_too_generic_to_pin_a_file():
+    """"Home" is in every nav bar in the repository. A single accidental match
+    would be a tag inserted into a file that is not this page, so the short
+    halves are left out rather than ranked last."""
+    anchors = changes.page_anchors("<html><head><title>Home | Acme Widgets Ltd</title></head></html>")
+
+    assert "Home" not in anchors
+    assert "Acme Widgets Ltd" in anchors
+
+
+def test_page_anchors_is_empty_when_the_page_shows_nothing_to_search_for():
+    assert changes.page_anchors("<html><head></head><body></body></html>") == []

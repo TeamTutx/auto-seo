@@ -353,6 +353,10 @@ def apply_changes(
             ),
         )
 
+    # The same live HTML the staleness check just used: a field with no `before`
+    # has to be located in the repository by something else the page shows, and
+    # this is the one place that already holds the page as it is right now.
+    anchors = change_service.page_anchors(html)
     writes = [
         FieldWrite(
             field=r.field,
@@ -360,6 +364,7 @@ def apply_changes(
             subject=r.subject,
             before=r.before,
             previously_wrote=_already_written(session, page, r),
+            anchors=anchors,
         )
         for r in rows
     ]

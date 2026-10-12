@@ -59,6 +59,13 @@ class FieldWrite:
     #: "a pull request changed it and the site has not rebuilt yet" - two causes
     #: with the same symptom and completely different answers.
     previously_wrote: List[str] = field(default_factory=list)
+    #: Other strings the live page shows - its title, description, h1 - in
+    #: descending order of how specific they are. A repository target needs
+    #: these when `before` is empty: a tag that is not on the page anchors on
+    #: nothing, so the file is located by a value the page *does* have and the
+    #: new tag is added there. A CMS target ignores them; it addresses the page
+    #: by id and never has to find it in a tree.
+    anchors: List[str] = field(default_factory=list)
 
 
 class WriteTarget(ABC):

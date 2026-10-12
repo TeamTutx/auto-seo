@@ -31,14 +31,19 @@ framework-agnostic way to tell the two apart from the value alone, so the pull
 request says so and the diff shows the file; the human merging it is the check.
 This is the main reason a repository write is a pull request rather than a commit.
 
-**The consequence: this target replaces, it does not insert.** A value Signal
-cannot find is a value it cannot locate a place for, and the most common audit
-failure - no meta description at all - is exactly that case. Inserting one would
-mean generating framework-specific syntax at a position chosen by guesswork; a
-pull request would make the mistake reviewable but would not make it right. Those
-changes are refused with a reason, and the user adds the tag once by hand, after
-which Signal can maintain it forever. Image alt text is the exception and works
-either way, because the `src` is always there to anchor on - see _rewrite_image.
+**A tag that is not there yet is added, not refused.** Searching by value cannot
+find a value that does not exist, and the most common audit failure - no meta
+description, no canonical tag - is exactly that case. So when `before` is empty
+the file is located by a string the page *does* have (its title, description or
+h1, carried on `FieldWrite.anchors`) and the tag is inserted there. The two
+questions replacement gets for free, which file and where in it, are answered
+from evidence in `insertion.py`: a file only receives a document-level tag if it
+already owns document-level metadata, and never if it is a shared layout - a
+canonical tag in a shared layout tells Google every page using it is the same
+page. Anything that module does not recognise is still a refusal with the old
+advice: add it once by hand, and Signal maintains it from then on. Image alt
+text never needed any of this, because the `src` is always there to anchor on -
+see _rewrite_image.
 """
 import base64
 import io
@@ -47,9 +52,11 @@ import tarfile
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
+from . import insertion
 from .base import FieldWrite, Receipt, TargetStatus, WriteTarget, WriteTargetError
 
 API = "https://api.github.com"
@@ -73,6 +80,22 @@ _IGNORED_SEGMENTS = {
 }
 _IGNORED_SUFFIXES = (".lock", ".min.js", ".min.css", ".map", ".snap")
 _TEST_BASENAME = re.compile(r"(^test_|_test\.|\.test\.|\.spec\.)")
+
+
+def _candidates(needle: str, files: Dict[str, str]) -> Dict[str, int]:
+    """{path: occurrences} for the files plausibly holding `needle`.
+
+    A test asserting on the title, or a committed build output, holds the same
+    string without being the thing that serves it. Those are discounted - but
+    only as a tie-breaker, never to hide the only match there is, because
+    saying "not found" about a value plainly in the repository is worse than
+    naming an odd file."""
+    matches = {path: text.count(needle) for path, text in files.items() if needle in text}
+    if len(matches) > 1:
+        likely = {p: c for p, c in matches.items() if not _unlikely_source(p)}
+        if likely:
+            return likely
+    return matches
 
 
 def _unlikely_source(path: str) -> bool:
@@ -241,9 +264,22 @@ class GitHubTarget(WriteTarget):
             raise WriteTargetError(f"Could not read {self.repo}'s contents from GitHub: {exc}")
         return files
 
-    def _find_file(self, needle: str, files: Dict[str, str], branch: str) -> Tuple[str, str]:
-        """(path, occurrences) for the one file holding `needle`."""
-        matches = {path: text.count(needle) for path, text in files.items() if needle in text}
+    def _find_file(
+        self,
+        needle: str,
+        files: Dict[str, str],
+        branch: str,
+        require_one_occurrence: bool = True,
+    ) -> Tuple[str, str]:
+        """(path, occurrences) for the one file holding `needle`.
+
+        `require_one_occurrence` is what tells the two callers apart. Replacing
+        needs to know *which* occurrence to change, so twice in a file is an
+        ambiguity. Insertion only needs to know which file is this page, and a
+        string appearing twice in one file - `title: "Privacy policy"` next to
+        `<LegalPage title="Privacy policy">` - is stronger evidence of that, not
+        weaker. Requiring one occurrence there refused almost every real page."""
+        matches = _candidates(needle, files)
 
         if not matches:
             raise WriteTargetError(
@@ -251,15 +287,6 @@ class GitHubTarget(WriteTarget):
                 "to change. That usually means the value is assembled at build time rather than "
                 "written in a file."
             )
-
-        # A test asserting on the title, or a committed build output, holds the
-        # same string without being the thing that serves it. Discount those
-        # before giving up - but only as a tie-breaker, never to hide the only
-        # match there is.
-        if len(matches) > 1:
-            likely = {p: c for p, c in matches.items() if not _unlikely_source(p)}
-            if likely:
-                matches = likely
 
         if len(matches) > 1:
             listed = ", ".join(sorted(matches)[:4])
@@ -270,7 +297,7 @@ class GitHubTarget(WriteTarget):
             )
 
         path, count = next(iter(matches.items()))
-        if count > 1:
+        if count > 1 and require_one_occurrence:
             raise WriteTargetError(
                 f'"{_short(needle)}" appears {count} times in {path}. Signal will not guess which '
                 "occurrence is the one on the page."
@@ -289,45 +316,114 @@ class GitHubTarget(WriteTarget):
 
     # --- the edits ---
 
-    def _plan_edits(self, client: httpx.Client, writes: List[FieldWrite], branch: str) -> List[_FileEdit]:
+    def _locate_for_insert(
+        self, write: FieldWrite, files: Dict[str, str], branch: str, page_url: str = ""
+    ) -> Tuple[str, str]:
+        """Which file should receive a tag the page does not have yet.
+
+        Not the same refusal as failing to find a value to replace: nothing here
+        is stale or assembled at build time, Signal just cannot tell which file
+        is this page, so the message says that instead."""
+        segments = [s for s in urlparse(page_url).path.strip("/").split("/") if s]
+        route = segments[-1].lower() if segments else ""
+        refusal = None
+        for anchor in write.anchors:
+            if not (anchor or "").strip():
+                continue
+            usable, rejected = {}, None
+            for path in _candidates(anchor, files):
+                # Whether a file may receive this tag decides the *candidate
+                # set*, rather than being checked after an ambiguity has already
+                # been declared. "Privacy policy" is in the privacy page, a
+                # changelog and an extension store listing; only one of the
+                # three can carry a canonical tag, so there is nothing ambiguous
+                # about it. Asking the question in this order is also what lets
+                # the search move past the layout a shared description points
+                # at and go on to the page's own title.
+                try:
+                    insertion.check_destination(path, files[path], write.field)
+                except insertion.CannotInsert as exc:
+                    rejected = rejected or str(exc)
+                    continue
+                usable[path] = True
+            if len(usable) == 1:
+                return next(iter(usable)), anchor
+            if len(usable) > 1 and route:
+                # Last resort before refusing: the file whose path contains the
+                # URL's own last segment. This is the one place a routing
+                # assumption is allowed in, and only here - among files that
+                # could each legitimately own this page's head, with a refusal
+                # as the alternative. "app/login/page.tsx" for /login/ is right
+                # in Next.js, Hugo, Jekyll, Astro and a directory of HTML
+                # files, and where it is wrong the pull request names the file.
+                narrowed = [p for p in sorted(usable) if route in p.lower()]
+                if len(narrowed) == 1:
+                    return narrowed[0], anchor
+            if len(usable) > 1:
+                listed = ", ".join(sorted(usable)[:4])
+                refusal = refusal or (
+                    f'"{_short(anchor)}" is on this page and in {len(usable)} files that could each '
+                    f"own a page's head ({listed}). Signal will not guess which one is this page - "
+                    f"add the {insertion.label(write.field)} by hand to the right one, and Signal can "
+                    "keep it up to date after that."
+                )
+            elif rejected:
+                refusal = refusal or rejected
+
+        if refusal:
+            raise WriteTargetError(refusal)
+        raise WriteTargetError(
+            f"This page has no {insertion.label(write.field)} yet, and Signal could not work out "
+            f"which file in {self.repo} produces the page: it looked for the page's own title, "
+            "description and heading in the tree and no single file holds any of them. Add the "
+            "tag once by hand and Signal can keep it up to date after that."
+        )
+
+    def _plan_edits(
+        self, client: httpx.Client, writes: List[FieldWrite], branch: str, page_url: str = ""
+    ) -> List[_FileEdit]:
         files = self._text_files(client, branch)
         by_path: Dict[str, _FileEdit] = {}
         for write in writes:
-            # The lambdas bind `write` explicitly: they happen to be called
-            # inside this same iteration today, but a closure over a loop
+            # The lambdas bind `write` (and `path`) explicitly: they happen to be
+            # called inside this same iteration today, but a closure over a loop
             # variable is one refactor away from applying the last write's value
             # to every file.
             if write.field == "image_alt_text":
                 anchor = write.subject
+                path, _ = self._find_file(anchor, files, branch)
                 transform = lambda text, w=write: _rewrite_image(text, w.subject, w.value)
-            else:
-                if not (write.before or "").strip():
-                    raise WriteTargetError(
-                        f"This page has no {write.field.replace('_', ' ')} for Signal to find in the "
-                        "repository, so there is nowhere to put the new one. Add the tag once by hand "
-                        "and Signal can keep it up to date after that."
-                    )
+            elif (write.before or "").strip():
                 if write.before not in "\n".join(files.values()):
                     self._explain_missing(write, files)
                 anchor = write.before
-                transform = lambda text, w=write: text.replace(w.before, w.value, 1)
-
-            edit = next((e for e in by_path.values() if anchor in e.updated), None)
-            if edit is None:
                 path, _ = self._find_file(anchor, files, branch)
-                if path not in by_path:
-                    # Located from the tarball, but read and written through the
-                    # Contents API: that is the copy the commit is based on, and
-                    # it carries the blob sha the update needs.
-                    content, sha = self._read_file(client, path, branch)
-                    if anchor not in content:
-                        raise WriteTargetError(
-                            f'"{_short(anchor)}" is in {path} in the downloaded tree but not in the '
-                            f"copy GitHub is serving for {branch} - the branch moved while Signal was "
-                            "reading it. Try again."
-                        )
-                    by_path[path] = _FileEdit(path=path, sha=sha, original=content, updated=content)
-                edit = by_path[path]
+                transform = lambda text, w=write: text.replace(w.before, w.value, 1)
+            else:
+                # Asked before looking for somewhere to add it, because a tag
+                # Signal already added and a tag that was never there look
+                # identical from the live page - and here the answers differ
+                # completely: one is "your deploy has not run yet", the other
+                # is "pick a file". Without this the second attempt at a merged
+                # but undeployed fix comes back as "this file already sets
+                # alternates", which blames the repository for being right.
+                self._explain_missing(write, files)
+                path, anchor = self._locate_for_insert(write, files, branch, page_url)
+                transform = lambda text, w=write, p=path: _insert(text, p, w.field, w.value)
+
+            if path not in by_path:
+                # Located from the tarball, but read and written through the
+                # Contents API: that is the copy the commit is based on, and
+                # it carries the blob sha the update needs.
+                content, sha = self._read_file(client, path, branch)
+                if anchor not in content:
+                    raise WriteTargetError(
+                        f'"{_short(anchor)}" is in {path} in the downloaded tree but not in the '
+                        f"copy GitHub is serving for {branch} - the branch moved while Signal was "
+                        "reading it. Try again."
+                    )
+                by_path[path] = _FileEdit(path=path, sha=sha, original=content, updated=content)
+            edit = by_path[path]
             edit.updated = transform(edit.updated)
 
         changed = [e for e in by_path.values() if e.updated != e.original]
@@ -342,11 +438,12 @@ class GitHubTarget(WriteTarget):
         identical from the live page, and the answers are opposites: one means
         Signal can never write this field, the other means wait for the deploy.
         A value Signal itself wrote sitting in the tree settles which it is."""
+        serving = "the page without it" if not (write.before or "").strip() else "the one before it"
         for earlier in write.previously_wrote:
             if earlier and any(earlier in text for text in files.values()):
                 raise WriteTargetError(
                     f"{self.repo} already has the {write.field.replace('_', ' ')} Signal wrote in an "
-                    "earlier pull request, but your site is still serving the one before it - it has "
+                    f"earlier pull request, but your site is still serving {serving} - it has "
                     "not rebuilt since that pull request was merged. Wait for the deploy to finish, "
                     "rescan the page, and write this fix again so it is based on what is published."
                 )
@@ -354,7 +451,7 @@ class GitHubTarget(WriteTarget):
     def write(self, page_url: str, writes: List[FieldWrite]) -> Receipt:
         with self._client() as client:
             base = self._base_branch(client)
-            edits = self._plan_edits(client, writes, base)
+            edits = self._plan_edits(client, writes, base, page_url)
 
             head_sha = ((self._json(client.get(f"/repos/{self.repo}/git/ref/heads/{base}")) or {}).get("object") or {}).get("sha")
             if not head_sha:
@@ -368,14 +465,14 @@ class GitHubTarget(WriteTarget):
                 self._json(client.put(
                     f"/repos/{self.repo}/contents/{edit.path}",
                     json={
-                        "message": f"SEO: update {summary} for {page_url}",
+                        "message": f"SEO: set {summary} for {page_url}",
                         "content": _b64(edit.updated),
                         "sha": edit.sha,
                         "branch": branch,
                     },
                 ))
 
-            body = _pr_body(page_url, writes, [e.path for e in edits])
+            body = _pr_body(page_url, writes, [e.path for e in edits], _added(writes))
             pr = self._json(client.post(
                 f"/repos/{self.repo}/pulls",
                 json={"title": f"SEO: {summary} for {page_url}", "head": branch, "base": base, "body": body},
@@ -420,6 +517,21 @@ class GitHubTarget(WriteTarget):
                     detail=f"Closed pull request #{number}. Nothing reached {(receipt or {}).get('extra', {}).get('base', 'the branch')}.",
                 )
 
+        # `writes` carry the old value as `value`, so an *added* tag reverts to
+        # the empty string - which would mean deleting the lines Signal wrote,
+        # not replacing a value. Removing code from somebody's repository on a
+        # button press is a different act from changing a string in it, and the
+        # merge commit is already the precise record of what to undo.
+        added = [w for w in writes if not (w.value or "").strip() and w.field in insertion.INSERTABLE]
+        if added:
+            fields = ", ".join(sorted({insertion.label(w.field) for w in added}))
+            raise WriteTargetError(
+                f"Pull request #{number} added the {fields} to {self.repo} and has already been "
+                f"merged, so undoing it means deleting lines rather than putting a value back - "
+                f"which Signal will not do on its own. Revert #{number} on GitHub (its diff is "
+                "exactly what to undo), or delete the tag by hand."
+            )
+
         reverse = self.write(page_url, writes)
         return Receipt(
             ref=reverse.ref,
@@ -432,6 +544,26 @@ class GitHubTarget(WriteTarget):
 def _short(value: str, limit: int = 60) -> str:
     value = " ".join((value or "").split())
     return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def _insert(text: str, path: str, field: str, value: str) -> str:
+    """insertion.insert, with its refusal turned into the one the router shows.
+
+    The two exception types are kept apart on purpose: insertion.py is text
+    manipulation with no idea it is talking to GitHub, and WriteTargetError is
+    the write-target interface's."""
+    try:
+        return insertion.insert(text, path, field, value)
+    except insertion.CannotInsert as exc:
+        raise WriteTargetError(str(exc))
+
+
+def _added(writes: List[FieldWrite]) -> List[FieldWrite]:
+    """The writes that are new tags rather than edits to existing ones."""
+    return [
+        w for w in writes
+        if not (w.before or "").strip() and w.field in insertion.INSERTABLE
+    ]
 
 
 def _rewrite_image(text: str, src: str, alt: str) -> str:
@@ -472,7 +604,7 @@ def _tag_with_alt(tag: str, alt: str) -> str:
     return tag[: closing.start()] + f' alt="{quoted}"' + tag[closing.start():]
 
 
-def _pr_body(page_url: str, writes: List[FieldWrite], paths: List[str]) -> str:
+def _pr_body(page_url: str, writes: List[FieldWrite], paths: List[str], added: List[FieldWrite]) -> str:
     lines = [
         f"Opened by [Signal](https://signal-seo.in) for **{page_url}**.",
         "",
@@ -481,7 +613,11 @@ def _pr_body(page_url: str, writes: List[FieldWrite], paths: List[str]) -> str:
     ]
     for write in writes:
         before = _short(write.before or "", 80) or "_(not set)_"
-        lines.append(f"| {write.field.replace('_', ' ')} | {_md_cell(before)} | {_md_cell(_short(write.value, 80))} |")
+        verb = "added" if write in added else "changed"
+        lines.append(
+            f"| {write.field.replace('_', ' ')} ({verb}) | {_md_cell(before)} | "
+            f"{_md_cell(_short(write.value, 80))} |"
+        )
     lines += [
         "",
         f"Files changed: {', '.join(paths)}.",
@@ -491,6 +627,19 @@ def _pr_body(page_url: str, writes: List[FieldWrite], paths: List[str]) -> str:
         "your framework - but a string in a shared layout or template serves every page that "
         "does not override it, and this change would move all of them. The diff above is the "
         "whole change; nothing is applied until you merge.",
+    ]
+    if added:
+        fields = ", ".join(sorted({w.field.replace("_", " ") for w in added}))
+        lines += [
+            "",
+            f"> **The {fields} here are new tags, not edits.** The page had none, so there was no "
+            "existing value to search for. Signal located the file by this page's own title, "
+            "description or heading instead, and will only add a document-level tag to a file that "
+            "already decides this page's `<head>` - never to a shared layout, where one canonical "
+            "tag would claim every page that uses it is this page. **The thing to check is that "
+            "the file is the right page**, and that the value is the URL you want indexed.",
+        ]
+    lines += [
         "",
         "Merging this applies the change; closing it discards it.",
     ]

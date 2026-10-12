@@ -97,6 +97,52 @@ def read_current(html: str, field: str) -> Optional[str]:
     return None
 
 
+# A templated title - "Sign in \u00b7 QuickFit CV", "About | Acme" - is two
+# strings joined at build time, so the whole of it is in no source file while
+# the page's own half usually is. Anything shorter than this is too generic to
+# pin a file by ("Home", "Log in"), and a wrong single match would be a tag
+# inserted into the wrong page.
+_TITLE_SPLIT = re.compile(r"\s+[|\u00b7\u2014\u2013\u2022/-]+\s+")
+_MIN_ANCHOR = 5
+
+
+def page_anchors(html: str) -> List[str]:
+    """Strings the live page shows that a source file is likely to contain, most
+    specific first.
+
+    What a repository write anchors on when the field it has to set is not on
+    the page at all: a missing canonical tag cannot be searched for, but the
+    title next to where it belongs can. Ordered longest-lived first - the full
+    title, then the description, then the h1 - because a longer, more unusual
+    string is less likely to turn up somewhere that is not this page, and the
+    caller tries them in turn until one pins exactly one file."""
+    soup = BeautifulSoup(html, "lxml")
+    candidates: List[str] = []
+
+    title = soup.title.get_text(strip=True) if soup.title else ""
+    if title:
+        candidates.append(title)
+    # The halves of a templated title come before the description, because a
+    # page that sets no description of its own serves the layout's - which
+    # locates the layout, the one file a page's tag must not go into. The
+    # page's own half of its title locates the page.
+    parts = [p.strip() for p in _TITLE_SPLIT.split(title) if p.strip() != title]
+    candidates += sorted((p for p in parts if len(p) >= _MIN_ANCHOR), key=len, reverse=True)
+    description = soup.find("meta", attrs={"name": "description"})
+    if description and (description.get("content") or "").strip():
+        candidates.append(description["content"].strip())
+    heading = soup.find("h1")
+    if heading and heading.get_text(strip=True):
+        candidates.append(heading.get_text(strip=True))
+
+    seen, ordered = set(), []
+    for candidate in candidates:
+        if len(candidate) >= _MIN_ANCHOR and candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
+
+
 def current_alt(html: str, src: str) -> Optional[str]:
     soup = BeautifulSoup(html, "lxml")
     for img in soup.find_all("img"):

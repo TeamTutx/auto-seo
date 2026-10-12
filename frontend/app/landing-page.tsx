@@ -395,6 +395,10 @@ export default function LandingPage({ pricing }: { pricing: Pricing }) {
                 default branch.
               </p>
               <ul className="lp-feature-list">
+                <li>
+                  A tag your page never had is added, not just refused — Signal finds the file from the
+                  page&rsquo;s own title and never puts a page&rsquo;s tag in a shared layout
+                </li>
                 <li>Applying is free, and so is undoing it — the credit paid for writing the fix</li>
                 <li>Edited the page since? The change is refused rather than written over your work</li>
                 <li>Nothing connected is a normal setup: every fix is still written out to paste in</li>

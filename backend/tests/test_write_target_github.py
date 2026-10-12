@@ -182,14 +182,160 @@ def test_several_fields_in_one_file_become_one_pull_request():
 # --- the refusals ---
 
 
-def test_a_field_the_page_does_not_have_is_refused_with_what_to_do():
-    """This target replaces text it can find; it does not invent a place to put a
-    tag that is not there. Generating framework-specific syntax at a guessed
-    position would be a mistake a pull request makes reviewable, not right."""
+def test_a_missing_tag_with_nothing_to_locate_the_page_by_is_refused():
+    """A tag that is not on the page anchors on nothing, so the file is found by
+    something else the page shows. With no anchors at all - a page whose title,
+    description and heading are all empty or all absent from the tree - there is
+    no evidence to choose a file from, and choosing one anyway is how you edit a
+    stranger's wrong file."""
     with pytest.raises(WriteTargetError, match="Add the tag once by hand"):
         _target(_Repo()).write(
             "https://acme.test/about", [FieldWrite(field="meta_description", value="A description", before=None)]
         )
+
+
+def test_a_missing_canonical_is_added_using_the_title_as_the_anchor():
+    """The case that made this exist: quickfitcv.com had no canonical tag on any
+    page, so every fix for one was refused and the audit stayed red with nothing
+    the owner could press."""
+    repo = _Repo()
+
+    _target(repo).write(
+        "https://acme.test/about",
+        [FieldWrite(
+            field="canonical_tag", value="https://acme.test/about", before=None, anchors=["Old Title"],
+        )],
+    )
+
+    name, content, message = repo.commits[0]
+    assert name == FILE
+    assert '<link rel="canonical" href="https://acme.test/about">' in content
+    assert "<title>Old Title</title>" in content, "the anchor is read, never rewritten"
+    assert "set canonical tag" in message
+
+
+def test_the_page_half_of_a_templated_title_is_tried_when_the_whole_is_in_no_file():
+    """`title: { template: "%s \u00b7 Acme" }` means the live <title> exists in no
+    file. Searching for the whole of it finds nothing, which is not the same as
+    the page being unfindable - the half that belongs to the page is right there."""
+    repo = _Repo(files={
+        "app/layout.tsx": 'export const metadata = { title: { template: "%s \u00b7 Acme" } };\n',
+        "app/login/page.tsx": 'export const metadata: Metadata = { title: "Sign in" };\n',
+    })
+
+    _target(repo).write(
+        "https://acme.test/login/",
+        [FieldWrite(
+            field="canonical_tag",
+            value="https://acme.test/login/",
+            before=None,
+            anchors=["Sign in \u00b7 Acme", "Sign in"],
+        )],
+    )
+
+    name, content, _ = repo.commits[0]
+    assert name == "app/login/page.tsx", "not the layout, which holds the other half"
+    assert 'alternates: { canonical: "https://acme.test/login/" }' in content
+
+
+def test_a_tag_is_not_inserted_into_the_layout_that_happens_to_hold_the_title():
+    """The anchor can perfectly well land in a shared layout - Signal's own title
+    is root metadata shared by fourteen pages. Replacing a string there is bad
+    and shows up in the diff; adding a canonical tag there tells Google all
+    fourteen are the same page, and looks like three harmless added lines."""
+    repo = _Repo(files={"app/layout.tsx": "<head><title>Acme</title></head>"})
+
+    with pytest.raises(WriteTargetError, match="shared layout"):
+        _target(repo).write(
+            "https://acme.test/",
+            [FieldWrite(field="canonical_tag", value="https://acme.test/", before=None, anchors=["Acme"])],
+        )
+
+    assert not repo.created_refs and not repo.opened, "refused before anything was created"
+
+
+def test_a_tag_is_not_inserted_into_a_component_that_shares_the_pages_words():
+    repo = _Repo(files={"components/auth-form.tsx": "export function AuthForm() {\n  return <button>Sign in</button>;\n}\n"})
+
+    with pytest.raises(WriteTargetError, match="does not decide the page's <head>"):
+        _target(repo).write(
+            "https://acme.test/login/",
+            [FieldWrite(field="canonical_tag", value="https://acme.test/login/", before=None, anchors=["Sign in"])],
+        )
+
+
+def test_an_added_tag_and_a_changed_one_travel_in_one_pull_request():
+    repo = _Repo()
+
+    _target(repo).write(
+        "https://acme.test/about",
+        [
+            FieldWrite(field="title_tag", value="New Title", before="Old Title"),
+            FieldWrite(
+                field="canonical_tag", value="https://acme.test/about", before=None, anchors=["Old Title"],
+            ),
+        ],
+    )
+
+    assert len(repo.opened) == 1 and len(repo.commits) == 1, "one review, not one per field"
+    _, content, _ = repo.commits[0]
+    assert "<title>New Title</title>" in content
+    assert '<link rel="canonical" href="https://acme.test/about">' in content
+
+
+def test_the_pull_request_separates_new_tags_from_edited_ones():
+    """A reviewer checks a different thing for each. An edit is "is this value
+    better"; an addition is "is this the right file for this page", because that
+    one Signal chose rather than was told."""
+    repo = _Repo()
+
+    _target(repo).write(
+        "https://acme.test/about",
+        [FieldWrite(
+            field="canonical_tag", value="https://acme.test/about", before=None, anchors=["Old Title"],
+        )],
+    )
+
+    body = repo.opened[0]["body"]
+    assert "canonical tag (added)" in body
+    assert "_(not set)_" in body
+    assert "new tags, not edits" in body
+    assert "the file is the right page" in body
+
+
+def test_undoing_a_merged_addition_is_handed_back_rather_than_guessed_at():
+    """Reverting an edit writes the old value back. Reverting an addition would
+    mean deleting lines Signal wrote, which is a different act on somebody's
+    repository - and the merge commit is already the exact record of what to
+    undo, so there is a better answer than a half-right automatic one."""
+    repo = _Repo(
+        files={FILE: '<head><title>T</title><link rel="canonical" href="https://acme.test/about"></head>'},
+        pulls={"100": {"state": "closed", "merged": True, "html_url": "u"}},
+    )
+
+    with pytest.raises(WriteTargetError, match="deleting lines"):
+        _target(repo).revert(
+            "https://acme.test/about",
+            [FieldWrite(field="canonical_tag", value="", before="https://acme.test/about")],
+            {"ref": "100", "extra": {"branch": "signal/seo/x", "base": "main"}},
+        )
+
+    assert not repo.opened, "no second pull request that blanks the href"
+
+
+def test_undoing_an_unmerged_addition_still_just_closes_the_pull_request():
+    """Nothing reached the branch, so there is nothing to delete and the clean
+    undo already exists."""
+    repo = _Repo(pulls={"100": {"state": "open", "merged": False, "html_url": "u"}})
+
+    receipt = _target(repo).revert(
+        "https://acme.test/about",
+        [FieldWrite(field="canonical_tag", value="", before="https://acme.test/about")],
+        {"ref": "100", "extra": {"branch": "signal/seo/x", "base": "main"}},
+    )
+
+    assert repo.closed == ["100"]
+    assert "Closed pull request #100" in receipt.detail
 
 
 def test_text_that_appears_twice_in_a_file_is_refused():
@@ -475,3 +621,143 @@ def test_an_unmerged_pull_request_does_not_trigger_the_drift_message():
     )
 
     assert repo.commits[0][0] == FILE
+
+
+def test_a_layout_found_by_an_inherited_description_does_not_stop_the_search():
+    """A page with no description of its own serves the layout's, so searching
+    for what is on the page finds the layout - which may not have a tag added to
+    it. That is a reason to try the page's own title next, not to refuse: the
+    first version stopped here and could not add a canonical to any page whose
+    description came from the layout, which was most of them."""
+    repo = _Repo(files={
+        "app/layout.tsx": (
+            'export const metadata: Metadata = {\n'
+            '  description: "Tailor your resume to every job.",\n'
+            '};\n'
+        ),
+        "app/login/page.tsx": 'export const metadata: Metadata = { title: "Sign in" };\n',
+    })
+
+    _target(repo).write(
+        "https://acme.test/login/",
+        [FieldWrite(
+            field="canonical_tag",
+            value="https://acme.test/login/",
+            before=None,
+            # What the live page shows: a templated title, then the description
+            # it inherited, then the page's own half of the title.
+            anchors=["Sign in · Acme", "Tailor your resume to every job.", "Sign in"],
+        )],
+    )
+
+    name, content, _ = repo.commits[0]
+    assert name == "app/login/page.tsx"
+    assert 'alternates: { canonical: "https://acme.test/login/" }' in content
+
+
+def test_files_that_could_not_own_a_head_do_not_make_the_anchor_ambiguous():
+    """"Privacy policy" is in the privacy page, a changelog and an app-store
+    listing. Judging ambiguity before asking which files could even receive the
+    tag refused the one real answer in the name of two that were never
+    candidates - which is how four of five pages on the first real site came
+    back as "add it by hand"."""
+    repo = _Repo(files={
+        "plan.md": "- [x] Privacy policy page\n",
+        "store/LISTING.md": "Privacy policy: https://acme.test/privacy/\n",
+        "app/privacy/page.tsx": (
+            'export const metadata: Metadata = { title: "Privacy policy" };\n'
+            "\n"
+            "export default function PrivacyPage() {\n"
+            '  return <LegalPage title="Privacy policy">text</LegalPage>;\n'
+            "}\n"
+        ),
+    })
+
+    _target(repo).write(
+        "https://acme.test/privacy/",
+        [FieldWrite(
+            field="canonical_tag", value="https://acme.test/privacy/", before=None,
+            anchors=["Privacy policy · Acme", "Privacy policy"],
+        )],
+    )
+
+    name, content, _ = repo.commits[0]
+    assert name == "app/privacy/page.tsx"
+    assert 'alternates: { canonical: "https://acme.test/privacy/" }' in content
+
+
+def test_an_anchor_appearing_twice_in_one_file_still_identifies_it():
+    """Replacing needs to know which occurrence; adding only needs to know which
+    file, and twice in one file is stronger evidence of that, not weaker."""
+    repo = _Repo(files={"app/terms/page.tsx": (
+        'export const metadata: Metadata = { title: "Terms of service" };\n'
+        "\n"
+        "export default function TermsPage() {\n"
+        '  return <LegalPage title="Terms of service">text</LegalPage>;\n'
+        "}\n"
+    )})
+
+    _target(repo).write(
+        "https://acme.test/terms/",
+        [FieldWrite(field="canonical_tag", value="https://acme.test/terms/", before=None, anchors=["Terms of service"])],
+    )
+
+    assert 'canonical: "https://acme.test/terms/"' in repo.commits[0][1]
+
+
+def test_a_merged_addition_that_has_not_deployed_blames_the_deploy_not_the_file():
+    """Between a merged pull request and the site's rebuild, the repository has
+    the tag and the page does not - so Signal proposes adding it again. Without
+    this it finds the tag already in the metadata object and reports that the
+    file and the page disagree, which blames the repository for being correct."""
+    repo = _Repo(files={"app/about/page.tsx": (
+        'export const metadata: Metadata = {\n'
+        '  title: "About us",\n'
+        '  alternates: { canonical: "https://acme.test/about/" },\n'
+        "};\n"
+    )})
+
+    with pytest.raises(WriteTargetError, match="has not rebuilt since that pull request was merged"):
+        _target(repo).write(
+            "https://acme.test/about/",
+            [FieldWrite(
+                field="canonical_tag",
+                value="https://acme.test/about/",
+                before=None,
+                anchors=["About us"],
+                previously_wrote=["https://acme.test/about/"],
+            )],
+        )
+
+
+def test_the_urls_own_segment_breaks_a_tie_between_two_real_candidates():
+    """"Sign in" labels a button on the privacy page as well as titling the
+    login page, so both files could own a head and both match. Refusing is the
+    alternative, and among genuine candidates the file whose path carries the
+    URL's last segment is the answer on every generator Signal meets."""
+    page = 'export const metadata: Metadata = { title: "Sign in" };\n'
+    repo = _Repo(files={
+        "app/login/page.tsx": page,
+        "app/privacy/page.tsx": 'export const metadata: Metadata = { title: "Privacy" };\n// Sign in to see it\n',
+    })
+
+    _target(repo).write(
+        "https://acme.test/login/",
+        [FieldWrite(field="canonical_tag", value="https://acme.test/login/", before=None, anchors=["Sign in"])],
+    )
+
+    name, content, _ = repo.commits[0]
+    assert name == "app/login/page.tsx"
+    assert 'canonical: "https://acme.test/login/"' in content
+
+
+def test_the_segment_tie_break_does_not_pick_when_it_matches_nothing():
+    """It narrows to one or it stands aside - it never ranks."""
+    page = 'export const metadata: Metadata = { title: "Sign in" };\n'
+    repo = _Repo(files={"app/a/page.tsx": page, "app/b/page.tsx": page})
+
+    with pytest.raises(WriteTargetError, match="will not guess which one is this page"):
+        _target(repo).write(
+            "https://acme.test/login/",
+            [FieldWrite(field="canonical_tag", value="https://acme.test/login/", before=None, anchors=["Sign in"])],
+        )

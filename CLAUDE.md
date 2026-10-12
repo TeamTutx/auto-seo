@@ -118,6 +118,35 @@ don't leave it stale.** Concretely:
   plainly in the repo is worse than naming an odd file. Markdown is never
   discounted — a Hugo or Jekyll site's pages *are* markdown. And never put a live
   production string in a test; that is what caused this.
+- **A GitHub write can *add* a tag, and what makes that safe is the location
+  rule, not the syntax.** Replacement anchors on the exact live value; a tag the
+  page does not have anchors on nothing, so `insertion.py` locates the file by
+  another string the page *does* show (title, description, h1 - built by
+  `changes.page_anchors`, carried on `FieldWrite.anchors`, tried in turn by
+  `_locate`) and then adds the tag. Two rules are the whole safety argument and
+  neither is about generating correct syntax: the file must **already own
+  document-level metadata** (it contains `</head>` or an `export const metadata`
+  object) — otherwise "Sign in" matches a button's component and the canonical
+  goes in there — and it must **not be a shared layout**. That second one matters
+  far more here than for replacement: a replaced title in a layout changes
+  several pages' titles and the diff shows it, while a canonical tag in a layout
+  tells Google every page using it *is* this page, which de-indexes the rest and
+  looks like three harmless added lines. Refusing falls back to exactly the old
+  behaviour ("add it once by hand"), so the guard costs nothing. Those two gates
+  are also **what decides the candidate set, not a check applied afterwards** —
+  "Privacy policy" is in the privacy page, `plan.md` and a store listing, and
+  calling that ambiguous refused the one real answer in the name of two files
+  that were never candidates. For the same reason an anchor appearing *twice in
+  one file* is fine when inserting (`require_one_occurrence=False`): replacing
+  needs to know which occurrence, adding only needs to know which file. The one
+  routing assumption in the module is the last tie-break before refusing — among
+  files that could each own the head, the one whose path holds the URL's last
+  segment — and it narrows to one or stands aside, never ranks. `robots_meta_tag`
+  is deliberately **not** in `INSERTABLE` — a missing robots tag means "index
+  this", which is the wanted state. And **revert does not delete what it added**:
+  an unmerged pull request is closed (the clean undo already exists), a merged one
+  is handed back with the PR to revert, because removing lines from someone's
+  repository on a button press is a different act from changing a string in one.
 - **Staleness is measured against the live page, which a repository target can
   legitimately be ahead of.** Between a merged pull request and the site's
   rebuild, the repo holds the new value and the page still serves the old one, so
