@@ -29,7 +29,7 @@ const GA_ID = rawGaId && /^G-[A-Z0-9]+$/.test(rawGaId) ? rawGaId : undefined;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "SEO Audit Tool | Track Rankings & AI Fixes with Signal",
+  title: "SEO Audit Tool - Track Rankings & AI Fixes with Signal",
   description:
     "Discover how Signal's auto SEO tools streamline your SEO audits, rank tracking, and AI fixes, helping you improve your website's performance effortlessly.",
 };
