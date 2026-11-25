@@ -52,7 +52,24 @@ def list_properties(access_token: str) -> List[dict]:
     return properties
 
 
+def path_variants(page_path: str) -> List[str]:
+    """Both trailing-slash spellings of a path. /pricing and /pricing/ are one
+    page to the person looking at it, but GA4 records whichever the browser
+    was on - and a site that redirects one to the other, or changed its mind
+    at some point, has traffic under both. The root has only one spelling."""
+    path = page_path or "/"
+    if path == "/":
+        return ["/"]
+    other = path[:-1] if path.endswith("/") else path + "/"
+    return [path, other]
+
+
 def get_page_metrics(access_token: str, property_id: str, page_path: str, days: int = 28) -> dict:
+    """Traffic for one page, counting both trailing-slash spellings of its
+    path together. `has_data` is False when Analytics holds no row at all for
+    the page - which a run of zeros alone cannot say, since zeros look the
+    same whether nobody visited or the tag is missing / the wrong property is
+    linked."""
     end = date.today()
     start = end - timedelta(days=days)
     payload = {
@@ -65,7 +82,7 @@ def get_page_metrics(access_token: str, property_id: str, page_path: str, days: 
             {"name": "averageSessionDuration"},
         ],
         "dimensionFilter": {
-            "filter": {"fieldName": "pagePath", "stringFilter": {"matchType": "EXACT", "value": page_path}}
+            "filter": {"fieldName": "pagePath", "inListFilter": {"values": path_variants(page_path)}}
         },
     }
     url = RUN_REPORT_URL.format(property_id=property_id)
@@ -73,12 +90,26 @@ def get_page_metrics(access_token: str, property_id: str, page_path: str, days: 
 
     rows = data.get("rows", [])
     if not rows:
-        return {"sessions": 0, "pageviews": 0, "bounce_rate": 0.0, "avg_session_duration": 0.0}
+        return {
+            "sessions": 0, "pageviews": 0, "bounce_rate": 0.0, "avg_session_duration": 0.0, "has_data": False,
+        }
 
-    values = rows[0]["metricValues"]
+    # One row per spelling GA4 has seen. Counts add; the two rates are
+    # per-session averages, so they combine weighted by sessions.
+    sessions = pageviews = 0
+    bounce_weighted = duration_weighted = 0.0
+    for row in rows:
+        values = row["metricValues"]
+        row_sessions = int(values[0]["value"])
+        sessions += row_sessions
+        pageviews += int(values[1]["value"])
+        bounce_weighted += float(values[2]["value"]) * row_sessions
+        duration_weighted += float(values[3]["value"]) * row_sessions
+
     return {
-        "sessions": int(values[0]["value"]),
-        "pageviews": int(values[1]["value"]),
-        "bounce_rate": round(float(values[2]["value"]) * 100, 1),
-        "avg_session_duration": round(float(values[3]["value"]), 1),
+        "sessions": sessions,
+        "pageviews": pageviews,
+        "bounce_rate": round(bounce_weighted / sessions * 100, 1) if sessions else 0.0,
+        "avg_session_duration": round(duration_weighted / sessions, 1) if sessions else 0.0,
+        "has_data": True,
     }

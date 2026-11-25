@@ -35,7 +35,17 @@ export default function GoogleAnalyticsPanel({ pageId }: { pageId: number }) {
 
       {!error && !metrics && <div className="loading-state">Loading…</div>}
 
-      {metrics && (
+      {metrics && !metrics.has_data && (
+        <div className="panel pages-panel">
+          <div className="empty-state">
+            Analytics has no visits recorded for this page in the last 28 days. If the page does get visitors,
+            check that the Google Analytics tag is installed on it and that this site is linked to the right
+            property in Settings.
+          </div>
+        </div>
+      )}
+
+      {metrics && metrics.has_data && (
         <div className="stat-row stat-row-4">
           <div className="stat-cell">
             <div className="stat-label">Sessions</div>

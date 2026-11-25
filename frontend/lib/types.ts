@@ -260,6 +260,7 @@ export interface GAPageMetrics {
   pageviews: number;
   bounce_rate: number;
   avg_session_duration: number;
+  has_data: boolean;
 }
 
 // --- pricing / billing ---

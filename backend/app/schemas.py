@@ -382,6 +382,9 @@ class GAPageMetrics(BaseModel):
     pageviews: int
     bounce_rate: float  # percent
     avg_session_duration: float  # seconds
+    # False when Analytics has no row for the page at all, so the UI can say
+    # so instead of showing zeros that read as a measurement.
+    has_data: bool = True
 
 
 # --- alerts ---
